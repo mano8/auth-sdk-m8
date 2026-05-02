@@ -240,9 +240,18 @@ def test_common_settings_insecure_default_secret() -> None:
         IsolatedSettings(**kwargs)
 
 
-def test_common_settings_sqlalchemy_uri(valid_settings: IsolatedSettings) -> None:
-    uri = str(valid_settings.SQLALCHEMY_DATABASE_URI)
+def test_common_settings_sqlalchemy_uri_mysql(valid_settings: IsolatedSettings) -> None:
+    uri = valid_settings.SQLALCHEMY_DATABASE_URI
     assert "mysql+pymysql" in uri
+    assert "testuser" in uri
+    assert "testdb" in uri
+
+
+def test_common_settings_sqlalchemy_uri_postgres() -> None:
+    kwargs = {**VALID_SETTINGS_KWARGS, "SELECTED_DB": "Postgres", "DB_PORT": 5432}
+    s = IsolatedSettings(**kwargs)
+    uri = s.SQLALCHEMY_DATABASE_URI
+    assert "postgresql+psycopg2" in uri
     assert "testuser" in uri
     assert "testdb" in uri
 
