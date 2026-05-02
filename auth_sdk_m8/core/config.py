@@ -29,7 +29,6 @@ from pydantic import (
     EmailStr,
     Field,
     HttpUrl,
-    MySQLDsn,
     SecretStr,
     ValidationError,
     computed_field,
@@ -247,16 +246,19 @@ class CommonSettings(BaseSettings):
 
     @computed_field
     @property
-    def SQLALCHEMY_DATABASE_URI(self) -> MySQLDsn:
-        """Build the SQLAlchemy connection URI."""
+    def SQLALCHEMY_DATABASE_URI(self) -> str:
+        """Build the SQLAlchemy connection URI for the selected database."""
         validated_password = self._validate_password(
             "DB_PASSWORD", self.DB_PASSWORD
         )
         encoded_password = quote_plus(validated_password.get_secret_value())
-        return (
-            f"mysql+pymysql://{self.DB_USER}:{encoded_password}@"
+        credentials = (
+            f"{self.DB_USER}:{encoded_password}@"
             f"{self.DB_HOST}:{self.DB_PORT}/{self.DB_DATABASE}"
         )
+        if self.SELECTED_DB == "Postgres":
+            return f"postgresql+psycopg2://{credentials}"
+        return f"mysql+pymysql://{credentials}"
 
     # ── Redis ─────────────────────────────────────────────────────────────────
     REDIS_HOST: str = Field(..., pattern=ValidationConstants.HOST_REGEX.pattern)
