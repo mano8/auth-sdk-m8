@@ -6,36 +6,29 @@ This package is extracted from `auth_user_service` and is intended to be install
 that integrates with it via Docker Compose. It provides the Pydantic schemas matching the auth
 service's API, JWT validation helpers, and optional FastAPI/SQLModel base classes.
 
+[![PyPI version](https://img.shields.io/pypi/v/auth-sdk-m8)](https://pypi.org/project/auth-sdk-m8/)
+[![Python](https://img.shields.io/pypi/pyversions/auth-sdk-m8)](https://pypi.org/project/auth-sdk-m8/)
+
 ---
 
 ## Installation
 
-### From GitLab Package Registry (recommended after first publish)
+### From PyPI (recommended)
 
 ```bash
-pip install auth-sdk-m8 \
-  --index-url https://gitlab.com/api/v4/projects/<PROJECT_ID>/packages/pypi/simple \
-  --extra-index-url https://pypi.org/simple
+pip install auth-sdk-m8
 ```
 
-With a deploy token in `pip.conf` or `~/.netrc`:
-```ini
-# pip.conf
-[global]
-index-url = https://gitlab.com/api/v4/projects/<PROJECT_ID>/packages/pypi/simple
-extra-index-url = https://pypi.org/simple
-```
-
-### Directly from GitLab via git
+### Directly from GitHub
 
 ```bash
-pip install "auth-sdk-m8 @ git+https://gitlab.com/yourorg/auth-sdk-m8.git@v0.1.0"
+pip install "auth-sdk-m8 @ git+https://github.com/mano8/auth-sdk-m8.git@v0.1.1"
 ```
 
 ### For development (editable install)
 
 ```bash
-git clone https://gitlab.com/yourorg/auth-sdk-m8.git
+git clone https://github.com/mano8/auth-sdk-m8.git
 cd auth-sdk-m8
 pip install -e ".[all,dev]"
 ```
@@ -47,23 +40,28 @@ pip install -e ".[all,dev]"
 Install only what your service needs:
 
 | Extra | Installs | Use when |
-|---|---|---|
+| --- | --- | --- |
 | *(none)* | `pydantic`, `email-validator` | schemas only |
 | `[security]` | `PyJWT` | local JWT validation |
 | `[fastapi]` | `fastapi` | cookie helpers, `BaseController` |
 | `[redis]` | `redis` | Redis event bus |
 | `[config]` | `pydantic-settings` | `CommonSettings` base class |
 | `[db]` | `sqlmodel`, `sqlalchemy` | `TimestampMixin`, DB error parsing |
+| `[mysql]` | `pymysql` | MySQL database driver |
+| `[postgres]` | `psycopg2-binary` | PostgreSQL database driver |
 | `[all]` | everything above | full feature set |
 
 Examples:
 
 ```bash
+# A FastAPI service using MySQL
+pip install "auth-sdk-m8[security,fastapi,db,mysql]"
+
+# A FastAPI service using PostgreSQL
+pip install "auth-sdk-m8[security,fastapi,db,postgres]"
+
 # A service that only validates tokens locally
 pip install "auth-sdk-m8[security]"
-
-# A FastAPI service using BaseController and JWT
-pip install "auth-sdk-m8[security,fastapi,db]"
 
 # A service that only listens to Redis events
 pip install "auth-sdk-m8[redis]"
@@ -142,6 +140,21 @@ class Settings(CommonSettings):
 settings = Settings()
 ```
 
+Set `SELECTED_DB` in your `.env` to choose the database backend (defaults to `Mysql`):
+
+```ini
+# .env
+SELECTED_DB=Postgres   # or Mysql (default)
+DB_HOST=localhost
+DB_PORT=5432
+DB_DATABASE=mydb
+DB_USER=myuser
+DB_PASSWORD=MyPassw0rd!
+```
+
+`settings.SQLALCHEMY_DATABASE_URI` returns the appropriate SQLAlchemy connection string for the
+selected backend (`mysql+pymysql://…` or `postgresql+psycopg2://…`).
+
 ### Listen to Redis events from auth_user_service
 
 ```python
@@ -165,8 +178,8 @@ asyncio.run(main())
 
 ## Package layout
 
-```
-src/auth_sdk_m8/
+```text
+auth_sdk_m8/
 ├── schemas/
 │   ├── auth.py          # JWT payload schemas (TokenUserData, TokenAccessData, …)
 │   ├── base.py          # Enums (AuthProviderType, RoleType, Period) + response models
@@ -187,7 +200,7 @@ src/auth_sdk_m8/
 ├── models/
 │   └── shared.py        # TimestampMixin, Message, Token, TokenPayload (SQLModel)
 └── utils/
-    ├── errors_parser.py # parse_integrity_error, parse_pydantic_errors
+    ├── errors_parser.py # parse_integrity_error (MySQL + PostgreSQL), parse_pydantic_errors
     └── paths.py         # find_dotenv
 ```
 
@@ -199,7 +212,7 @@ src/auth_sdk_m8/
 2. Add an entry to `CHANGELOG.md`
 3. Commit and push
 4. Create a git tag: `git tag v0.2.0 && git push origin v0.2.0`
-5. GitLab CI builds and publishes automatically to the Package Registry
+5. GitHub Actions builds and publishes automatically to PyPI
 
 ---
 
