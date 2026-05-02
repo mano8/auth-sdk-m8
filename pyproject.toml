@@ -1,0 +1,95 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "auth-sdk-m8"
+version = "0.1.0"
+description = "Shared authentication schemas, JWT utilities and FastAPI base components for m8 microservices."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Eli Serra", email = "mex.serra@gmail.com" }]
+requires-python = ">=3.11"
+keywords = ["fastapi", "auth", "jwt", "microservices", "pydantic"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: FastAPI",
+    "Topic :: Software Development :: Libraries",
+]
+
+# Minimal hard dependency: only pure-Pydantic models and email validation.
+dependencies = [
+    "pydantic>=2.10.6",
+    "email-validator>=2.2.0",
+]
+
+[project.optional-dependencies]
+# JWT encode/decode (core/security.py)
+security = [
+    "PyJWT>=2.10.1",
+]
+# FastAPI cookie helpers + BaseController (core/security.py cookie methods, controllers/base.py)
+fastapi = [
+    "fastapi>=0.115.7",
+]
+# Redis Pub/Sub event bus (redis_events/)
+redis = [
+    "redis>=5.2.1",
+]
+# CommonSettings base class (core/config.py)
+config = [
+    "pydantic-settings>=2.7.1",
+]
+# SQLModel TimestampMixin and BaseController DB session (models/shared.py, controllers/base.py)
+db = [
+    "sqlmodel>=0.0.22",
+    "sqlalchemy>=2.0.38",
+]
+# Install every optional feature
+all = [
+    "PyJWT>=2.10.1",
+    "fastapi>=0.115.7",
+    "redis>=5.2.1",
+    "pydantic-settings>=2.7.1",
+    "sqlmodel>=0.0.22",
+    "sqlalchemy>=2.0.38",
+]
+# Development / test extras
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "ruff>=0.9",
+    "auth-sdk-m8[all]",
+]
+
+[project.urls]
+Homepage = "https://gitlab.com/yourorg/auth-sdk-m8"
+Repository = "https://gitlab.com/yourorg/auth-sdk-m8"
+"Issue Tracker" = "https://gitlab.com/yourorg/auth-sdk-m8/-/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["auth_sdk_m8"]
+
+# ─── Ruff ────────────────────────────────────────────────────────────────────
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["auth_sdk_m8"]
+
+# ─── Pytest ──────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+addopts = "--cov=auth_sdk_m8 --cov-report=term-missing --cov-fail-under=90"
