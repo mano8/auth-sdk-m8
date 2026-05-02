@@ -13,28 +13,34 @@ def parse_integrity_error(exc: IntegrityError) -> list[dict]:
     """
     Parse an SQLAlchemy ``IntegrityError`` into structured error details.
 
+    Handles both MySQL and PostgreSQL error message formats.
+
     Returns:
         A list of dicts with keys ``table``, ``field_name``, and ``error``.
     """
     error_message = str(exc.orig)
     errors: list[dict] = []
 
-    unique_matches = re.findall(
+    # MySQL: Duplicate entry 'val' for key 'table.field'
+    for match in re.findall(
         r"Duplicate entry '(.+)' for key '([^'.]+)\.([^'.]+)'", error_message
-    )
-    for match in unique_matches:
+    ):
         errors.append(
-            {
-                "table": match[1],
-                "field_name": match[2],
-                "error": "Duplicate entry already exists.",
-            }
+            {"table": match[1], "field_name": match[2], "error": "Duplicate entry already exists."}
         )
 
-    fk_matches = re.findall(
+    # PostgreSQL: duplicate key value violates unique constraint
+    for match in re.findall(
+        r'duplicate key value violates unique constraint "[^"]+"\nDETAIL:.*?Key \(([^)]+)\)=\([^)]*\) already exists',
+        error_message,
+        re.DOTALL | re.IGNORECASE,
+    ):
+        errors.append({"table": None, "field_name": match, "error": "Duplicate entry already exists."})
+
+    # MySQL: FOREIGN KEY (`field`) REFERENCES `table`
+    for match in re.findall(
         r"FOREIGN KEY \(`(.+?)`\) REFERENCES `(.+?)`", error_message
-    )
-    for match in fk_matches:
+    ):
         errors.append(
             {
                 "table": match[1],
@@ -43,36 +49,41 @@ def parse_integrity_error(exc: IntegrityError) -> list[dict]:
             }
         )
 
-    not_null_matches = re.findall(r"Column '(.+?)' cannot be null", error_message)
-    for match in not_null_matches:
+    # PostgreSQL: foreign key constraint violation
+    for match in re.findall(
+        r'on table "[^"]+" violates foreign key constraint "[^"]+"\nDETAIL:.*?Key \(([^)]+)\)=\([^)]*\) is not present in table "([^"]+)"',
+        error_message,
+        re.DOTALL,
+    ):
         errors.append(
             {
-                "table": None,
-                "field_name": match,
-                "error": f"Field '{match}' cannot be null.",
+                "table": match[1],
+                "field_name": match[0],
+                "error": f"Invalid foreign key reference in '{match[0]}'.",
             }
         )
 
-    default_matches = re.findall(
-        r"Field '(.+?)' doesn't have a default value", error_message
-    )
-    for match in default_matches:
+    # MySQL: Column 'field' cannot be null
+    for match in re.findall(r"Column '(.+?)' cannot be null", error_message):
+        errors.append({"table": None, "field_name": match, "error": f"Field '{match}' cannot be null."})
+
+    # PostgreSQL: null value in column "field" of relation "table"
+    for match in re.findall(
+        r'null value in column "([^"]+)" of relation "([^"]+)" violates not-null constraint',
+        error_message,
+    ):
         errors.append(
-            {
-                "table": None,
-                "field_name": match,
-                "error": f"Field '{match}' requires a value.",
-            }
+            {"table": match[1], "field_name": match[0], "error": f"Field '{match[0]}' cannot be null."}
         )
+
+    # MySQL: Field 'field' doesn't have a default value
+    for match in re.findall(
+        r"Field '(.+?)' doesn't have a default value", error_message
+    ):
+        errors.append({"table": None, "field_name": match, "error": f"Field '{match}' requires a value."})
 
     if not errors:
-        errors.append(
-            {
-                "table": None,
-                "field_name": None,
-                "error": "Unknown database integrity error",
-            }
-        )
+        errors.append({"table": None, "field_name": None, "error": "Unknown database integrity error"})
 
     return errors
 
