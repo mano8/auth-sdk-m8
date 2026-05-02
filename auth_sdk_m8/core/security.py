@@ -83,6 +83,9 @@ class ComSecurityHelper:
             )
             if payload.get("type") != "refresh":
                 raise InvalidToken("Not a refresh token")
+            exp = payload.get("exp")
+            if exp is None or exp < datetime.now(timezone.utc).timestamp():
+                raise InvalidToken("Refresh token expired")
             user_id = uuid.UUID(payload.get("sub"))
             jti = payload.get("jti")
             if return_jti:
