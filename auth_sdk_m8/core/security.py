@@ -13,7 +13,7 @@ from typing import Tuple, Union
 import uuid
 
 import jwt
-from jwt import PyJWTError, InvalidTokenError
+from jwt import PyJWTError
 
 from auth_sdk_m8.core.exceptions import InvalidToken
 from auth_sdk_m8.schemas.auth import TokenDecodeProps, TokenSecret, TokenUserData
@@ -48,7 +48,8 @@ class ComSecurityHelper:
             )
             if payload.get("type") != "access":
                 raise InvalidToken("Not an access token")
-            if payload.get("exp") < datetime.now(timezone.utc).timestamp():
+            exp = payload.get("exp")
+            if exp is None or exp < datetime.now(timezone.utc).timestamp():
                 raise InvalidToken("Access token expired")
             return TokenUserData(**payload)
         except PyJWTError as ex:
