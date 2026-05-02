@@ -64,6 +64,43 @@ def test_parse_integrity_error_unknown() -> None:
     assert errors[0]["field_name"] is None
 
 
+# ── PostgreSQL patterns ───────────────────────────────────────────────────────
+
+def test_parse_integrity_error_pg_unique() -> None:
+    exc = _make_integrity_error(
+        'duplicate key value violates unique constraint "users_email_key"\n'
+        "DETAIL:  Key (email)=(user@example.com) already exists.\n"
+    )
+    errors = parse_integrity_error(exc)
+    assert len(errors) == 1
+    assert errors[0]["field_name"] == "email"
+    assert "Duplicate entry" in errors[0]["error"]
+
+
+def test_parse_integrity_error_pg_foreign_key() -> None:
+    exc = _make_integrity_error(
+        'insert or update on table "orders" violates foreign key constraint "orders_user_id_fkey"\n'
+        "DETAIL:  Key (user_id)=(999) is not present in table \"users\".\n"
+    )
+    errors = parse_integrity_error(exc)
+    assert len(errors) == 1
+    assert errors[0]["field_name"] == "user_id"
+    assert errors[0]["table"] == "users"
+    assert "foreign key" in errors[0]["error"]
+
+
+def test_parse_integrity_error_pg_not_null() -> None:
+    exc = _make_integrity_error(
+        'null value in column "email" of relation "users" violates not-null constraint\n'
+        "DETAIL:  Failing row contains (1, null, active).\n"
+    )
+    errors = parse_integrity_error(exc)
+    assert len(errors) == 1
+    assert errors[0]["field_name"] == "email"
+    assert errors[0]["table"] == "users"
+    assert "cannot be null" in errors[0]["error"]
+
+
 def test_parse_integrity_error_multiple_matches() -> None:
     msg = (
         "Duplicate entry 'a@b.com' for key 'users.email' "
