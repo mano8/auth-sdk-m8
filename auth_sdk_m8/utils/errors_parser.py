@@ -27,7 +27,7 @@ def parse_integrity_error(exc: IntegrityError) -> list[dict]:
             {
                 "table": match[1],
                 "field_name": match[2],
-                "error": f"Duplicate entry: '{match[0]}' already exists.",
+                "error": "Duplicate entry already exists.",
             }
         )
 
