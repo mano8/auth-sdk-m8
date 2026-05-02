@@ -1,0 +1,1 @@
+"""SQLModel shared model mixins."""
