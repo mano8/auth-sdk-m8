@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "auth-sdk-m8"
-version = "0.1.1"
+version = "0.1.2"
 description = "Shared authentication schemas, JWT utilities and FastAPI base components for m8 microservices."
 readme = "README.md"
 license = { file = "LICENSE" }
-authors = [{ name = "Eli Serra", email = "mex.serra@gmail.com" }]
+authors = [{ name = "Eli Serra", email = "e.serra173@gmail.com" }]
 requires-python = ">=3.11"
 keywords = ["fastapi", "auth", "jwt", "microservices", "pydantic"]
 classifiers = [
@@ -49,6 +49,14 @@ db = [
     "sqlmodel>=0.0.22",
     "sqlalchemy>=2.0.38",
 ]
+# MySQL database driver (use with db extra)
+mysql = [
+    "pymysql>=1.1.0",
+]
+# PostgreSQL database driver (use with db extra)
+postgres = [
+    "psycopg2-binary>=2.9.0",
+]
 # Install every optional feature
 all = [
     "PyJWT>=2.10.1",
@@ -57,6 +65,8 @@ all = [
     "pydantic-settings>=2.7.1",
     "sqlmodel>=0.0.22",
     "sqlalchemy>=2.0.38",
+    "pymysql>=1.1.0",
+    "psycopg2-binary>=2.9.0",
 ]
 # Development / test extras
 dev = [
@@ -68,9 +78,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://gitlab.com/yourorg/auth-sdk-m8"
-Repository = "https://gitlab.com/yourorg/auth-sdk-m8"
-"Issue Tracker" = "https://gitlab.com/yourorg/auth-sdk-m8/-/issues"
+Homepage = "https://github.com/mano8/auth-sdk-m8"
+Repository = "https://github.com/mano8/auth-sdk-m8"
+"Issue Tracker" = "https://github.com/mano8/auth-sdk-m8/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["auth_sdk_m8"]
