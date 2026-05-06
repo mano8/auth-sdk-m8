@@ -267,3 +267,22 @@ payload = validator.validate_access_token(token)
 policy = TokenPolicy(validator, store=my_session_store)
 payload = await policy.validate(token)
 ```
+
+### Key Rotation
+
+For key rotation, configure a `KeyResolver` and resolve keys from the JWT `kid`
+header while keeping verification local:
+
+```python
+from auth_sdk_m8.security import KeyResolver, TokenValidationConfig, TokenValidator
+
+class MyResolver(KeyResolver):
+    def resolve(self, kid: str | None):
+        return lookup_token_secret(kid)
+
+validator = TokenValidator(
+    secrets=None,
+    config=TokenValidationConfig(),
+    key_resolver=MyResolver(),
+)
+```
