@@ -1,5 +1,4 @@
 """Tests for auth_sdk_m8.schemas.shared."""
-import pytest
 
 from auth_sdk_m8.schemas.shared import ValidationConstants
 
