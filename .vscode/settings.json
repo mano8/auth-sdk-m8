@@ -1,6 +1,10 @@
 {
     "python.testing.pytestArgs": [
-       
+       "tests",
+        "--cov=auth_sdk_m8",
+        "--cov-report=term-missing",
+        "--cov-report=xml:coverage.xml",
+        "--cov-fail-under=90"
     ],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
