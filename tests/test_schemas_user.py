@@ -2,8 +2,6 @@
 import uuid
 from datetime import datetime, timezone
 
-import pytest
-
 from auth_sdk_m8.schemas.base import AuthProviderType, RoleType
 from auth_sdk_m8.schemas.redis_events import EventBase
 from auth_sdk_m8.schemas.user import SessionModel, UserModel

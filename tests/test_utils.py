@@ -1,12 +1,12 @@
 """Tests for auth_sdk_m8.utils.errors_parser and auth_sdk_m8.utils.paths."""
-import pytest
 from pathlib import Path
+
+import pytest
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.exc import IntegrityError
 
 from auth_sdk_m8.utils.errors_parser import parse_integrity_error, parse_pydantic_errors
 from auth_sdk_m8.utils.paths import find_dotenv
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -22,9 +22,10 @@ def test_parse_integrity_error_unique_constraint() -> None:
     )
     errors = parse_integrity_error(exc)
     assert len(errors) == 1
-    assert errors[0]["table"] == "users"
-    assert errors[0]["field_name"] == "email"
-    assert "Duplicate entry" in errors[0]["error"]
+    assert errors[0].table == "users"
+    assert errors[0].field_name == "email"
+    assert errors[0].error is not None
+    assert "Duplicate entry" in errors[0].error
 
 
 def test_parse_integrity_error_foreign_key() -> None:
@@ -33,35 +34,38 @@ def test_parse_integrity_error_foreign_key() -> None:
     )
     errors = parse_integrity_error(exc)
     assert len(errors) == 1
-    assert errors[0]["table"] == "users"
-    assert errors[0]["field_name"] == "user_id"
-    assert "foreign key" in errors[0]["error"]
+    assert errors[0].table == "users"
+    assert errors[0].field_name == "user_id"
+    assert errors[0].error is not None
+    assert "foreign key" in errors[0].error
 
 
 def test_parse_integrity_error_not_null() -> None:
     exc = _make_integrity_error("Column 'email' cannot be null")
     errors = parse_integrity_error(exc)
     assert len(errors) == 1
-    assert errors[0]["field_name"] == "email"
-    assert errors[0]["table"] is None
-    assert "cannot be null" in errors[0]["error"]
+    assert errors[0].field_name == "email"
+    assert errors[0].table is None
+    assert errors[0].error is not None
+    assert "cannot be null" in errors[0].error
 
 
 def test_parse_integrity_error_no_default() -> None:
     exc = _make_integrity_error("Field 'username' doesn't have a default value")
     errors = parse_integrity_error(exc)
     assert len(errors) == 1
-    assert errors[0]["field_name"] == "username"
-    assert "requires a value" in errors[0]["error"]
+    assert errors[0].field_name == "username"
+    assert errors[0].error is not None
+    assert "requires a value" in errors[0].error
 
 
 def test_parse_integrity_error_unknown() -> None:
     exc = _make_integrity_error("Some completely unknown DB error")
     errors = parse_integrity_error(exc)
     assert len(errors) == 1
-    assert errors[0]["error"] == "Unknown database integrity error"
-    assert errors[0]["table"] is None
-    assert errors[0]["field_name"] is None
+    assert errors[0].error == "Unknown database integrity error"
+    assert errors[0].table is None
+    assert errors[0].field_name is None
 
 
 # ── PostgreSQL patterns ───────────────────────────────────────────────────────
@@ -73,8 +77,9 @@ def test_parse_integrity_error_pg_unique() -> None:
     )
     errors = parse_integrity_error(exc)
     assert len(errors) == 1
-    assert errors[0]["field_name"] == "email"
-    assert "Duplicate entry" in errors[0]["error"]
+    assert errors[0].field_name == "email"
+    assert errors[0].error is not None
+    assert "Duplicate entry" in errors[0].error
 
 
 def test_parse_integrity_error_pg_foreign_key() -> None:
@@ -84,9 +89,10 @@ def test_parse_integrity_error_pg_foreign_key() -> None:
     )
     errors = parse_integrity_error(exc)
     assert len(errors) == 1
-    assert errors[0]["field_name"] == "user_id"
-    assert errors[0]["table"] == "users"
-    assert "foreign key" in errors[0]["error"]
+    assert errors[0].field_name == "user_id"
+    assert errors[0].table == "users"
+    assert errors[0].error is not None
+    assert "foreign key" in errors[0].error
 
 
 def test_parse_integrity_error_pg_not_null() -> None:
@@ -96,9 +102,10 @@ def test_parse_integrity_error_pg_not_null() -> None:
     )
     errors = parse_integrity_error(exc)
     assert len(errors) == 1
-    assert errors[0]["field_name"] == "email"
-    assert errors[0]["table"] == "users"
-    assert "cannot be null" in errors[0]["error"]
+    assert errors[0].field_name == "email"
+    assert errors[0].table == "users"
+    assert errors[0].error is not None
+    assert "cannot be null" in errors[0].error
 
 
 def test_parse_integrity_error_multiple_matches() -> None:
@@ -124,8 +131,8 @@ def test_parse_pydantic_errors_single_field() -> None:
     except ValidationError as exc:
         errors = parse_pydantic_errors(exc)
     assert len(errors) >= 1
-    assert errors[0]["field_name"] == "x"
-    assert errors[0]["error"]
+    assert errors[0].field_name == "x"
+    assert errors[0].error
 
 
 def test_parse_pydantic_errors_multiple_fields() -> None:
@@ -138,33 +145,62 @@ def test_parse_pydantic_errors_multiple_fields() -> None:
 
 # ── find_dotenv ───────────────────────────────────────────────────────────────
 
-def test_find_dotenv_found_in_same_dir(tmp_path: Path) -> None:
-    env_file = tmp_path / ".env"
-    env_file.write_text("KEY=value")
-    result = find_dotenv(tmp_path)
-    assert Path(result).name == ".env"
+def test_find_dotenv_found_in_same_dir(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    start = Path("C:/project/service")
+
+    monkeypatch.setattr(Path, "is_dir", lambda self: True)
+    monkeypatch.setattr(
+        Path,
+        "exists",
+        lambda self: self == start / ".env",
+    )
+
+    result = find_dotenv(start)
+
+    assert result == start / ".env"
 
 
-def test_find_dotenv_found_in_parent(tmp_path: Path) -> None:
-    env_file = tmp_path / ".env"
-    env_file.write_text("KEY=value")
-    subdir = tmp_path / "subdir"
-    subdir.mkdir()
-    result = find_dotenv(subdir)
-    assert Path(result).name == ".env"
+def test_find_dotenv_found_in_parent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    start = Path("C:/project/service/subdir")
+    parent = Path("C:/project/service")
+
+    monkeypatch.setattr(Path, "is_dir", lambda self: True)
+    monkeypatch.setattr(
+        Path,
+        "exists",
+        lambda self: self == parent / ".env",
+    )
+
+    result = find_dotenv(start)
+
+    assert result == parent / ".env"
 
 
-def test_find_dotenv_not_found(tmp_path: Path) -> None:
-    empty = tmp_path / "a" / "b"
-    empty.mkdir(parents=True)
+def test_find_dotenv_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    start = Path("C:/project/service/subdir")
+
+    monkeypatch.setattr(Path, "is_dir", lambda self: True)
+    monkeypatch.setattr(Path, "exists", lambda self: False)
+
     with pytest.raises(FileNotFoundError, match=".env file not found"):
-        find_dotenv(empty)
+        find_dotenv(start)
 
 
-def test_find_dotenv_start_is_file(tmp_path: Path) -> None:
-    env_file = tmp_path / ".env"
-    env_file.write_text("KEY=value")
-    some_file = tmp_path / "app.py"
-    some_file.write_text("x = 1")
-    result = find_dotenv(some_file)
-    assert Path(result).name == ".env"
+def test_find_dotenv_start_is_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    start = Path("C:/project/service/app.py")
+    parent = Path("C:/project/service")
+
+    monkeypatch.setattr(Path, "is_dir", lambda self: self != start)
+    monkeypatch.setattr(
+        Path,
+        "exists",
+        lambda self: self == parent / ".env",
+    )
+
+    result = find_dotenv(start)
+
+    assert result == parent / ".env"

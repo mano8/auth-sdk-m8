@@ -5,15 +5,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-pytestmark = pytest.mark.asyncio
-
 from auth_sdk_m8.redis_events.event_bus import EventBus
 from auth_sdk_m8.redis_events.publisher import EventPublisher
 from auth_sdk_m8.redis_events.subscriber import EventSubscriber
-from auth_sdk_m8.schemas.redis_events import EventBase
 from auth_sdk_m8.schemas.user_events import UserDeletedEvent
 
 _REDIS_URL = "redis://localhost:6379"
+pytestmark = pytest.mark.asyncio
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────

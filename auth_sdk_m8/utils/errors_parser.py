@@ -8,8 +8,10 @@ import re
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
+from auth_sdk_m8.schemas.base import ResponseError
 
-def parse_integrity_error(exc: IntegrityError) -> list[dict]:
+
+def parse_integrity_error(exc: IntegrityError) -> list[ResponseError]:
     """
     Parse an SQLAlchemy ``IntegrityError`` into structured error details.
 
@@ -19,14 +21,18 @@ def parse_integrity_error(exc: IntegrityError) -> list[dict]:
         A list of dicts with keys ``table``, ``field_name``, and ``error``.
     """
     error_message = str(exc.orig)
-    errors: list[dict] = []
+    errors: list[ResponseError] = []
 
     # MySQL: Duplicate entry 'val' for key 'table.field'
     for match in re.findall(
         r"Duplicate entry '(.+)' for key '([^'.]+)\.([^'.]+)'", error_message
     ):
         errors.append(
-            {"table": match[1], "field_name": match[2], "error": "Duplicate entry already exists."}
+            ResponseError(
+                table=match[1],
+                field_name=match[2],
+                error="Duplicate entry already exists.",
+            )
         )
 
     # PostgreSQL: duplicate key value violates unique constraint
@@ -35,18 +41,24 @@ def parse_integrity_error(exc: IntegrityError) -> list[dict]:
         error_message,
         re.DOTALL | re.IGNORECASE,
     ):
-        errors.append({"table": None, "field_name": match, "error": "Duplicate entry already exists."})
+        errors.append(
+            ResponseError(
+                table=None,
+                field_name=match,
+                error="Duplicate entry already exists.",
+            )
+        )
 
     # MySQL: FOREIGN KEY (`field`) REFERENCES `table`
     for match in re.findall(
         r"FOREIGN KEY \(`(.+?)`\) REFERENCES `(.+?)`", error_message
     ):
         errors.append(
-            {
-                "table": match[1],
-                "field_name": match[0],
-                "error": f"Invalid foreign key reference in '{match[0]}'.",
-            }
+            ResponseError(
+                table=match[1],
+                field_name=match[0],
+                error=f"Invalid foreign key reference in '{match[0]}'.",
+            )
         )
 
     # PostgreSQL: foreign key constraint violation
@@ -56,16 +68,22 @@ def parse_integrity_error(exc: IntegrityError) -> list[dict]:
         re.DOTALL,
     ):
         errors.append(
-            {
-                "table": match[1],
-                "field_name": match[0],
-                "error": f"Invalid foreign key reference in '{match[0]}'.",
-            }
+            ResponseError(
+                table=match[1],
+                field_name=match[0],
+                error=f"Invalid foreign key reference in '{match[0]}'.",
+            )
         )
 
     # MySQL: Column 'field' cannot be null
     for match in re.findall(r"Column '(.+?)' cannot be null", error_message):
-        errors.append({"table": None, "field_name": match, "error": f"Field '{match}' cannot be null."})
+        errors.append(
+            ResponseError(
+                table=None,
+                field_name=match,
+                error=f"Field '{match}' cannot be null.",
+            )
+        )
 
     # PostgreSQL: null value in column "field" of relation "table"
     for match in re.findall(
@@ -73,31 +91,47 @@ def parse_integrity_error(exc: IntegrityError) -> list[dict]:
         error_message,
     ):
         errors.append(
-            {"table": match[1], "field_name": match[0], "error": f"Field '{match[0]}' cannot be null."}
+            ResponseError(
+                table=match[1],
+                field_name=match[0],
+                error=f"Field '{match[0]}' cannot be null.",
+            )
         )
 
     # MySQL: Field 'field' doesn't have a default value
     for match in re.findall(
         r"Field '(.+?)' doesn't have a default value", error_message
     ):
-        errors.append({"table": None, "field_name": match, "error": f"Field '{match}' requires a value."})
+        errors.append(
+            ResponseError(
+                table=None,
+                field_name=match,
+                error=f"Field '{match}' requires a value.",
+            )
+        )
 
     if not errors:
-        errors.append({"table": None, "field_name": None, "error": "Unknown database integrity error"})
+        errors.append(
+            ResponseError(
+                table=None,
+                field_name=None,
+                error="Unknown database integrity error",
+            )
+        )
 
     return errors
 
 
-def parse_pydantic_errors(exc: ValidationError) -> list[dict]:
+def parse_pydantic_errors(exc: ValidationError) -> list[ResponseError]:
     """
     Parse a Pydantic ``ValidationError`` into structured error details.
 
     Returns:
         A list of dicts with keys ``field_name`` and ``error``.
     """
-    errors: list[dict] = []
+    errors: list[ResponseError] = []
     for error in exc.errors():
         field = ".".join(str(loc) for loc in error.get("loc", []))
         message = error.get("msg", "Validation error")
-        errors.append({"field_name": field, "error": message})
+        errors.append(ResponseError(field_name=field, error=message))
     return errors

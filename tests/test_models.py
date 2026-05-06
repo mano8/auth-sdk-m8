@@ -1,7 +1,5 @@
 """Tests for auth_sdk_m8.models.shared."""
-from datetime import datetime
 
-import pytest
 
 from auth_sdk_m8.models.shared import Message, Token, TokenPayload
 

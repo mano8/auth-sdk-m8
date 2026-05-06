@@ -102,4 +102,5 @@ known-first-party = ["auth_sdk_m8"]
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 addopts = "--cov=auth_sdk_m8 --cov-report=term-missing --cov-fail-under=90"

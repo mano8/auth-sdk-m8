@@ -1,5 +1,4 @@
 """Tests for auth_sdk_m8.schemas.base."""
-import pytest
 
 from auth_sdk_m8.schemas.base import (
     AuthProviderType,
@@ -9,8 +8,8 @@ from auth_sdk_m8.schemas.base import (
     PromptBlockType,
     ResponseError,
     ResponseErrorBase,
-    ResponseModelBase,
     ResponseMessage,
+    ResponseModelBase,
     RoleType,
 )
 
@@ -111,7 +110,7 @@ def test_response_error_base_defaults() -> None:
     assert r.success is False
     assert r.msg is None
     assert r.from_error is None
-    assert r.errors is None
+    assert r.errors == []
     assert r.status_code is None
 
 
@@ -120,10 +119,10 @@ def test_response_error_base_with_values() -> None:
         success=False,
         msg="boom",
         from_error="Exception",
-        errors=["something went wrong"],
+        errors=[ResponseError(error="something went wrong")],
         status_code=500,
     )
-    assert r.errors == ["something went wrong"]
+    assert r.errors == [ResponseError(error="something went wrong")]
     assert r.status_code == 500
 
 

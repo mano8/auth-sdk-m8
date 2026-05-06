@@ -1,21 +1,17 @@
 """Tests for auth_sdk_m8.core.config."""
-import os
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from auth_sdk_m8.core.config import (
-    CommonSettings,
     EnvProvider,
     SecretProvider,
     VaultProvider,
     parse_cors,
     settings_customise_sources,
 )
-from tests.conftest import VALID_KEY, VALID_PASSWORD, VALID_SETTINGS_KWARGS, IsolatedSettings
-
+from tests.conftest import VALID_SETTINGS_KWARGS, IsolatedSettings
 
 # ── SecretProvider ────────────────────────────────────────────────────────────
 
@@ -106,11 +102,8 @@ def test_settings_customise_sources_vault_from_env(
 
 
 def test_settings_customise_sources_vault_from_file(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    token_file = tmp_path / "vault_token"
-    token_file.write_text("file-token")
-
     monkeypatch.setenv("ENVIRONMENT", "staging")
     monkeypatch.setenv("SECRET_PROVIDER", "vault")
     monkeypatch.setenv("VAULT_ADDR", "http://vault:8200")
@@ -128,7 +121,11 @@ def test_settings_customise_sources_vault_from_file(
         mock_path_instance.read_text.return_value = "file-token"
         mock_path_cls.return_value = mock_path_instance
 
-        sources = settings_customise_sources(MagicMock(), MagicMock(), MagicMock())
+        sources = settings_customise_sources(
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+        )
 
     assert len(sources) == 4
 

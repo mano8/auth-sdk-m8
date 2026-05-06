@@ -30,7 +30,6 @@ from pydantic import (
     Field,
     HttpUrl,
     SecretStr,
-    ValidationError,
     computed_field,
     field_validator,
     model_validator,
@@ -38,7 +37,6 @@ from pydantic import (
 from pydantic_settings import BaseSettings
 
 from auth_sdk_m8.schemas.shared import ValidationConstants
-
 
 # ── Secret providers ──────────────────────────────────────────────────────────
 

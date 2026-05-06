@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
-from auth_sdk_m8.schemas.base import ResponseErrorBase
+from auth_sdk_m8.schemas.base import ResponseError, ResponseErrorBase
 from auth_sdk_m8.utils.errors_parser import parse_integrity_error, parse_pydantic_errors
 
 
@@ -82,7 +82,7 @@ class BaseController:
                 success=False,
                 msg="Internal error.",
                 from_error="InternalError",
-                errors=[str(ex)],
+                errors=[ResponseError(error=str(ex))],
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
         else:
@@ -90,7 +90,7 @@ class BaseController:
                 success=False,
                 msg="An unexpected error occurred.",
                 from_error="Exception",
-                errors=[str(ex)],
+                errors=[ResponseError(error=str(ex))],
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 

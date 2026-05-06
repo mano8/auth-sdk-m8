@@ -226,3 +226,44 @@ remains the sole authority for issuing tokens; this SDK only provides the tools 
 
 For production deployments with multiple teams, consider switching to **RS256** asymmetric
 signing so consuming services only need the public key (never the secret).
+
+## Validation Models
+
+### Stateless (default)
+
+- Pure JWT validation
+- No Redis dependency
+- Recommended for most services
+
+### Stateful (optional)
+
+- Adds revocation checks via `SessionStore`
+- Requires an external store such as Redis
+- Use for high-risk operations or admin APIs
+
+```python
+from pydantic import SecretStr
+
+from auth_sdk_m8.schemas.auth import TokenSecret
+from auth_sdk_m8.security import TokenPolicy, TokenValidationConfig, TokenValidator
+
+validator = TokenValidator(
+    secrets=TokenSecret(
+        secret_key=SecretStr(ACCESS_SECRET_KEY),
+        algorithm="HS256",
+    ),
+    config=TokenValidationConfig(
+        issuer="auth.service",
+        audience="orders-service",
+        require_iss=False,
+        require_aud=False,
+    ),
+)
+
+# Stateless validation
+payload = validator.validate_access_token(token)
+
+# Optional stateful validation
+policy = TokenPolicy(validator, store=my_session_store)
+payload = await policy.validate(token)
+```

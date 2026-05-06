@@ -7,16 +7,23 @@ FastAPI cookie helpers additionally require:  pip install "auth-sdk-m8[fastapi]"
 import base64
 import hashlib
 import json
+import uuid
+import warnings
 from datetime import datetime, timezone
 from os import urandom
 from typing import Tuple, Union
-import uuid
 
 import jwt
 from jwt import PyJWTError
 
 from auth_sdk_m8.core.exceptions import InvalidToken
 from auth_sdk_m8.schemas.auth import TokenDecodeProps, TokenSecret, TokenUserData
+from auth_sdk_m8.security import TokenValidationConfig, TokenValidator
+
+LEGACY_ACCESS_TOKEN_VALIDATION_CONFIG = TokenValidationConfig(
+    required_claims=["exp"],
+    leeway_seconds=0,
+)
 
 
 class ComSecurityHelper:
@@ -40,20 +47,19 @@ class ComSecurityHelper:
         Raises:
             InvalidToken: If the token is expired, invalid, or not an access token.
         """
-        try:
-            payload = jwt.decode(
-                token_data.access_token,
-                token_data.secret_key.get_secret_value(),
-                algorithms=[token_data.algorithm],
-            )
-            if payload.get("type") != "access":
-                raise InvalidToken("Not an access token")
-            exp = payload.get("exp")
-            if exp is None or exp < datetime.now(timezone.utc).timestamp():
-                raise InvalidToken("Access token expired")
-            return TokenUserData(**payload)
-        except PyJWTError as ex:
-            raise InvalidToken("Invalid access token") from ex
+        warnings.warn(
+            "decode_access_token is deprecated; use TokenValidator",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        validator = TokenValidator(
+            secrets=TokenSecret(
+                secret_key=token_data.secret_key,
+                algorithm=token_data.algorithm,
+            ),
+            config=LEGACY_ACCESS_TOKEN_VALIDATION_CONFIG,
+        )
+        return validator.validate_access_token(token_data.access_token)
 
     @staticmethod
     def decode_refresh_token(
@@ -88,10 +94,12 @@ class ComSecurityHelper:
                 raise InvalidToken("Refresh token expired")
             user_id = uuid.UUID(payload.get("sub"))
             jti = payload.get("jti")
+            if not isinstance(jti, str) or not jti:
+                raise InvalidToken("Invalid refresh token")
             if return_jti:
                 return user_id, jti  # type: ignore[return-value]
             return user_id
-        except PyJWTError as ex:
+        except (PyJWTError, TypeError, ValueError) as ex:
             raise InvalidToken("Invalid refresh token") from ex
 
     @staticmethod
