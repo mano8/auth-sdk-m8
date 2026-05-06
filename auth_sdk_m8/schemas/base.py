@@ -1,8 +1,8 @@
 """Shared enums and response schemas for m8 microservices."""
 from enum import Enum
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AuthProviderType(str, Enum):
@@ -103,5 +103,5 @@ class ResponseErrorBase(BaseModel):
     success: bool = False
     msg: Optional[str] = None
     from_error: Optional[str] = None
-    errors: Optional[list[Union[ResponseError, str]]] = None
+    errors: list[ResponseError] = Field(default_factory=list)
     status_code: Optional[int] = None
