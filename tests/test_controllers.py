@@ -1,7 +1,6 @@
 """Tests for auth_sdk_m8.controllers.base."""
 from unittest.mock import MagicMock
 
-import pytest
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.exc import IntegrityError
 
