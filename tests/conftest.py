@@ -1,4 +1,5 @@
 """Shared fixtures and JWT helpers for the auth-sdk-m8 test suite."""
+
 from datetime import datetime, timedelta, timezone
 
 import jwt

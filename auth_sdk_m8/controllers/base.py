@@ -4,6 +4,7 @@ BaseController — unified exception handling for FastAPI + SQLModel services.
 Requires the `fastapi` and `db` extras:
     pip install "auth-sdk-m8[fastapi,db]"
 """
+
 from typing import Union
 
 from fastapi import status

@@ -1,4 +1,5 @@
 """User and session Pydantic schemas."""
+
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -31,9 +32,7 @@ class SessionModel(BaseModel):
         min_length=64, max_length=128, description="Hash of refresh token"
     )
     jwt_expires_at: datetime = Field(description="JWT expiration (UTC)")
-    refresh_expires_at: datetime = Field(
-        description="Refresh token expiration (UTC)"
-    )
+    refresh_expires_at: datetime = Field(description="Refresh token expiration (UTC)")
     external_access_token: Optional[str] = Field(
         default=None, max_length=2048, description="Google OAuth access token"
     )

@@ -1,6 +1,7 @@
 """
 File-path utilities for locating `.env` files.
 """
+
 import logging
 from os.path import join as join_path
 from pathlib import Path

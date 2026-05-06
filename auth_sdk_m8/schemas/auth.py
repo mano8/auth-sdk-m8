@@ -1,4 +1,5 @@
 """JWT token schemas shared across m8 microservices."""
+
 from typing import Literal, Optional
 
 from pydantic import BaseModel, EmailStr, SecretStr, model_validator
@@ -7,7 +8,11 @@ from auth_sdk_m8.schemas.base import RoleType
 from auth_sdk_m8.schemas.shared import ValidationConstants
 
 TokenType = Literal["access", "refresh"]
-TokenAlgorithm = Literal["HS256", "RS256"]
+TokenAlgorithm = Literal["HS256", "RS256", "ES256"]
+
+# Algorithms that use public/private key pairs instead of a shared secret.
+# Secret-strength regex validation is skipped for these.
+ASYMMETRIC_ALGORITHMS: frozenset[str] = frozenset({"RS256", "ES256"})
 
 
 class Token(BaseModel):
@@ -33,7 +38,13 @@ class TokenSecret(BaseModel):
 
     @model_validator(mode="after")
     def validate_secret_key(self) -> "TokenSecret":
-        """Enforce minimum strength on the signing key."""
+        """Enforce minimum strength on symmetric signing keys.
+
+        Asymmetric algorithms (RS256, ES256) accept PEM-encoded keys and
+        therefore bypass the symmetric-secret strength regex.
+        """
+        if self.algorithm in ASYMMETRIC_ALGORITHMS:
+            return self
         if not ValidationConstants.SECRET_KEY_REGEX.match(
             self.secret_key.get_secret_value()
         ):

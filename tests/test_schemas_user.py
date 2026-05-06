@@ -1,4 +1,5 @@
 """Tests for schemas/user.py, schemas/redis_events.py, schemas/user_events.py."""
+
 import uuid
 from datetime import datetime, timezone
 

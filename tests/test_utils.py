@@ -1,4 +1,5 @@
 """Tests for auth_sdk_m8.utils.errors_parser and auth_sdk_m8.utils.paths."""
+
 from pathlib import Path
 
 import pytest
@@ -10,16 +11,16 @@ from auth_sdk_m8.utils.paths import find_dotenv
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+
 def _make_integrity_error(msg: str) -> IntegrityError:
     return IntegrityError(statement="INSERT INTO t", params={}, orig=Exception(msg))
 
 
 # ── parse_integrity_error ─────────────────────────────────────────────────────
 
+
 def test_parse_integrity_error_unique_constraint() -> None:
-    exc = _make_integrity_error(
-        "Duplicate entry 'user@mail.com' for key 'users.email'"
-    )
+    exc = _make_integrity_error("Duplicate entry 'user@mail.com' for key 'users.email'")
     errors = parse_integrity_error(exc)
     assert len(errors) == 1
     assert errors[0].table == "users"
@@ -29,9 +30,7 @@ def test_parse_integrity_error_unique_constraint() -> None:
 
 
 def test_parse_integrity_error_foreign_key() -> None:
-    exc = _make_integrity_error(
-        "FOREIGN KEY (`user_id`) REFERENCES `users`"
-    )
+    exc = _make_integrity_error("FOREIGN KEY (`user_id`) REFERENCES `users`")
     errors = parse_integrity_error(exc)
     assert len(errors) == 1
     assert errors[0].table == "users"
@@ -70,6 +69,7 @@ def test_parse_integrity_error_unknown() -> None:
 
 # ── PostgreSQL patterns ───────────────────────────────────────────────────────
 
+
 def test_parse_integrity_error_pg_unique() -> None:
     exc = _make_integrity_error(
         'duplicate key value violates unique constraint "users_email_key"\n'
@@ -85,7 +85,7 @@ def test_parse_integrity_error_pg_unique() -> None:
 def test_parse_integrity_error_pg_foreign_key() -> None:
     exc = _make_integrity_error(
         'insert or update on table "orders" violates foreign key constraint "orders_user_id_fkey"\n'
-        "DETAIL:  Key (user_id)=(999) is not present in table \"users\".\n"
+        'DETAIL:  Key (user_id)=(999) is not present in table "users".\n'
     )
     errors = parse_integrity_error(exc)
     assert len(errors) == 1
@@ -109,16 +109,14 @@ def test_parse_integrity_error_pg_not_null() -> None:
 
 
 def test_parse_integrity_error_multiple_matches() -> None:
-    msg = (
-        "Duplicate entry 'a@b.com' for key 'users.email' "
-        "Column 'name' cannot be null"
-    )
+    msg = "Duplicate entry 'a@b.com' for key 'users.email' Column 'name' cannot be null"
     exc = _make_integrity_error(msg)
     errors = parse_integrity_error(exc)
     assert len(errors) == 2
 
 
 # ── parse_pydantic_errors ─────────────────────────────────────────────────────
+
 
 class _DummyModel(BaseModel):
     x: int
@@ -144,6 +142,7 @@ def test_parse_pydantic_errors_multiple_fields() -> None:
 
 
 # ── find_dotenv ───────────────────────────────────────────────────────────────
+
 
 def test_find_dotenv_found_in_same_dir(
     monkeypatch: pytest.MonkeyPatch,

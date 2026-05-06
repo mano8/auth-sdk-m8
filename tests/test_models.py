@@ -1,6 +1,5 @@
 """Tests for auth_sdk_m8.models.shared."""
 
-
 from auth_sdk_m8.models.shared import Message, Token, TokenPayload
 
 

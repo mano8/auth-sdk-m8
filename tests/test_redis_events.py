@@ -1,4 +1,5 @@
 """Tests for auth_sdk_m8.redis_events (EventBus, EventPublisher, EventSubscriber)."""
+
 import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -16,6 +17,7 @@ pytestmark = pytest.mark.asyncio
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+
 def _make_redis_mock():
     mock_redis = MagicMock()
     mock_redis.publish = AsyncMock()
@@ -28,6 +30,7 @@ def _make_redis_mock():
 
 
 # ── EventPublisher ────────────────────────────────────────────────────────────
+
 
 async def test_event_publisher_publish() -> None:
     with patch("auth_sdk_m8.redis_events.publisher.redis.from_url") as mock_from_url:
@@ -54,6 +57,7 @@ async def test_event_publisher_close() -> None:
 
 
 # ── EventBus ──────────────────────────────────────────────────────────────────
+
 
 async def test_event_bus_publish() -> None:
     with patch("auth_sdk_m8.redis_events.event_bus.redis.from_url") as mock_from_url:
@@ -248,10 +252,9 @@ async def test_event_bus_close_catches_cancelled_error_from_sleep() -> None:
 
 # ── EventSubscriber ───────────────────────────────────────────────────────────
 
+
 async def test_event_subscriber_subscribe_processes_message() -> None:
-    with patch(
-        "auth_sdk_m8.redis_events.subscriber.redis.from_url"
-    ) as mock_from_url:
+    with patch("auth_sdk_m8.redis_events.subscriber.redis.from_url") as mock_from_url:
         mock_redis, mock_pubsub = _make_redis_mock()
         mock_from_url.return_value = mock_redis
 
@@ -273,13 +276,14 @@ async def test_event_subscriber_subscribe_processes_message() -> None:
         await subscriber.task
 
         handler.assert_called_once()
-        assert handler.call_args[0][0] == {"event_type": "user.deleted", "user_id": "xyz"}
+        assert handler.call_args[0][0] == {
+            "event_type": "user.deleted",
+            "user_id": "xyz",
+        }
 
 
 async def test_event_subscriber_subscribe_no_message() -> None:
-    with patch(
-        "auth_sdk_m8.redis_events.subscriber.redis.from_url"
-    ) as mock_from_url:
+    with patch("auth_sdk_m8.redis_events.subscriber.redis.from_url") as mock_from_url:
         mock_redis, mock_pubsub = _make_redis_mock()
         mock_from_url.return_value = mock_redis
 
@@ -302,9 +306,7 @@ async def test_event_subscriber_subscribe_no_message() -> None:
 
 
 async def test_event_subscriber_exception_handling() -> None:
-    with patch(
-        "auth_sdk_m8.redis_events.subscriber.redis.from_url"
-    ) as mock_from_url:
+    with patch("auth_sdk_m8.redis_events.subscriber.redis.from_url") as mock_from_url:
         mock_redis, mock_pubsub = _make_redis_mock()
         mock_from_url.return_value = mock_redis
 
@@ -321,9 +323,7 @@ async def test_event_subscriber_exception_handling() -> None:
         mock_pubsub.get_message = AsyncMock(side_effect=always_raises)
 
         subscriber = EventSubscriber(_REDIS_URL)
-        with patch(
-            "auth_sdk_m8.redis_events.subscriber.asyncio.sleep", mock_sleep
-        ):
+        with patch("auth_sdk_m8.redis_events.subscriber.asyncio.sleep", mock_sleep):
             await subscriber.subscribe("ch", AsyncMock())
             await sleep_started.wait()
             subscriber.task.cancel()
@@ -332,9 +332,7 @@ async def test_event_subscriber_exception_handling() -> None:
 
 
 async def test_event_subscriber_close_no_task() -> None:
-    with patch(
-        "auth_sdk_m8.redis_events.subscriber.redis.from_url"
-    ) as mock_from_url:
+    with patch("auth_sdk_m8.redis_events.subscriber.redis.from_url") as mock_from_url:
         mock_redis, mock_pubsub = _make_redis_mock()
         mock_from_url.return_value = mock_redis
 
@@ -347,9 +345,7 @@ async def test_event_subscriber_close_no_task() -> None:
 
 
 async def test_event_subscriber_close_cancels_task() -> None:
-    with patch(
-        "auth_sdk_m8.redis_events.subscriber.redis.from_url"
-    ) as mock_from_url:
+    with patch("auth_sdk_m8.redis_events.subscriber.redis.from_url") as mock_from_url:
         mock_redis, mock_pubsub = _make_redis_mock()
         mock_from_url.return_value = mock_redis
 
@@ -365,9 +361,7 @@ async def test_event_subscriber_close_cancels_task() -> None:
 
 async def test_event_subscriber_close_catches_cancelled_from_sleep() -> None:
     """Cover 'except CancelledError: pass' in EventSubscriber.close()."""
-    with patch(
-        "auth_sdk_m8.redis_events.subscriber.redis.from_url"
-    ) as mock_from_url:
+    with patch("auth_sdk_m8.redis_events.subscriber.redis.from_url") as mock_from_url:
         mock_redis, mock_pubsub = _make_redis_mock()
         mock_from_url.return_value = mock_redis
 
@@ -384,9 +378,7 @@ async def test_event_subscriber_close_catches_cancelled_from_sleep() -> None:
         mock_pubsub.get_message = AsyncMock(side_effect=always_raises)
 
         subscriber = EventSubscriber(_REDIS_URL)
-        with patch(
-            "auth_sdk_m8.redis_events.subscriber.asyncio.sleep", mock_sleep
-        ):
+        with patch("auth_sdk_m8.redis_events.subscriber.asyncio.sleep", mock_sleep):
             await subscriber.subscribe("ch", AsyncMock())
             await sleep_started.wait()
             await subscriber.close()

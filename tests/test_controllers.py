@@ -1,4 +1,5 @@
 """Tests for auth_sdk_m8.controllers.base."""
+
 from unittest.mock import MagicMock
 
 from pydantic import BaseModel, ValidationError
@@ -29,15 +30,17 @@ def test_get_error_responses() -> None:
 
 
 def test_handle_integrity_error_with_session() -> None:
-    exc = _make_integrity_error(
-        "Duplicate entry 'a@b.com' for key 'users.email'"
-    )
+    exc = _make_integrity_error("Duplicate entry 'a@b.com' for key 'users.email'")
     session = MagicMock()
     response = BaseController.handle_exception(exc, session)
     session.rollback.assert_called_once()
     assert response.status_code == 500
     body = response.body
-    assert b"integrity" in body.lower() or b"duplicate" in body.lower() or b"database" in body.lower()
+    assert (
+        b"integrity" in body.lower()
+        or b"duplicate" in body.lower()
+        or b"database" in body.lower()
+    )
 
 
 def test_handle_validation_error_no_session() -> None:

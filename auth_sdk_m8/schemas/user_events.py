@@ -1,4 +1,5 @@
 """User-related event schemas for the Redis event bus."""
+
 from auth_sdk_m8.schemas.redis_events import EventBase
 
 

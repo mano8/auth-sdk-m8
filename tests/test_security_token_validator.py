@@ -91,9 +91,7 @@ def test_validate_access_token_invalid_signature() -> None:
     )
 
     with pytest.raises(InvalidToken, match="Invalid access token"):
-        validator.validate_access_token(
-            make_access_token(secret="wrong-secret-key")
-        )
+        validator.validate_access_token(make_access_token(secret="wrong-secret-key"))
 
 
 def test_validate_access_token_invalid_payload_structure() -> None:
@@ -165,9 +163,7 @@ def test_validate_access_token_leeway_allows_near_expiry() -> None:
         secrets=TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256"),
         config=TokenValidationConfig(leeway_seconds=5),
     )
-    just_expired = int(
-        (datetime.now(timezone.utc) - timedelta(seconds=2)).timestamp()
-    )
+    just_expired = int((datetime.now(timezone.utc) - timedelta(seconds=2)).timestamp())
     token = make_access_token(exp=just_expired)
 
     payload = validator.validate_access_token(token)
@@ -230,9 +226,7 @@ def test_validate_access_token_with_key_resolver_and_kid() -> None:
             "email": "test@example.com",
             "role": "user",
             "jti": "test-jti-0000",
-            "exp": int(
-                (datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()
-            ),
+            "exp": int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()),
             "is_active": True,
             "email_verified": False,
             "is_superuser": False,
@@ -289,9 +283,7 @@ def test_validate_access_token_with_key_resolver_unknown_kid() -> None:
             "email": "test@example.com",
             "role": "user",
             "jti": "test-jti-0000",
-            "exp": int(
-                (datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()
-            ),
+            "exp": int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()),
             "is_active": True,
             "email_verified": False,
             "is_superuser": False,
@@ -348,9 +340,7 @@ def test_validate_access_token_with_key_resolver_disallowed_algorithm() -> None:
             "email": "test@example.com",
             "role": "user",
             "jti": "test-jti-0000",
-            "exp": int(
-                (datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()
-            ),
+            "exp": int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()),
             "is_active": True,
             "email_verified": False,
             "is_superuser": False,
