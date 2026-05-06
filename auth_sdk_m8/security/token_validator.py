@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from auth_sdk_m8.core.exceptions import InvalidToken
 from auth_sdk_m8.schemas.auth import TokenSecret, TokenUserData
+from auth_sdk_m8.security.key_resolver import KeyResolver
 from auth_sdk_m8.security.validation import TokenValidationConfig
 
 
@@ -21,21 +22,34 @@ class TokenValidator:
 
     def __init__(
         self,
-        secrets: TokenSecret,
+        secrets: TokenSecret | None,
         config: TokenValidationConfig,
+        key_resolver: KeyResolver | None = None,
     ) -> None:
-        self._secret = secrets.secret_key.get_secret_value()
+        self._default_secrets = secrets
         self._config = config
+        self._key_resolver = key_resolver
 
-        if secrets.algorithm not in self._config.allowed_algorithms:
+        if self._default_secrets is None and self._key_resolver is None:
             raise ValueError(
-                f"Algorithm '{secrets.algorithm}' not allowed by configuration"
+                "Either secrets or key_resolver must be provided"
+            )
+
+        if (
+            self._default_secrets is not None
+            and self._default_secrets.algorithm
+            not in self._config.allowed_algorithms
+        ):
+            raise ValueError(
+                "Algorithm "
+                f"'{self._default_secrets.algorithm}' not allowed by configuration"
             )
 
     def validate_access_token(self, token: str) -> TokenUserData:
         """Decode and validate an access token."""
+        secrets = self._resolve_secrets(token)
         decode_kwargs: dict[str, Any] = {
-            "key": self._secret,
+            "key": secrets.secret_key.get_secret_value(),
             "algorithms": self._config.allowed_algorithms,
             "options": {
                 "require": self._config.required_claims,
@@ -65,3 +79,26 @@ class TokenValidator:
             return TokenUserData(**payload)
         except ValidationError as ex:
             raise InvalidToken("Invalid access token") from ex
+
+    def _resolve_secrets(self, token: str) -> TokenSecret:
+        """Resolve the signing key for this token."""
+        if self._key_resolver is None:
+            assert self._default_secrets is not None
+            return self._default_secrets
+
+        try:
+            header = jwt.get_unverified_header(token)
+        except PyJWTError as ex:
+            raise InvalidToken("Invalid access token") from ex
+
+        try:
+            secrets = self._key_resolver.resolve(header.get("kid"))
+        except (LookupError, TypeError, ValueError) as ex:
+            raise InvalidToken("Invalid access token") from ex
+
+        if secrets.algorithm not in self._config.allowed_algorithms:
+            raise ValueError(
+                f"Algorithm '{secrets.algorithm}' not allowed by configuration"
+            )
+
+        return secrets
