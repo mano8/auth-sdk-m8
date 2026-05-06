@@ -1,4 +1,5 @@
 """Package-level import smoke test."""
+
 import tomllib
 from pathlib import Path
 

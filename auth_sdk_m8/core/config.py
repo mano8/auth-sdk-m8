@@ -20,6 +20,7 @@ Usage::
 
     settings = Settings()
 """
+
 from os import getenv
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple
@@ -39,6 +40,7 @@ from pydantic_settings import BaseSettings
 from auth_sdk_m8.schemas.shared import ValidationConstants
 
 # ── Secret providers ──────────────────────────────────────────────────────────
+
 
 class SecretProvider:
     """Abstract base for retrieving secrets from various backends."""
@@ -62,9 +64,7 @@ class VaultProvider(SecretProvider):
         try:
             import hvac  # noqa: PLC0415
         except ImportError as e:
-            raise RuntimeError(
-                "hvac library is required for Vault integration"
-            ) from e
+            raise RuntimeError("hvac library is required for Vault integration") from e
         self._client = hvac.Client(url=addr, token=token)
 
     def get(self, key: str) -> Optional[str]:
@@ -122,20 +122,14 @@ def parse_cors(value: str) -> List[str]:
         if not origin:
             continue
         if not host_pattern.match(origin):
-            raise ValueError(
-                f"Invalid host in BACKEND_CORS_ORIGINS: '{origin}'"
-            )
+            raise ValueError(f"Invalid host in BACKEND_CORS_ORIGINS: '{origin}'")
         origins.append(origin)
     if not origins:
-        raise ValueError(
-            "BACKEND_CORS_ORIGINS must contain at least one valid origin"
-        )
+        raise ValueError("BACKEND_CORS_ORIGINS must contain at least one valid origin")
     return origins
 
 
-REQUIRE_UPDATE_FIELDS: List[str] = [
-    "SECRET_KEY", "DB_PASSWORD", "REDIS_PASSWORD"
-]
+REQUIRE_UPDATE_FIELDS: List[str] = ["SECRET_KEY", "DB_PASSWORD", "REDIS_PASSWORD"]
 
 
 class CommonSettings(BaseSettings):
@@ -148,33 +142,38 @@ class CommonSettings(BaseSettings):
     ENV_FILE_DIR: ClassVar[Path] = Path(__file__).resolve().parent
 
     required_fields: ClassVar[List[str]] = [
-        "DOMAIN", "ENVIRONMENT", "API_PREFIX", "PROJECT_NAME", "STACK_NAME",
-        "STATIC_BASE_PATH", "TEMPLATES_BASE_PATH", "FRONTEND_HOST",
+        "DOMAIN",
+        "ENVIRONMENT",
+        "API_PREFIX",
+        "PROJECT_NAME",
+        "STACK_NAME",
+        "STATIC_BASE_PATH",
+        "TEMPLATES_BASE_PATH",
+        "FRONTEND_HOST",
     ]
     secret_fields: ClassVar[List[str]] = [
-        "SECRET_KEY", "ACCESS_SECRET_KEY", "REFRESH_SECRET_KEY",
-        "DB_PASSWORD", "REDIS_PASSWORD",
+        "SECRET_KEY",
+        "ACCESS_SECRET_KEY",
+        "REFRESH_SECRET_KEY",
+        "DB_PASSWORD",
+        "REDIS_PASSWORD",
     ]
     passwords: ClassVar[List[str]] = ["DB_PASSWORD", "REDIS_PASSWORD"]
     secret_keys: ClassVar[List[str]] = [
-        "SECRET_KEY", "ACCESS_SECRET_KEY", "REFRESH_SECRET_KEY",
+        "SECRET_KEY",
+        "ACCESS_SECRET_KEY",
+        "REFRESH_SECRET_KEY",
     ]
 
     # ── Core ──────────────────────────────────────────────────────────────────
     DOMAIN: str = Field(..., pattern=ValidationConstants.HOST_REGEX.pattern)
     ENVIRONMENT: Literal["local", "development", "staging", "production"]
-    API_PREFIX: str = Field(
-        ..., pattern=ValidationConstants.URL_PATH_STR_REGEX.pattern
-    )
+    API_PREFIX: str = Field(..., pattern=ValidationConstants.URL_PATH_STR_REGEX.pattern)
     SET_OPEN_API: bool = True
     SET_DOCS: bool = True
     SET_REDOC: bool = True
-    PROJECT_NAME: str = Field(
-        ..., pattern=ValidationConstants.KEY_REGEX.pattern
-    )
-    STACK_NAME: str = Field(
-        ..., pattern=ValidationConstants.SLUG_REGEX.pattern
-    )
+    PROJECT_NAME: str = Field(..., pattern=ValidationConstants.KEY_REGEX.pattern)
+    STACK_NAME: str = Field(..., pattern=ValidationConstants.SLUG_REGEX.pattern)
     STATIC_BASE_PATH: str = Field(
         ..., pattern=ValidationConstants.FILE_PATH_REGEX.pattern
     )
@@ -193,9 +192,7 @@ class CommonSettings(BaseSettings):
     def validate_cors_origins(cls, v: str) -> str:
         """Validate each origin in the comma-separated list."""
         if not isinstance(v, str):
-            raise ValueError(
-                "BACKEND_CORS_ORIGINS must be a comma-separated string."
-            )
+            raise ValueError("BACKEND_CORS_ORIGINS must be a comma-separated string.")
         parse_cors(v)
         return v
 
@@ -226,9 +223,7 @@ class CommonSettings(BaseSettings):
     DB_CHARSET: str = "utf8mb4"
     DB_HOST: str = Field(..., pattern=ValidationConstants.HOST_REGEX.pattern)
     DB_PORT: int = Field(..., ge=1, le=65535)
-    DB_DATABASE: str = Field(
-        ..., pattern=ValidationConstants.KEY_REGEX.pattern
-    )
+    DB_DATABASE: str = Field(..., pattern=ValidationConstants.KEY_REGEX.pattern)
     DB_USER: str = Field(..., pattern=ValidationConstants.KEY_REGEX.pattern)
     DB_PASSWORD: SecretStr
 
@@ -246,9 +241,7 @@ class CommonSettings(BaseSettings):
     @property
     def SQLALCHEMY_DATABASE_URI(self) -> str:
         """Build the SQLAlchemy connection URI for the selected database."""
-        validated_password = self._validate_password(
-            "DB_PASSWORD", self.DB_PASSWORD
-        )
+        validated_password = self._validate_password("DB_PASSWORD", self.DB_PASSWORD)
         encoded_password = quote_plus(validated_password.get_secret_value())
         credentials = (
             f"{self.DB_USER}:{encoded_password}@"
@@ -305,9 +298,7 @@ class CommonSettings(BaseSettings):
         for field_item in self.required_fields:
             val = getattr(self, field_item, None)
             if not val or (isinstance(val, str) and not val.strip()):
-                raise ValueError(
-                    f"'{field_item}' must be provided and not be empty."
-                )
+                raise ValueError(f"'{field_item}' must be provided and not be empty.")
         for field_item in self.secret_fields:
             val = getattr(self, field_item, None)
             if val is None:
@@ -315,10 +306,7 @@ class CommonSettings(BaseSettings):
             raw_val = (
                 val.get_secret_value() if hasattr(val, "get_secret_value") else val
             )
-            if (
-                isinstance(raw_val, str)
-                and raw_val.strip().lower() == insecure_default
-            ):
+            if isinstance(raw_val, str) and raw_val.strip().lower() == insecure_default:
                 raise ValueError(
                     f"Insecure default value for '{field_item}'. "
                     "Set a strong unique value."

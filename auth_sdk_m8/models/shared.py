@@ -3,6 +3,7 @@ Shared SQLModel mixins and base models.
 
 Requires the `db` extra:  pip install "auth-sdk-m8[db]"
 """
+
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -53,6 +54,4 @@ class Token(SQLModel):
 class TokenPayload(SQLModel):
     """Minimal JWT payload."""
 
-    sub: Optional[str] = Field(
-        default=None, description="Subject (usually user ID)"
-    )
+    sub: Optional[str] = Field(default=None, description="Subject (usually user ID)")

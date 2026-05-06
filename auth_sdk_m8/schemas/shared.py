@@ -1,6 +1,7 @@
 """
 Shared validation constants used across schemas and configuration.
 """
+
 import re
 
 
@@ -31,9 +32,7 @@ class ValidationConstants:
     #: Unix absolute path
     UNIX_PATH_REGEX: re.Pattern = re.compile(r"^\/[A-Za-z0-9_\-\/]+$")
     #: Absolute path (Unix or Windows)
-    FILE_PATH_REGEX: re.Pattern = re.compile(
-        r"^(?:\/|(?:[A-Z]:))[A-Za-z0-9_\-\/\\:]+$"
-    )
+    FILE_PATH_REGEX: re.Pattern = re.compile(r"^(?:\/|(?:[A-Z]:))[A-Za-z0-9_\-\/\\:]+$")
     #: Password: 8+ chars, upper, lower, digit, special, no spaces
     PASSWORD_REGEX: re.Pattern = re.compile(
         r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_])(?!.*\s).{8,}$"
@@ -49,11 +48,21 @@ class ValidationConstants:
     # Preserves tab (U+0009), LF (U+000A), CR (U+000D).
     CONTROL_CHAR_PATTERN: re.Pattern = re.compile(
         "["
-        + chr(0x0000) + "-" + chr(0x0008)
-        + chr(0x000B) + "-" + chr(0x000C)
-        + chr(0x000E) + "-" + chr(0x001F)
-        + chr(0x007F) + "-" + chr(0x009F)
-        + chr(0x200B) + "-" + chr(0x200D)
+        + chr(0x0000)
+        + "-"
+        + chr(0x0008)
+        + chr(0x000B)
+        + "-"
+        + chr(0x000C)
+        + chr(0x000E)
+        + "-"
+        + chr(0x001F)
+        + chr(0x007F)
+        + "-"
+        + chr(0x009F)
+        + chr(0x200B)
+        + "-"
+        + chr(0x200D)
         + chr(0xFEFF)
         + "]"
     )

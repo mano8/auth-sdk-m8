@@ -1,4 +1,5 @@
 """Shared enums and response schemas for m8 microservices."""
+
 from enum import Enum
 from typing import Any, Optional
 
@@ -27,15 +28,11 @@ class RoleType(str, Enum):
         return ["superadmin", "admin", "writer", "reader", "user"]
 
     @staticmethod
-    def is_valid_role_auth(
-        current_role: "RoleType", role_limit: "RoleType"
-    ) -> bool:
+    def is_valid_role_auth(current_role: "RoleType", role_limit: "RoleType") -> bool:
         """Return True if current_role has at least the privilege of role_limit."""
         ordered = RoleType.get_ordered_roles()
         try:
-            return ordered.index(current_role.value) <= ordered.index(
-                role_limit.value
-            )
+            return ordered.index(current_role.value) <= ordered.index(role_limit.value)
         except ValueError:
             return False
 
@@ -74,6 +71,7 @@ class LLMProviderType(str, Enum):
 
 
 # ── Response schemas ──────────────────────────────────────────────────────────
+
 
 class ResponseError(BaseModel):
     """Single field-level error detail."""

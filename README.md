@@ -22,7 +22,7 @@ pip install auth-sdk-m8
 ### Directly from GitHub
 
 ```bash
-pip install "auth-sdk-m8 @ git+https://github.com/mano8/auth-sdk-m8.git@v0.1.1"
+pip install "auth-sdk-m8 @ git+https://github.com/mano8/auth-sdk-m8.git@v0.2.0"
 ```
 
 ### For development (editable install)
@@ -74,20 +74,22 @@ pip install "auth-sdk-m8[redis]"
 ### Validate a JWT from auth_user_service
 
 ```python
-from auth_sdk_m8.core.security import ComSecurityHelper
-from auth_sdk_m8.core.exceptions import InvalidToken
-from auth_sdk_m8.schemas.auth import TokenDecodeProps
 from pydantic import SecretStr
+from auth_sdk_m8.core.exceptions import InvalidToken
+from auth_sdk_m8.schemas.auth import TokenSecret
+from auth_sdk_m8.security import TokenValidationConfig, TokenValidator
+
+validator = TokenValidator(
+    secrets=TokenSecret(
+        secret_key=SecretStr(ACCESS_SECRET_KEY),
+        algorithm="HS256",
+    ),
+    config=TokenValidationConfig(),
+)
 
 try:
-    user = ComSecurityHelper.decode_access_token(
-        TokenDecodeProps(
-            access_token=bearer_token,
-            secret_key=SecretStr(ACCESS_SECRET_KEY),
-            algorithm="HS256",
-        )
-    )
-    print(user.email, user.role)
+    payload = validator.validate_access_token(bearer_token)
+    print(payload.email, payload.role)
 except InvalidToken:
     # token expired or invalid signature
     ...
@@ -96,28 +98,35 @@ except InvalidToken:
 ### FastAPI dependency for token validation
 
 ```python
+from typing import Annotated
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
-from auth_sdk_m8.core.security import ComSecurityHelper
-from auth_sdk_m8.core.exceptions import InvalidToken
-from auth_sdk_m8.schemas.auth import TokenDecodeProps
-from auth_sdk_m8.schemas.user import UserModel
 from pydantic import SecretStr
+from auth_sdk_m8.core.exceptions import InvalidToken
+from auth_sdk_m8.schemas.auth import TokenSecret
+from auth_sdk_m8.schemas.user import UserModel
+from auth_sdk_m8.security import TokenValidationConfig, TokenValidator
 
 oauth2 = OAuth2PasswordBearer(tokenUrl="/auth/login/access-token")
+TokenDep = Annotated[str, Depends(oauth2)]
 
-def get_current_user(token: str = Depends(oauth2)) -> UserModel:
+# Create once at module level — avoid re-instantiating on every request.
+_validator = TokenValidator(
+    secrets=TokenSecret(
+        secret_key=SecretStr(settings.ACCESS_SECRET_KEY),
+        algorithm=settings.TOKEN_ALGORITHM,
+    ),
+    config=TokenValidationConfig(),
+)
+
+def get_current_user(token: TokenDep) -> UserModel:
     try:
-        payload = ComSecurityHelper.decode_access_token(
-            TokenDecodeProps(
-                access_token=token,
-                secret_key=SecretStr(settings.ACCESS_SECRET_KEY),
-                algorithm=settings.TOKEN_ALGORITHM,
-            )
-        )
+        payload = _validator.validate_access_token(token)
     except InvalidToken as exc:
         raise HTTPException(status_code=403, detail="Could not validate credentials.") from exc
-    return UserModel(id=payload.sub, **payload.model_dump(exclude={"sub", "jti", "exp", "type"}))
+    payload_dict = payload.model_dump(exclude={"sub", "jti", "exp", "type"})
+    payload_dict["id"] = payload.sub
+    return UserModel(**payload_dict)
 ```
 
 ### Extend CommonSettings for your service
@@ -181,7 +190,7 @@ asyncio.run(main())
 ```text
 auth_sdk_m8/
 ├── schemas/
-│   ├── auth.py          # JWT payload schemas (TokenUserData, TokenAccessData, …)
+│   ├── auth.py          # JWT payload schemas (TokenUserData, TokenAccessData, TokenSecret, …)
 │   ├── base.py          # Enums (AuthProviderType, RoleType, Period) + response models
 │   ├── shared.py        # ValidationConstants (regex patterns)
 │   ├── user.py          # UserModel, SessionModel
@@ -190,11 +199,20 @@ auth_sdk_m8/
 ├── core/
 │   ├── config.py        # CommonSettings (pydantic-settings base class)
 │   ├── exceptions.py    # InvalidToken
-│   └── security.py      # ComSecurityHelper: JWT decode, PKCE, token hashing
+│   └── security.py      # ComSecurityHelper (legacy helpers: PKCE, token hashing)
+├── security/
+│   ├── token_validator.py       # TokenValidator — stateless JWT access-token validation
+│   ├── token_policy.py          # TokenPolicy — stateful validation with revocation store
+│   ├── refresh_token_policy.py  # RefreshTokenPolicy — one-time-use refresh token rotation
+│   ├── refresh_token_store.py   # RefreshTokenStore protocol (implement against Redis, DB, …)
+│   ├── session_store.py         # SessionStore protocol (revocation checks)
+│   ├── key_resolver.py          # KeyResolver protocol (dynamic kid-based key lookup)
+│   ├── hooks.py                 # ValidationHooks protocol (observability callbacks)
+│   └── validation.py            # TokenValidationConfig (algorithm whitelist, claim rules)
 ├── redis_events/
 │   ├── event_bus.py     # EventBus (typed pub/sub)
 │   ├── publisher.py     # EventPublisher
-│   └── subscriber.py    # EventSubscriber
+│   └── subscriber.py   # EventSubscriber
 ├── controllers/
 │   └── base.py          # BaseController: unified exception → JSONResponse
 ├── models/
@@ -220,50 +238,140 @@ auth_sdk_m8/
 
 This SDK is intentionally thin. It contains **no business logic** — only schemas,
 validation helpers, and infrastructure base classes. Each consuming service validates
-JWTs locally using `ComSecurityHelper` (no network call per request). The `auth_user_service`
-remains the sole authority for issuing tokens; this SDK only provides the tools to
-**read** them.
+JWTs locally (no network call per request). The `auth_user_service` remains the sole
+authority for **issuing** tokens; this SDK provides the tools to **read** and **rotate** them.
 
-For production deployments with multiple teams, consider switching to **RS256** asymmetric
-signing so consuming services only need the public key (never the secret).
+For multi-team deployments consider **RS256** or **ES256** asymmetric signing — consuming
+services only need the public key, never the signing secret.
 
-## Validation Models
+---
+
+## Validation models
 
 ### Stateless (default)
 
-- Pure JWT validation
-- No Redis dependency
-- Recommended for most services
-
-### Stateful (optional)
-
-- Adds revocation checks via `SessionStore`
-- Requires an external store such as Redis
-- Use for high-risk operations or admin APIs
+Pure JWT validation with no I/O dependency — recommended for most services.
 
 ```python
 from pydantic import SecretStr
-
 from auth_sdk_m8.schemas.auth import TokenSecret
-from auth_sdk_m8.security import TokenPolicy, TokenValidationConfig, TokenValidator
+from auth_sdk_m8.security import TokenValidationConfig, TokenValidator
 
 validator = TokenValidator(
     secrets=TokenSecret(
         secret_key=SecretStr(ACCESS_SECRET_KEY),
         algorithm="HS256",
     ),
-    config=TokenValidationConfig(
-        issuer="auth.service",
-        audience="orders-service",
-        require_iss=False,
-        require_aud=False,
-    ),
+    config=TokenValidationConfig(),
 )
 
-# Stateless validation
 payload = validator.validate_access_token(token)
+```
 
-# Optional stateful validation
+### Stateful (optional)
+
+Adds revocation checks via `SessionStore` — use for admin APIs or high-risk operations.
+
+```python
+from auth_sdk_m8.security import TokenPolicy
+
 policy = TokenPolicy(validator, store=my_session_store)
-payload = await policy.validate(token)
+payload = await policy.validate(token)  # raises InvalidToken if JTI is revoked
+```
+
+### Refresh token rotation
+
+`RefreshTokenPolicy` enforces one-time use and atomic JTI rotation. A reused refresh
+token is rejected immediately, which acts as a compromise signal.
+
+```python
+import uuid
+from auth_sdk_m8.security import RefreshTokenPolicy
+
+policy = RefreshTokenPolicy(
+    secrets=refresh_secrets,
+    store=my_refresh_store,  # implements RefreshTokenStore protocol
+)
+
+# On each refresh request:
+user_id, old_jti = await policy.validate_and_rotate(
+    token=refresh_token,
+    new_jti=str(uuid.uuid4()),
+    ttl_seconds=86_400,
+)
+# old_jti is now revoked; issue a new token pair for user_id
+
+# On logout:
+await policy.revoke(jti)
+```
+
+Implement `RefreshTokenStore` against Redis or any backend:
+
+```python
+class RedisRefreshStore:
+    def __init__(self, redis) -> None:
+        self._r = redis
+
+    async def is_valid(self, jti: str) -> bool:
+        return bool(await self._r.exists(f"rt:{jti}"))
+
+    async def rotate(self, old_jti: str, new_jti: str, ttl_seconds: int) -> None:
+        pipe = self._r.pipeline()
+        pipe.delete(f"rt:{old_jti}")
+        pipe.setex(f"rt:{new_jti}", ttl_seconds, "1")
+        await pipe.execute()
+
+    async def revoke(self, jti: str) -> None:
+        await self._r.delete(f"rt:{jti}")
+```
+
+### Observability hooks
+
+Attach structured logging, metrics, or tracing via `ValidationHooks`:
+
+```python
+import logging
+from auth_sdk_m8.security import ValidationHooks
+
+class LogHooks:
+    def on_success(self, *, jti: str, sub: str, token_type: str) -> None:
+        logging.info("token_ok type=%s sub=%s jti=%s", token_type, sub, jti)
+
+    def on_failure(self, *, reason: str, token_type: str) -> None:
+        logging.warning("token_fail type=%s reason=%s", token_type, reason)
+
+validator = TokenValidator(secrets=..., config=..., hooks=LogHooks())
+```
+
+Failure reasons: `"expired"`, `"invalid"`, `"wrong_type"`, `"invalid_payload"`, `"revoked"`, `"reused"`.
+
+### Key rotation
+
+Resolve keys dynamically from the JWT `kid` header while keeping verification local:
+
+```python
+from auth_sdk_m8.security import KeyResolver, TokenValidationConfig, TokenValidator
+
+class MyResolver(KeyResolver):
+    def resolve(self, kid: str | None):
+        return lookup_token_secret(kid)
+
+validator = TokenValidator(
+    secrets=None,
+    config=TokenValidationConfig(),
+    key_resolver=MyResolver(),
+)
+```
+
+### Asymmetric keys (RS256 / ES256)
+
+```python
+from pydantic import SecretStr
+from auth_sdk_m8.schemas.auth import TokenSecret
+
+# Public key used for verification only — never share the private key with consumers.
+ts = TokenSecret(
+    secret_key=SecretStr(open("public.pem").read()),
+    algorithm="RS256",
+)
 ```

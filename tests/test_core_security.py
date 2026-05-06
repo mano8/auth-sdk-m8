@@ -1,4 +1,5 @@
 """Tests for auth_sdk_m8.core.security."""
+
 import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -12,6 +13,7 @@ from auth_sdk_m8.schemas.auth import TokenDecodeProps, TokenSecret
 from tests.conftest import VALID_KEY, make_access_token, make_refresh_token
 
 # ── decode_access_token ───────────────────────────────────────────────────────
+
 
 def test_decode_access_token_valid() -> None:
     token = make_access_token()
@@ -75,9 +77,7 @@ def test_decode_access_token_malformed() -> None:
 
 def test_decode_access_token_legacy_wrapper_keeps_zero_leeway() -> None:
     token = make_access_token(
-        exp=int(
-            (datetime.now(timezone.utc) - timedelta(seconds=2)).timestamp()
-        )
+        exp=int((datetime.now(timezone.utc) - timedelta(seconds=2)).timestamp())
     )
     props = TokenDecodeProps(
         access_token=token,
@@ -92,6 +92,7 @@ def test_decode_access_token_legacy_wrapper_keeps_zero_leeway() -> None:
 
 # ── decode_refresh_token ──────────────────────────────────────────────────────
 
+
 def test_decode_refresh_token_returns_user_id() -> None:
     sub = "550e8400-e29b-41d4-a716-446655440000"
     token = make_refresh_token(sub=sub)
@@ -104,7 +105,9 @@ def test_decode_refresh_token_with_jti() -> None:
     sub = "550e8400-e29b-41d4-a716-446655440000"
     token = make_refresh_token(sub=sub)
     secrets = TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256")
-    user_id, jti = ComSecurityHelper.decode_refresh_token(token, secrets, return_jti=True)
+    user_id, jti = ComSecurityHelper.decode_refresh_token(
+        token, secrets, return_jti=True
+    )
     assert user_id == uuid.UUID(sub)
     assert jti == "test-jti-0000"
 
@@ -130,9 +133,7 @@ def test_decode_refresh_token_expired_branch() -> None:
             "sub": "550e8400-e29b-41d4-a716-446655440000",
             "type": "refresh",
             "jti": "test-jti-0000",
-            "exp": int(
-                (datetime.now(timezone.utc) - timedelta(hours=1)).timestamp()
-            ),
+            "exp": int((datetime.now(timezone.utc) - timedelta(hours=1)).timestamp()),
         }
 
         with pytest.raises(InvalidToken, match="Refresh token expired"):
@@ -146,9 +147,7 @@ def test_decode_refresh_token_missing_jti() -> None:
             "sub": "550e8400-e29b-41d4-a716-446655440000",
             "type": "refresh",
             "jti": None,
-            "exp": int(
-                (datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()
-            ),
+            "exp": int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()),
         }
 
         with pytest.raises(InvalidToken, match="Invalid refresh token"):
@@ -156,6 +155,7 @@ def test_decode_refresh_token_missing_jti() -> None:
 
 
 # ── cookie helpers ────────────────────────────────────────────────────────────
+
 
 def test_get_refresh_token_from_cookie_present() -> None:
     result = ComSecurityHelper.get_refresh_token_from_cookie("my-refresh-token")
@@ -184,6 +184,7 @@ def test_get_access_token_from_cookie_missing() -> None:
 
 
 # ── misc helpers ──────────────────────────────────────────────────────────────
+
 
 def test_hash_token_deterministic() -> None:
     h1 = ComSecurityHelper.hash_token("mytoken")

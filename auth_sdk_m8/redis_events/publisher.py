@@ -3,6 +3,7 @@ Lightweight Redis event publisher.
 
 Requires the `redis` extra:  pip install "auth-sdk-m8[redis]"
 """
+
 import json
 import logging
 from typing import Any, Dict

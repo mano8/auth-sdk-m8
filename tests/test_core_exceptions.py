@@ -1,4 +1,5 @@
 """Tests for auth_sdk_m8.core.exceptions."""
+
 import pytest
 
 from auth_sdk_m8.core.exceptions import InvalidToken

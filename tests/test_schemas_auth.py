@@ -1,4 +1,5 @@
 """Tests for auth_sdk_m8.schemas.auth."""
+
 import pytest
 from pydantic import SecretStr, ValidationError
 
@@ -108,3 +109,40 @@ def test_token_payload() -> None:
     d = TokenPayload(sub="u", email="a@b.com")
     assert d.sub == "u"
     assert d.role == RoleType.USER
+
+
+# ── Asymmetric key support ───────────────────────────────────────────────────
+
+
+def test_token_secret_rs256_accepts_pem_key() -> None:
+    # PEM public keys don't match SECRET_KEY_REGEX — must be allowed for RS256.
+    pem = (
+        "-----BEGIN PUBLIC KEY-----\n"
+        "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA\n"
+        "-----END PUBLIC KEY-----"
+    )
+    ts = TokenSecret(secret_key=SecretStr(pem), algorithm="RS256")
+    assert ts.algorithm == "RS256"
+    assert ts.secret_key.get_secret_value() == pem
+
+
+def test_token_secret_es256_accepts_pem_key() -> None:
+    pem = (
+        "-----BEGIN PUBLIC KEY-----\n"
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE\n"
+        "-----END PUBLIC KEY-----"
+    )
+    ts = TokenSecret(secret_key=SecretStr(pem), algorithm="ES256")
+    assert ts.algorithm == "ES256"
+
+
+def test_token_secret_hs256_still_validates_strength() -> None:
+    with pytest.raises(ValidationError, match="Invalid secret key format"):
+        TokenSecret(secret_key=SecretStr("weak"), algorithm="HS256")
+
+
+def test_token_secret_es256_is_valid_algorithm() -> None:
+    # Verifies that ES256 is accepted as a TokenAlgorithm literal.
+    pem = "-----BEGIN PUBLIC KEY-----\nMFkw\n-----END PUBLIC KEY-----"
+    ts = TokenSecret(secret_key=SecretStr(pem), algorithm="ES256")
+    assert ts.algorithm == "ES256"

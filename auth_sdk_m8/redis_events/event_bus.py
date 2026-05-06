@@ -3,6 +3,7 @@ Typed Redis Pub/Sub event bus.
 
 Requires the `redis` extra:  pip install "auth-sdk-m8[redis]"
 """
+
 import asyncio
 import json
 import logging

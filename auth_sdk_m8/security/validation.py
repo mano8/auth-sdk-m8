@@ -21,9 +21,7 @@ class TokenValidationConfig(BaseModel):
     required_claims: list[str] = Field(
         default_factory=lambda: ["exp", "sub", "jti", "type"]
     )
-    allowed_algorithms: list[str] = Field(
-        default_factory=lambda: ["HS256"]
-    )
+    allowed_algorithms: list[str] = Field(default_factory=lambda: ["HS256"])
     leeway_seconds: int = 5
 
     @model_validator(mode="after")
@@ -32,9 +30,7 @@ class TokenValidationConfig(BaseModel):
         if self.require_iss and not self.issuer:
             raise ValueError("issuer must be provided when require_iss=True")
         if self.require_aud and not self.audience:
-            raise ValueError(
-                "audience must be provided when require_aud=True"
-            )
+            raise ValueError("audience must be provided when require_aud=True")
         if not self.allowed_algorithms:
             raise ValueError("allowed_algorithms must not be empty")
         return self

@@ -1,4 +1,5 @@
 """Tests for auth_sdk_m8.core.config."""
+
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -15,6 +16,7 @@ from tests.conftest import VALID_SETTINGS_KWARGS, IsolatedSettings
 
 # ── SecretProvider ────────────────────────────────────────────────────────────
 
+
 def test_secret_provider_get_raises() -> None:
     provider = SecretProvider()
     with pytest.raises(NotImplementedError):
@@ -22,6 +24,7 @@ def test_secret_provider_get_raises() -> None:
 
 
 # ── EnvProvider ───────────────────────────────────────────────────────────────
+
 
 def test_env_provider_get_present(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TEST_MY_SECRET", "mysecretvalue")
@@ -34,6 +37,7 @@ def test_env_provider_get_missing(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 # ── VaultProvider ─────────────────────────────────────────────────────────────
+
 
 def test_vault_provider_no_hvac() -> None:
     with patch.dict(sys.modules, {"hvac": None}):
@@ -57,15 +61,14 @@ def test_vault_provider_get_missing_key() -> None:
     mock_hvac = MagicMock()
     mock_client = MagicMock()
     mock_hvac.Client.return_value = mock_client
-    mock_client.secrets.kv.v2.read_secret_version.return_value = {
-        "data": {"data": {}}
-    }
+    mock_client.secrets.kv.v2.read_secret_version.return_value = {"data": {"data": {}}}
     with patch.dict(sys.modules, {"hvac": mock_hvac}):
         provider = VaultProvider("http://vault:8200", "token")
         assert provider.get("MISSING") is None
 
 
 # ── settings_customise_sources ────────────────────────────────────────────────
+
 
 def test_settings_customise_sources_local(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ENVIRONMENT", "local")
@@ -147,6 +150,7 @@ def test_settings_customise_sources_vault_no_addr(
 
 # ── parse_cors ────────────────────────────────────────────────────────────────
 
+
 def test_parse_cors_single_valid() -> None:
     result = parse_cors("http://localhost:3000")
     assert result == ["http://localhost:3000"]
@@ -174,6 +178,7 @@ def test_parse_cors_empty_string() -> None:
 
 
 # ── CommonSettings ────────────────────────────────────────────────────────────
+
 
 def test_common_settings_valid(valid_settings: IsolatedSettings) -> None:
     assert valid_settings.DOMAIN == "localhost"
