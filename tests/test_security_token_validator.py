@@ -8,12 +8,34 @@ from pydantic import SecretStr
 
 from auth_sdk_m8.core.exceptions import InvalidToken
 from auth_sdk_m8.schemas.auth import TokenSecret
-from auth_sdk_m8.security import TokenValidationConfig, TokenValidator
+from auth_sdk_m8.security import (
+    KeyResolver,
+    TokenValidationConfig,
+    TokenValidator,
+)
 from tests.conftest import VALID_KEY, make_access_token
 
+ROTATED_KEY = "Bcdefg-2345_ABC-bcdefg-hijklm-nopqrs-tuvwxy"
 
-def _encode_access(payload: dict, secret: str = VALID_KEY) -> str:
-    return jwt.encode(payload, secret, algorithm="HS256")
+
+def _encode_access(
+    payload: dict,
+    secret: str = VALID_KEY,
+    headers: dict | None = None,
+) -> str:
+    return jwt.encode(payload, secret, algorithm="HS256", headers=headers)
+
+
+class _MapResolver(KeyResolver):
+    def __init__(self, mapping: dict[str | None, TokenSecret]) -> None:
+        self.mapping = mapping
+        self.calls: list[str | None] = []
+
+    def resolve(self, kid: str | None) -> TokenSecret:
+        self.calls.append(kid)
+        if kid not in self.mapping:
+            raise KeyError(kid)
+        return self.mapping[kid]
 
 
 def test_validate_access_token_valid() -> None:
@@ -177,6 +199,170 @@ def test_token_validator_rejects_disallowed_algorithm() -> None:
             ),
             config=TokenValidationConfig(allowed_algorithms=["RS256"]),
         )
+
+
+def test_token_validator_requires_static_secret_or_key_resolver() -> None:
+    with pytest.raises(
+        ValueError,
+        match="Either secrets or key_resolver must be provided",
+    ):
+        TokenValidator(secrets=None, config=TokenValidationConfig())
+
+
+def test_validate_access_token_with_key_resolver_and_kid() -> None:
+    resolver = _MapResolver(
+        {
+            "old-key": TokenSecret(
+                secret_key=SecretStr(ROTATED_KEY),
+                algorithm="HS256",
+            )
+        }
+    )
+    validator = TokenValidator(
+        secrets=None,
+        config=TokenValidationConfig(),
+        key_resolver=resolver,
+    )
+    token = _encode_access(
+        {
+            "sub": "user-123",
+            "type": "access",
+            "email": "test@example.com",
+            "role": "user",
+            "jti": "test-jti-0000",
+            "exp": int(
+                (datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()
+            ),
+            "is_active": True,
+            "email_verified": False,
+            "is_superuser": False,
+        },
+        secret=ROTATED_KEY,
+        headers={"kid": "old-key"},
+    )
+
+    payload = validator.validate_access_token(token)
+
+    assert payload.sub == "user-123"
+    assert resolver.calls == ["old-key"]
+
+
+def test_validate_access_token_with_key_resolver_missing_kid() -> None:
+    resolver = _MapResolver(
+        {
+            None: TokenSecret(
+                secret_key=SecretStr(VALID_KEY),
+                algorithm="HS256",
+            )
+        }
+    )
+    validator = TokenValidator(
+        secrets=None,
+        config=TokenValidationConfig(),
+        key_resolver=resolver,
+    )
+
+    payload = validator.validate_access_token(make_access_token())
+
+    assert payload.sub == "user-123"
+    assert resolver.calls == [None]
+
+
+def test_validate_access_token_with_key_resolver_unknown_kid() -> None:
+    resolver = _MapResolver(
+        {
+            "current-key": TokenSecret(
+                secret_key=SecretStr(VALID_KEY),
+                algorithm="HS256",
+            )
+        }
+    )
+    validator = TokenValidator(
+        secrets=None,
+        config=TokenValidationConfig(),
+        key_resolver=resolver,
+    )
+    token = _encode_access(
+        {
+            "sub": "user-123",
+            "type": "access",
+            "email": "test@example.com",
+            "role": "user",
+            "jti": "test-jti-0000",
+            "exp": int(
+                (datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()
+            ),
+            "is_active": True,
+            "email_verified": False,
+            "is_superuser": False,
+        },
+        secret=VALID_KEY,
+        headers={"kid": "missing-key"},
+    )
+
+    with pytest.raises(InvalidToken, match="Invalid access token"):
+        validator.validate_access_token(token)
+
+    assert resolver.calls == ["missing-key"]
+
+
+def test_validate_access_token_with_key_resolver_invalid_header() -> None:
+    resolver = _MapResolver(
+        {
+            None: TokenSecret(
+                secret_key=SecretStr(VALID_KEY),
+                algorithm="HS256",
+            )
+        }
+    )
+    validator = TokenValidator(
+        secrets=None,
+        config=TokenValidationConfig(),
+        key_resolver=resolver,
+    )
+
+    with pytest.raises(InvalidToken, match="Invalid access token"):
+        validator.validate_access_token("not-a-jwt")
+
+    assert resolver.calls == []
+
+
+def test_validate_access_token_with_key_resolver_disallowed_algorithm() -> None:
+    resolver = _MapResolver(
+        {
+            "old-key": TokenSecret(
+                secret_key=SecretStr(ROTATED_KEY),
+                algorithm="RS256",
+            )
+        }
+    )
+    validator = TokenValidator(
+        secrets=None,
+        config=TokenValidationConfig(allowed_algorithms=["HS256"]),
+        key_resolver=resolver,
+    )
+    token = _encode_access(
+        {
+            "sub": "user-123",
+            "type": "access",
+            "email": "test@example.com",
+            "role": "user",
+            "jti": "test-jti-0000",
+            "exp": int(
+                (datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()
+            ),
+            "is_active": True,
+            "email_verified": False,
+            "is_superuser": False,
+        },
+        secret=ROTATED_KEY,
+        headers={"kid": "old-key"},
+    )
+
+    with pytest.raises(ValueError, match="not allowed by configuration"):
+        validator.validate_access_token(token)
+
+    assert resolver.calls == ["old-key"]
 
 
 def test_token_validation_config_strict_profile() -> None:
