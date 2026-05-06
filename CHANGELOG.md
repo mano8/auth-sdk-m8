@@ -16,6 +16,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - `TokenValidator` for pure JWT validation
   - `TokenPolicy` for optional async revocation checks
   - `SessionStore` protocol for pluggable stateful validation backends
+  - `KeyResolver` protocol for `kid`-based key lookup and rotation windows
   - `TokenValidationConfig` with permissive defaults and a stricter preset for new integrations
 - README documentation for stateless versus stateful validation, plus validator/policy integration examples
 
@@ -23,6 +24,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 - `ComSecurityHelper.decode_access_token()` now routes through the new `TokenValidator` and emits a `DeprecationWarning` while preserving legacy-compatible validation behavior
 - `TokenValidationConfig.strict()` now includes hardened claim requirements including `iat` and `nbf`
+- `TokenValidator` now supports either a static `TokenSecret` or dynamic `kid`-based key resolution while keeping verification local
 - Test suite coverage was expanded substantially around the new security layer and deterministic path/config behavior
 
 ### Fixed
