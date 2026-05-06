@@ -1,5 +1,4 @@
 """Tests for auth_sdk_m8.schemas.base."""
-import pytest
 
 from auth_sdk_m8.schemas.base import (
     AuthProviderType,
@@ -9,8 +8,8 @@ from auth_sdk_m8.schemas.base import (
     PromptBlockType,
     ResponseError,
     ResponseErrorBase,
-    ResponseModelBase,
     ResponseMessage,
+    ResponseModelBase,
     RoleType,
 )
 
