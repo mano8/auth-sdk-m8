@@ -22,9 +22,10 @@ def test_parse_integrity_error_unique_constraint() -> None:
     )
     errors = parse_integrity_error(exc)
     assert len(errors) == 1
-    assert errors[0]["table"] == "users"
-    assert errors[0]["field_name"] == "email"
-    assert "Duplicate entry" in errors[0]["error"]
+    assert errors[0].table == "users"
+    assert errors[0].field_name == "email"
+    assert errors[0].error is not None
+    assert "Duplicate entry" in errors[0].error
 
 
 def test_parse_integrity_error_foreign_key() -> None:
@@ -33,35 +34,38 @@ def test_parse_integrity_error_foreign_key() -> None:
     )
     errors = parse_integrity_error(exc)
     assert len(errors) == 1
-    assert errors[0]["table"] == "users"
-    assert errors[0]["field_name"] == "user_id"
-    assert "foreign key" in errors[0]["error"]
+    assert errors[0].table == "users"
+    assert errors[0].field_name == "user_id"
+    assert errors[0].error is not None
+    assert "foreign key" in errors[0].error
 
 
 def test_parse_integrity_error_not_null() -> None:
     exc = _make_integrity_error("Column 'email' cannot be null")
     errors = parse_integrity_error(exc)
     assert len(errors) == 1
-    assert errors[0]["field_name"] == "email"
-    assert errors[0]["table"] is None
-    assert "cannot be null" in errors[0]["error"]
+    assert errors[0].field_name == "email"
+    assert errors[0].table is None
+    assert errors[0].error is not None
+    assert "cannot be null" in errors[0].error
 
 
 def test_parse_integrity_error_no_default() -> None:
     exc = _make_integrity_error("Field 'username' doesn't have a default value")
     errors = parse_integrity_error(exc)
     assert len(errors) == 1
-    assert errors[0]["field_name"] == "username"
-    assert "requires a value" in errors[0]["error"]
+    assert errors[0].field_name == "username"
+    assert errors[0].error is not None
+    assert "requires a value" in errors[0].error
 
 
 def test_parse_integrity_error_unknown() -> None:
     exc = _make_integrity_error("Some completely unknown DB error")
     errors = parse_integrity_error(exc)
     assert len(errors) == 1
-    assert errors[0]["error"] == "Unknown database integrity error"
-    assert errors[0]["table"] is None
-    assert errors[0]["field_name"] is None
+    assert errors[0].error == "Unknown database integrity error"
+    assert errors[0].table is None
+    assert errors[0].field_name is None
 
 
 # ── PostgreSQL patterns ───────────────────────────────────────────────────────
@@ -73,8 +77,9 @@ def test_parse_integrity_error_pg_unique() -> None:
     )
     errors = parse_integrity_error(exc)
     assert len(errors) == 1
-    assert errors[0]["field_name"] == "email"
-    assert "Duplicate entry" in errors[0]["error"]
+    assert errors[0].field_name == "email"
+    assert errors[0].error is not None
+    assert "Duplicate entry" in errors[0].error
 
 
 def test_parse_integrity_error_pg_foreign_key() -> None:
@@ -84,9 +89,10 @@ def test_parse_integrity_error_pg_foreign_key() -> None:
     )
     errors = parse_integrity_error(exc)
     assert len(errors) == 1
-    assert errors[0]["field_name"] == "user_id"
-    assert errors[0]["table"] == "users"
-    assert "foreign key" in errors[0]["error"]
+    assert errors[0].field_name == "user_id"
+    assert errors[0].table == "users"
+    assert errors[0].error is not None
+    assert "foreign key" in errors[0].error
 
 
 def test_parse_integrity_error_pg_not_null() -> None:
@@ -96,9 +102,10 @@ def test_parse_integrity_error_pg_not_null() -> None:
     )
     errors = parse_integrity_error(exc)
     assert len(errors) == 1
-    assert errors[0]["field_name"] == "email"
-    assert errors[0]["table"] == "users"
-    assert "cannot be null" in errors[0]["error"]
+    assert errors[0].field_name == "email"
+    assert errors[0].table == "users"
+    assert errors[0].error is not None
+    assert "cannot be null" in errors[0].error
 
 
 def test_parse_integrity_error_multiple_matches() -> None:
@@ -124,8 +131,8 @@ def test_parse_pydantic_errors_single_field() -> None:
     except ValidationError as exc:
         errors = parse_pydantic_errors(exc)
     assert len(errors) >= 1
-    assert errors[0]["field_name"] == "x"
-    assert errors[0]["error"]
+    assert errors[0].field_name == "x"
+    assert errors[0].error
 
 
 def test_parse_pydantic_errors_multiple_fields() -> None:
