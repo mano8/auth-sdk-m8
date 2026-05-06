@@ -3,7 +3,6 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-import jwt
 import pytest
 from pydantic import SecretStr
 
@@ -11,7 +10,6 @@ from auth_sdk_m8.core.exceptions import InvalidToken
 from auth_sdk_m8.core.security import ComSecurityHelper
 from auth_sdk_m8.schemas.auth import TokenDecodeProps, TokenSecret
 from tests.conftest import VALID_KEY, make_access_token, make_refresh_token
-
 
 # ── decode_access_token ───────────────────────────────────────────────────────
 
@@ -22,7 +20,8 @@ def test_decode_access_token_valid() -> None:
         secret_key=SecretStr(VALID_KEY),
         algorithm="HS256",
     )
-    data = ComSecurityHelper.decode_access_token(props)
+    with pytest.warns(DeprecationWarning, match="use TokenValidator"):
+        data = ComSecurityHelper.decode_access_token(props)
     assert data.sub == "user-123"
     assert data.email == "test@example.com"
 
@@ -34,29 +33,19 @@ def test_decode_access_token_wrong_type() -> None:
         secret_key=SecretStr(VALID_KEY),
         algorithm="HS256",
     )
-    with pytest.raises(InvalidToken, match="Not an access token"):
-        ComSecurityHelper.decode_access_token(props)
+    with pytest.warns(DeprecationWarning, match="use TokenValidator"):
+        with pytest.raises(InvalidToken, match="Not an access token"):
+            ComSecurityHelper.decode_access_token(props)
 
 
 def test_decode_access_token_manually_expired() -> None:
     past = int((datetime.now(timezone.utc) - timedelta(hours=1)).timestamp())
-    with patch("auth_sdk_m8.core.security.jwt.decode") as mock_decode:
-        mock_decode.return_value = {
-            "sub": "user-123",
-            "type": "access",
-            "exp": past,
-            "email": "test@example.com",
-            "role": "user",
-            "jti": "abc",
-            "is_active": True,
-            "email_verified": False,
-            "is_superuser": False,
-        }
-        props = TokenDecodeProps(
-            access_token="any",
-            secret_key=SecretStr(VALID_KEY),
-            algorithm="HS256",
-        )
+    props = TokenDecodeProps(
+        access_token=make_access_token(exp=past),
+        secret_key=SecretStr(VALID_KEY),
+        algorithm="HS256",
+    )
+    with pytest.warns(DeprecationWarning, match="use TokenValidator"):
         with pytest.raises(InvalidToken, match="Access token expired"):
             ComSecurityHelper.decode_access_token(props)
 
@@ -68,8 +57,9 @@ def test_decode_access_token_invalid_signature() -> None:
         secret_key=SecretStr(VALID_KEY),
         algorithm="HS256",
     )
-    with pytest.raises(InvalidToken, match="Invalid access token"):
-        ComSecurityHelper.decode_access_token(props)
+    with pytest.warns(DeprecationWarning, match="use TokenValidator"):
+        with pytest.raises(InvalidToken, match="Invalid access token"):
+            ComSecurityHelper.decode_access_token(props)
 
 
 def test_decode_access_token_malformed() -> None:
@@ -78,8 +68,26 @@ def test_decode_access_token_malformed() -> None:
         secret_key=SecretStr(VALID_KEY),
         algorithm="HS256",
     )
-    with pytest.raises(InvalidToken):
-        ComSecurityHelper.decode_access_token(props)
+    with pytest.warns(DeprecationWarning, match="use TokenValidator"):
+        with pytest.raises(InvalidToken):
+            ComSecurityHelper.decode_access_token(props)
+
+
+def test_decode_access_token_legacy_wrapper_keeps_zero_leeway() -> None:
+    token = make_access_token(
+        exp=int(
+            (datetime.now(timezone.utc) - timedelta(seconds=2)).timestamp()
+        )
+    )
+    props = TokenDecodeProps(
+        access_token=token,
+        secret_key=SecretStr(VALID_KEY),
+        algorithm="HS256",
+    )
+
+    with pytest.warns(DeprecationWarning, match="use TokenValidator"):
+        with pytest.raises(InvalidToken, match="Access token expired"):
+            ComSecurityHelper.decode_access_token(props)
 
 
 # ── decode_refresh_token ──────────────────────────────────────────────────────
@@ -113,6 +121,38 @@ def test_decode_refresh_token_invalid_signature() -> None:
     secrets = TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256")
     with pytest.raises(InvalidToken, match="Invalid refresh token"):
         ComSecurityHelper.decode_refresh_token(token, secrets)
+
+
+def test_decode_refresh_token_expired_branch() -> None:
+    secrets = TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256")
+    with patch("auth_sdk_m8.core.security.jwt.decode") as mock_decode:
+        mock_decode.return_value = {
+            "sub": "550e8400-e29b-41d4-a716-446655440000",
+            "type": "refresh",
+            "jti": "test-jti-0000",
+            "exp": int(
+                (datetime.now(timezone.utc) - timedelta(hours=1)).timestamp()
+            ),
+        }
+
+        with pytest.raises(InvalidToken, match="Refresh token expired"):
+            ComSecurityHelper.decode_refresh_token("token", secrets)
+
+
+def test_decode_refresh_token_missing_jti() -> None:
+    secrets = TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256")
+    with patch("auth_sdk_m8.core.security.jwt.decode") as mock_decode:
+        mock_decode.return_value = {
+            "sub": "550e8400-e29b-41d4-a716-446655440000",
+            "type": "refresh",
+            "jti": None,
+            "exp": int(
+                (datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()
+            ),
+        }
+
+        with pytest.raises(InvalidToken, match="Invalid refresh token"):
+            ComSecurityHelper.decode_refresh_token("token", secrets)
 
 
 # ── cookie helpers ────────────────────────────────────────────────────────────
