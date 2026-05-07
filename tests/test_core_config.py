@@ -92,7 +92,7 @@ def test_settings_customise_sources_vault_from_env(
     mock_client = MagicMock()
     mock_hvac.Client.return_value = mock_client
     mock_client.secrets.kv.v2.read_secret_version.return_value = {
-        "data": {"data": {"SECRET_KEY": "val"}}
+        "data": {"data": {"ACCESS_SECRET_KEY": "val"}}
     }
 
     with patch.dict(sys.modules, {"hvac": mock_hvac}):
@@ -101,7 +101,7 @@ def test_settings_customise_sources_vault_from_env(
     assert len(sources) == 4
     vault_source = sources[3]
     result = vault_source(MagicMock())
-    assert "SECRET_KEY" in result
+    assert "ACCESS_SECRET_KEY" in result
 
 
 def test_settings_customise_sources_vault_from_file(
@@ -224,7 +224,7 @@ def test_common_settings_invalid_password() -> None:
 
 
 def test_common_settings_invalid_secret_key() -> None:
-    kwargs = {**VALID_SETTINGS_KWARGS, "SECRET_KEY": "tooshortkey"}
+    kwargs = {**VALID_SETTINGS_KWARGS, "ACCESS_SECRET_KEY": "tooshortkey"}
     with pytest.raises(Exception, match="secret key"):
         IsolatedSettings(**kwargs)
 
