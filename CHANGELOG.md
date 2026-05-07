@@ -4,6 +4,32 @@ All notable changes to `auth-sdk-m8` will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-05-07
+
+### Added
+
+- **`TOKEN_MODE: Literal["stateless", "hybrid", "stateful"] = "stateful"`** in `CommonSettings`:
+  signals to consuming services whether Redis is required and whether JTI revocation is active.
+- **`ACCESS_TOKEN_ALGORITHM: str`** and **`REFRESH_TOKEN_ALGORITHM: str`** in `CommonSettings`:
+  replace the single `TOKEN_ALGORITHM` with per-token-type algorithm fields.  `TOKEN_ALGORITHM`
+  is kept as a backward-compat fallback — a non-default value propagates to the per-type fields
+  via the `_sync_token_algorithms` model validator.
+- **`ACCESS_PRIVATE_KEY: Optional[SecretStr]`**: PEM private key for RS256/ES256 signing in the
+  auth service.  Added to `secret_fields` (bypasses the symmetric-key strength regex).
+- **`ACCESS_PUBLIC_KEY: Optional[str]`**: PEM public key distributed to all consuming services
+  for RS256/ES256 access token verification.
+- **`_validate_key_material` model validator**: enforces that HS256 deployments provide
+  `ACCESS_SECRET_KEY` and that RS256/ES256 deployments provide `ACCESS_PUBLIC_KEY`.  Raises
+  `ValueError` at startup so misconfigured containers fail immediately.
+
+### Changed
+
+- **`ACCESS_SECRET_KEY`** changed from required `SecretStr` to `Optional[SecretStr] = None`.
+  Removed from `secret_keys` (symmetric-key strength regex) — still listed in `secret_fields`.
+  Required only when `ACCESS_TOKEN_ALGORITHM == "HS256"` (enforced by `_validate_key_material`).
+- **`SECRET_KEY`** changed to `Optional[SecretStr] = None` and removed from `secret_fields`,
+  `secret_keys`, and `REQUIRE_UPDATE_FIELDS`.  No longer used in the token signing flow.
+
 ## [0.2.0] - 2026-05-06
 
 ### Added
