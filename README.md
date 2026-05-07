@@ -114,7 +114,7 @@ TokenDep = Annotated[str, Depends(oauth2)]
 _validator = TokenValidator(
     secrets=TokenSecret(
         secret_key=SecretStr(settings.ACCESS_SECRET_KEY),
-        algorithm=settings.TOKEN_ALGORITHM,
+        algorithm=settings.ACCESS_TOKEN_ALGORITHM,
     ),
     config=TokenValidationConfig(),
 )
