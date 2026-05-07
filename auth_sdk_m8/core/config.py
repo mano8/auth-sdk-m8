@@ -129,7 +129,7 @@ def parse_cors(value: str) -> List[str]:
     return origins
 
 
-REQUIRE_UPDATE_FIELDS: List[str] = ["SECRET_KEY", "DB_PASSWORD", "REDIS_PASSWORD"]
+REQUIRE_UPDATE_FIELDS: List[str] = ["ACCESS_SECRET_KEY", "DB_PASSWORD", "REDIS_PASSWORD"]
 
 
 class CommonSettings(BaseSettings):
@@ -152,7 +152,6 @@ class CommonSettings(BaseSettings):
         "FRONTEND_HOST",
     ]
     secret_fields: ClassVar[List[str]] = [
-        "SECRET_KEY",
         "ACCESS_SECRET_KEY",
         "REFRESH_SECRET_KEY",
         "DB_PASSWORD",
@@ -160,7 +159,6 @@ class CommonSettings(BaseSettings):
     ]
     passwords: ClassVar[List[str]] = ["DB_PASSWORD", "REDIS_PASSWORD"]
     secret_keys: ClassVar[List[str]] = [
-        "SECRET_KEY",
         "ACCESS_SECRET_KEY",
         "REFRESH_SECRET_KEY",
     ]
@@ -207,10 +205,21 @@ class CommonSettings(BaseSettings):
         return origins
 
     # ── Security / Tokens ─────────────────────────────────────────────────────
-    SECRET_KEY: SecretStr
+    # Deprecated: no longer used for token signing. Kept for backward compat.
+    SECRET_KEY: Optional[SecretStr] = None
     ACCESS_SECRET_KEY: SecretStr
     REFRESH_SECRET_KEY: SecretStr
+    # Deprecated: set ACCESS_TOKEN_ALGORITHM / REFRESH_TOKEN_ALGORITHM instead.
+    # Kept as a fallback: if the per-type fields are not explicitly set they
+    # inherit this value via _sync_token_algorithms.
     TOKEN_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_ALGORITHM: str = "HS256"
+    REFRESH_TOKEN_ALGORITHM: str = "HS256"
+    # Controls session persistence and JTI blacklisting strategy:
+    #   stateless — pure JWT, no Redis or DB session required
+    #   hybrid    — access tokens are stateless; refresh JTIs tracked in Redis
+    #   stateful  — full Redis blacklist + DB session (default, current behaviour)
+    TOKEN_MODE: Literal["stateless", "stateful", "hybrid"] = "stateful"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 120
     REFRESH_TOKEN_COOKIE_EXPIRE_SECONDS: int = 3600
@@ -271,6 +280,16 @@ class CommonSettings(BaseSettings):
         return bool(self.SMTP_HOST and self.EMAILS_FROM_EMAIL)
 
     # ── Validators ────────────────────────────────────────────────────────────
+
+    @model_validator(mode="after")
+    def _sync_token_algorithms(self) -> "CommonSettings":
+        """Propagate TOKEN_ALGORITHM to per-type fields when not overridden."""
+        if self.TOKEN_ALGORITHM != "HS256":
+            if self.ACCESS_TOKEN_ALGORITHM == "HS256":
+                self.ACCESS_TOKEN_ALGORITHM = self.TOKEN_ALGORITHM
+            if self.REFRESH_TOKEN_ALGORITHM == "HS256":
+                self.REFRESH_TOKEN_ALGORITHM = self.TOKEN_ALGORITHM
+        return self
 
     @model_validator(mode="after")
     def validate_sensitive_fields(self) -> "CommonSettings":
