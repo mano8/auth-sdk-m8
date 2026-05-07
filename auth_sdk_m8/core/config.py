@@ -153,11 +153,14 @@ class CommonSettings(BaseSettings):
     ]
     secret_fields: ClassVar[List[str]] = [
         "ACCESS_SECRET_KEY",
+        "ACCESS_PRIVATE_KEY",
         "REFRESH_SECRET_KEY",
         "DB_PASSWORD",
         "REDIS_PASSWORD",
     ]
     passwords: ClassVar[List[str]] = ["DB_PASSWORD", "REDIS_PASSWORD"]
+    # PEM keys (ACCESS_PRIVATE_KEY) are excluded — they do not match the
+    # symmetric-secret regex and must not be validated against it.
     secret_keys: ClassVar[List[str]] = [
         "ACCESS_SECRET_KEY",
         "REFRESH_SECRET_KEY",
@@ -207,8 +210,13 @@ class CommonSettings(BaseSettings):
     # ── Security / Tokens ─────────────────────────────────────────────────────
     # Deprecated: no longer used for token signing. Kept for backward compat.
     SECRET_KEY: Optional[SecretStr] = None
-    ACCESS_SECRET_KEY: SecretStr
-    REFRESH_SECRET_KEY: SecretStr
+    # HS256: set ACCESS_SECRET_KEY (symmetric).
+    # RS256/ES256: set ACCESS_PRIVATE_KEY (signing, auth service only) and
+    #              ACCESS_PUBLIC_KEY (validation, all services).
+    ACCESS_SECRET_KEY: Optional[SecretStr] = None
+    ACCESS_PRIVATE_KEY: Optional[SecretStr] = None   # PEM RSA/EC private key
+    ACCESS_PUBLIC_KEY: Optional[str] = None           # PEM RSA/EC public key
+    REFRESH_SECRET_KEY: SecretStr                     # Always HS256 (internal)
     # Deprecated: set ACCESS_TOKEN_ALGORITHM / REFRESH_TOKEN_ALGORITHM instead.
     # Kept as a fallback: if the per-type fields are not explicitly set they
     # inherit this value via _sync_token_algorithms.
@@ -289,6 +297,25 @@ class CommonSettings(BaseSettings):
                 self.ACCESS_TOKEN_ALGORITHM = self.TOKEN_ALGORITHM
             if self.REFRESH_TOKEN_ALGORITHM == "HS256":
                 self.REFRESH_TOKEN_ALGORITHM = self.TOKEN_ALGORITHM
+        return self
+
+    @model_validator(mode="after")
+    def _validate_key_material(self) -> "CommonSettings":
+        """Ensure the right key material is present for the configured algorithm."""
+        algo = self.ACCESS_TOKEN_ALGORITHM
+        if algo == "HS256":
+            if not self.ACCESS_SECRET_KEY:
+                raise ValueError(
+                    "ACCESS_SECRET_KEY is required when ACCESS_TOKEN_ALGORITHM=HS256"
+                )
+        else:
+            if not self.ACCESS_PUBLIC_KEY:
+                raise ValueError(
+                    f"ACCESS_PUBLIC_KEY (PEM) is required when "
+                    f"ACCESS_TOKEN_ALGORITHM={algo}. "
+                    "Consumer services need only the public key; the auth service "
+                    "additionally needs ACCESS_PRIVATE_KEY to sign tokens."
+                )
         return self
 
     @model_validator(mode="after")
