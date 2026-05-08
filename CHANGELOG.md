@@ -4,6 +4,35 @@ All notable changes to `auth-sdk-m8` will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-05-08
+
+### Added
+
+- **`auth_sdk_m8.observability` package** (`pip install auth-sdk-m8[observability]`): optional
+  Prometheus metrics layer with zero cost when disabled.
+  - **`metrics.setup(enabled, groups_str, api_prefix)`**: initializes an isolated
+    `CollectorRegistry` at startup.  When `enabled=False` no collectors are registered and
+    `get()` returns `None` — the middleware skips all instrumentation in O(1).
+  - **`metrics.get() → Optional[_Metrics]`**: returns the metrics container or `None`.
+  - **`metrics.render() → (bytes, str)`**: returns Prometheus text exposition and content-type.
+  - **Five metric groups** controlled by `METRICS_GROUPS` (comma-separated or `"all"`):
+    - `traffic` — `http_requests_total` (method, endpoint, status_code)
+    - `performance` — `http_request_duration_seconds` histogram (method, endpoint)
+    - `reliability` — `http_errors_total` for 4xx/5xx (method, endpoint, status_class)
+    - `health` — `http_status_total` by exact status code
+    - `auth` — `auth_login_attempts_total`, `auth_token_refresh_total`, `auth_logout_total`,
+      `auth_token_validation_failures_total`, `auth_oauth_attempts_total`
+      (auth-specific; only meaningful in services with auth routes)
+  - **`MetricsMiddleware`** (`auth_sdk_m8.observability.middleware`): Starlette
+    `BaseHTTPMiddleware` that instruments every request.  UUID and integer path segments
+    are normalized to `/{id}` to prevent label cardinality explosion.
+  - **`ObservabilitySettingsMixin`** (`auth_sdk_m8.observability.settings`): pydantic
+    `BaseModel` mixin that adds `METRICS_ENABLED: bool = False` and
+    `METRICS_GROUPS: str = "all"` to any pydantic-settings `Settings` class via MRO-safe
+    multiple inheritance.
+- New `[observability]` optional extra: installs `prometheus-client>=0.21.0` and `fastapi>=0.115.7`.
+- `prometheus-client>=0.21.0` added to the `[all]` extra.
+
 ## [0.3.0] - 2026-05-07
 
 ### Added

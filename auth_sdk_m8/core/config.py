@@ -129,7 +129,11 @@ def parse_cors(value: str) -> List[str]:
     return origins
 
 
-REQUIRE_UPDATE_FIELDS: List[str] = ["ACCESS_SECRET_KEY", "DB_PASSWORD", "REDIS_PASSWORD"]
+REQUIRE_UPDATE_FIELDS: List[str] = [
+    "ACCESS_SECRET_KEY",
+    "DB_PASSWORD",
+    "REDIS_PASSWORD",
+]
 
 
 class CommonSettings(BaseSettings):
@@ -214,9 +218,9 @@ class CommonSettings(BaseSettings):
     # RS256/ES256: set ACCESS_PRIVATE_KEY (signing, auth service only) and
     #              ACCESS_PUBLIC_KEY (validation, all services).
     ACCESS_SECRET_KEY: Optional[SecretStr] = None
-    ACCESS_PRIVATE_KEY: Optional[SecretStr] = None   # PEM RSA/EC private key
-    ACCESS_PUBLIC_KEY: Optional[str] = None           # PEM RSA/EC public key
-    REFRESH_SECRET_KEY: SecretStr                     # Always HS256 (internal)
+    ACCESS_PRIVATE_KEY: Optional[SecretStr] = None  # PEM RSA/EC private key
+    ACCESS_PUBLIC_KEY: Optional[str] = None  # PEM RSA/EC public key
+    REFRESH_SECRET_KEY: SecretStr  # Always HS256 (internal)
     # Deprecated: set ACCESS_TOKEN_ALGORITHM / REFRESH_TOKEN_ALGORITHM instead.
     # Kept as a fallback: if the per-type fields are not explicitly set they
     # inherit this value via _sync_token_algorithms.
