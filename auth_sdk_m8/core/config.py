@@ -235,6 +235,13 @@ class CommonSettings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 120
     REFRESH_TOKEN_COOKIE_EXPIRE_SECONDS: int = 3600
+    # When set, issued tokens embed this as the `iss` claim and validation
+    # enforces a match.  Both services must agree on this value.
+    TOKEN_ISSUER: Optional[str] = None
+    # When set, issued tokens embed this as the `aud` claim.  Set to the
+    # consuming service's URL so tokens issued for a different audience are
+    # rejected.  Both services must agree on this value.
+    TOKEN_AUDIENCE: Optional[str] = None
 
     SENTRY_DSN: Optional[HttpUrl] = None
     SELECTED_DB: Literal["Mysql", "Postgres"] = "Mysql"

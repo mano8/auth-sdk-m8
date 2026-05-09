@@ -4,6 +4,28 @@ All notable changes to `auth-sdk-m8` will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.2] - 2026-05-09
+
+### Security
+
+- **`AccessTokenBlacklist`** (`auth_sdk_m8/security/blacklist.py`): read-only Redis JTI
+  blacklist check.  Consumer services use this to verify that an access token has not been
+  revoked by the auth service, using the same `"jwt:blacklist:"` key prefix written by
+  `RedisSessionManager.blacklist_jti()`.  Exported from `auth_sdk_m8.security`.
+
+### Added
+
+- **`build_access_validator(settings, hooks=None) -> TokenValidator`** (`auth_sdk_m8/security/factory.py`):
+  factory function that constructs a `TokenValidator` from any `CommonSettings` (or compatible)
+  instance.  Handles algorithm selection, asymmetric vs symmetric key choice, and `iss`/`aud`
+  enforcement wiring in one canonical place.  Exported from `auth_sdk_m8.security`.
+- **`TOKEN_ISSUER: Optional[str] = None`** and **`TOKEN_AUDIENCE: Optional[str] = None`** added to
+  `CommonSettings`.  When set, `build_access_validator` embeds them in `TokenValidationConfig`
+  with `require_iss=True` / `require_aud=True` automatically.  Services no longer need to declare
+  these fields locally.
+
+---
+
 ## [0.4.0] - 2026-05-08
 
 ### Added
