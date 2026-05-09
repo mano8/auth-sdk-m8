@@ -7,7 +7,7 @@ Requires the `fastapi` and `db` extras:
 
 from typing import Union
 
-from fastapi import status
+from fastapi import HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
@@ -57,6 +57,10 @@ class BaseController:
         Returns:
             A ``JSONResponse`` with ``HTTP 500`` status and a ``ResponseErrorBase`` body.
         """
+        # HTTPException carries its own status code — let FastAPI handle it.
+        if isinstance(ex, HTTPException):
+            raise ex
+
         content: ResponseErrorBase
 
         if isinstance(ex, IntegrityError):
