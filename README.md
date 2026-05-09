@@ -77,57 +77,61 @@ pip install "auth-sdk-m8[observability]"
 
 ### Validate a JWT from auth_user_service
 
-```python
-from pydantic import SecretStr
-from auth_sdk_m8.core.exceptions import InvalidToken
-from auth_sdk_m8.schemas.auth import TokenSecret
-from auth_sdk_m8.security import TokenValidationConfig, TokenValidator
+The recommended approach uses `build_access_validator`, which reads `ACCESS_TOKEN_ALGORITHM`,
+`ACCESS_SECRET_KEY` / `ACCESS_PUBLIC_KEY`, `TOKEN_ISSUER`, and `TOKEN_AUDIENCE` from your
+`CommonSettings` instance automatically:
 
-validator = TokenValidator(
-    secrets=TokenSecret(
-        secret_key=SecretStr(ACCESS_SECRET_KEY),
-        algorithm="HS256",
-    ),
-    config=TokenValidationConfig(),
-)
+```python
+from auth_sdk_m8.core.exceptions import InvalidToken
+from auth_sdk_m8.security import build_access_validator
+
+# Create once at module level — never per-request.
+_validator = build_access_validator(settings)
 
 try:
-    payload = validator.validate_access_token(bearer_token)
+    payload = _validator.validate_access_token(bearer_token)
     print(payload.email, payload.role)
 except InvalidToken:
     # token expired or invalid signature
     ...
 ```
 
-### FastAPI dependency for token validation
+### FastAPI dependency for token validation with revocation check
 
 ```python
-from typing import Annotated
+from typing import Annotated, Optional
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
-from pydantic import SecretStr
+from redis import Redis
 from auth_sdk_m8.core.exceptions import InvalidToken
-from auth_sdk_m8.schemas.auth import TokenSecret
 from auth_sdk_m8.schemas.user import UserModel
-from auth_sdk_m8.security import TokenValidationConfig, TokenValidator
+from auth_sdk_m8.security import AccessTokenBlacklist, ValidationHooks, build_access_validator
 
 oauth2 = OAuth2PasswordBearer(tokenUrl="/auth/login/access-token")
 TokenDep = Annotated[str, Depends(oauth2)]
 
-# Create once at module level — avoid re-instantiating on every request.
-_validator = TokenValidator(
-    secrets=TokenSecret(
-        secret_key=SecretStr(settings.ACCESS_SECRET_KEY),
-        algorithm=settings.ACCESS_TOKEN_ALGORITHM,
-    ),
-    config=TokenValidationConfig(),
-)
+_validator = build_access_validator(settings)  # module-level singleton
 
-def get_current_user(token: TokenDep) -> UserModel:
+def get_redis_client() -> Optional[Redis]:
+    try:
+        client = Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT,
+                       decode_responses=True, socket_connect_timeout=1)
+        client.ping()
+        return client
+    except Exception:
+        return None
+
+RedisDep = Annotated[Optional[Redis], Depends(get_redis_client)]
+
+def get_current_user(token: TokenDep, redis: RedisDep) -> UserModel:
     try:
         payload = _validator.validate_access_token(token)
     except InvalidToken as exc:
         raise HTTPException(status_code=403, detail="Could not validate credentials.") from exc
+    # Stateful mode: check whether the JTI was revoked by the auth service.
+    if settings.TOKEN_MODE == "stateful" and redis is not None:
+        if AccessTokenBlacklist(redis).is_revoked(payload.jti):
+            raise HTTPException(status_code=403, detail="Token has been revoked.")
     payload_dict = payload.model_dump(exclude={"sub", "jti", "exp", "type"})
     payload_dict["id"] = payload.sub
     return UserModel(**payload_dict)
@@ -205,6 +209,8 @@ auth_sdk_m8/
 │   ├── exceptions.py    # InvalidToken
 │   └── security.py      # ComSecurityHelper (legacy helpers: PKCE, token hashing)
 ├── security/
+│   ├── factory.py               # build_access_validator() — settings-driven validator factory
+│   ├── blacklist.py             # AccessTokenBlacklist — Redis JTI revocation check
 │   ├── token_validator.py       # TokenValidator — stateless JWT access-token validation
 │   ├── token_policy.py          # TokenPolicy — stateful validation with revocation store
 │   ├── refresh_token_policy.py  # RefreshTokenPolicy — one-time-use refresh token rotation
