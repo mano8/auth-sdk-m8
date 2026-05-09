@@ -49,6 +49,7 @@ Install only what your service needs:
 | `[db]` | `sqlmodel`, `sqlalchemy` | `TimestampMixin`, DB error parsing |
 | `[mysql]` | `pymysql` | MySQL database driver |
 | `[postgres]` | `psycopg2-binary` | PostgreSQL database driver |
+| `[observability]` | `prometheus-client`, `fastapi` | Prometheus metrics middleware |
 | `[all]` | everything above | full feature set |
 
 Examples:
@@ -65,6 +66,9 @@ pip install "auth-sdk-m8[security]"
 
 # A service that only listens to Redis events
 pip install "auth-sdk-m8[redis]"
+
+# A service with Prometheus metrics support
+pip install "auth-sdk-m8[observability]"
 ```
 
 ---
@@ -323,6 +327,85 @@ class RedisRefreshStore:
 
     async def revoke(self, jti: str) -> None:
         await self._r.delete(f"rt:{jti}")
+```
+
+### Prometheus metrics
+
+Instrument any FastAPI / Starlette service with optional Prometheus metrics.
+Requires `pip install "auth-sdk-m8[observability]"`.
+
+```python
+# main.py
+from auth_sdk_m8.observability import metrics as _metrics
+from auth_sdk_m8.observability.middleware import MetricsMiddleware
+from fastapi import FastAPI, Response
+
+# Call once at startup — no-op when enabled=False.
+_metrics.setup(
+    enabled=settings.METRICS_ENABLED,
+    groups_str=settings.METRICS_GROUPS,   # e.g. "all" or "traffic,performance"
+    api_prefix=settings.API_PREFIX,        # e.g. "/user"  → metric prefix "user_"
+)
+
+app = FastAPI(...)
+
+if settings.METRICS_ENABLED:
+    app.add_middleware(MetricsMiddleware)
+
+    @app.get(f"{settings.API_PREFIX}/metrics", include_in_schema=False, tags=["observability"])
+    def metrics_endpoint() -> Response:
+        content, content_type = _metrics.render()
+        return Response(content=content, media_type=content_type)
+```
+
+Add `ObservabilitySettingsMixin` to your settings class:
+
+```python
+from auth_sdk_m8.observability.settings import ObservabilitySettingsMixin
+from auth_sdk_m8.core.config import CommonSettings
+
+class Settings(ObservabilitySettingsMixin, CommonSettings):
+    ...
+```
+
+Then in your `.env`:
+
+```ini
+# Master switch — when false the /metrics endpoint is never registered.
+METRICS_ENABLED=true
+
+# Which groups to collect.  Comma-separated or "all".
+# Groups: traffic | performance | reliability | health | auth
+METRICS_GROUPS=all
+```
+
+#### Metric groups
+
+| Group | Metric | Labels |
+| --- | --- | --- |
+| `traffic` | `{prefix}_http_requests_total` | method, endpoint, status_code |
+| `performance` | `{prefix}_http_request_duration_seconds` | method, endpoint |
+| `reliability` | `{prefix}_http_errors_total` | method, endpoint, status_class (4xx/5xx) |
+| `health` | `{prefix}_http_status_total` | status_code |
+| `auth` | `{prefix}_auth_login_attempts_total` | result |
+| `auth` | `{prefix}_auth_token_refresh_total` | result |
+| `auth` | `{prefix}_auth_logout_total` | — |
+| `auth` | `{prefix}_auth_token_validation_failures_total` | reason |
+| `auth` | `{prefix}_auth_oauth_attempts_total` | provider, result |
+
+The `auth` group is only meaningful in services that have auth routes.  HTTP-only services
+should use `METRICS_GROUPS=traffic,performance,reliability,health`.
+
+Record auth-specific events manually in your route handlers:
+
+```python
+from auth_sdk_m8.observability.metrics import get as _get_metrics
+
+def login(...):
+    ...
+    m = _get_metrics()
+    if m and m.login_attempts_total:
+        m.login_attempts_total.labels(result="success").inc()
 ```
 
 ### Observability hooks
