@@ -8,7 +8,7 @@ service's API, JWT validation helpers, and optional FastAPI/SQLModel base classe
 
 [![PyPI version](https://img.shields.io/pypi/v/auth-sdk-m8)](https://pypi.org/project/auth-sdk-m8/)
 [![Python](https://img.shields.io/pypi/pyversions/auth-sdk-m8)](https://pypi.org/project/auth-sdk-m8/)
-
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/auth-sdk-m8?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/auth-sdk-m8)
 ---
 
 ## Installation
@@ -16,7 +16,7 @@ service's API, JWT validation helpers, and optional FastAPI/SQLModel base classe
 ### From PyPI (recommended)
 
 ```bash
-pip install auth-sdk-m8
+pip install auth-sdk-m8 --upgrade
 ```
 
 ### Directly from GitHub
