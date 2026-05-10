@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "auth-sdk-m8"
-version = "0.4.2"
+version = "0.5.0"
 description = "Shared authentication schemas, JWT utilities and FastAPI base components for m8 microservices."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -28,9 +28,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# JWT encode/decode (core/security.py)
+# JWT encode/decode (core/security.py); cryptography required for RS256/ES256 and JWKS
 security = [
     "PyJWT>=2.10.1",
+    "cryptography>=44.0",
 ]
 # FastAPI cookie helpers + BaseController (core/security.py cookie methods, controllers/base.py)
 fastapi = [
@@ -65,6 +66,7 @@ observability = [
 # Install every optional feature
 all = [
     "PyJWT>=2.10.1",
+    "cryptography>=44.0",
     "fastapi>=0.115.7",
     "redis>=5.2.1",
     "pydantic-settings>=2.7.1",

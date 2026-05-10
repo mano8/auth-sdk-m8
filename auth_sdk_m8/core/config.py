@@ -242,6 +242,17 @@ class CommonSettings(BaseSettings):
     # consuming service's URL so tokens issued for a different audience are
     # rejected.  Both services must agree on this value.
     TOKEN_AUDIENCE: Optional[str] = None
+    # RS256/ES256 only — key ID embedded in the JWT `kid` header and served
+    # in /.well-known/jwks.json.  If unset the auth service derives a stable
+    # fingerprint from the public key.  Consumer services do not need to set
+    # this; they receive it via the JWKS document.
+    ACCESS_KEY_ID: Optional[str] = None
+    # Consumer services: full URL of the auth service JWKS endpoint.
+    # When set, build_access_validator() uses JwksKeyResolver instead of a
+    # static public key — enabling zero-downtime key rotation.
+    # Example: "https://auth.example.com/user/.well-known/jwks.json"
+    JWKS_URI: Optional[str] = None
+    JWKS_CACHE_TTL_SECONDS: int = 300
 
     SENTRY_DSN: Optional[HttpUrl] = None
     SELECTED_DB: Literal["Mysql", "Postgres"] = "Mysql"
