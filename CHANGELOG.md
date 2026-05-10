@@ -4,6 +4,27 @@ All notable changes to `auth-sdk-m8` will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **`_validate_key_material` now accepts `JWKS_URI` as an alternative to `ACCESS_PUBLIC_KEY`**
+  (`auth_sdk_m8/core/config.py`): consumer services using `JWKS_URI` for dynamic key resolution
+  no longer fail startup validation with "ACCESS_PUBLIC_KEY is required".  Either
+  `ACCESS_PUBLIC_KEY` (static key) or `JWKS_URI` (dynamic JWKS endpoint) satisfies the check for
+  asymmetric algorithms — both remain valid configurations.
+
+### Added
+
+- **`check_config_health(settings, logger)` utility** (`auth_sdk_m8/core/config.py`): call this
+  inside FastAPI's lifespan (or any startup hook) to surface env-var misconfigurations in logs
+  before the first request.  Detects: RS256/ES256 with neither `ACCESS_PUBLIC_KEY` nor `JWKS_URI`;
+  `JWKS_URI` set but algorithm is `HS256` (endpoint serves nothing useful); `ACCESS_PRIVATE_KEY`
+  present without a corresponding public key (signing-only service warning); `TOKEN_MODE` is
+  `stateful`/`hybrid` but Redis credentials are absent; `JWKS_CACHE_TTL_SECONDS` below 30 s.
+
+---
+
 ## [0.4.2] - 2026-05-09
 
 ### Security
