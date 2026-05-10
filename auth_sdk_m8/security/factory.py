@@ -17,9 +17,12 @@ def build_access_validator(
     """Create a TokenValidator wired to CommonSettings (or any subclass).
 
     Reads ``ACCESS_TOKEN_ALGORITHM``, ``ACCESS_SECRET_KEY`` /
-    ``ACCESS_PUBLIC_KEY``, ``TOKEN_ISSUER``, and ``TOKEN_AUDIENCE`` from
-    *settings*.  This eliminates the duplicated validator-construction
-    boilerplate that would otherwise appear in every microservice.
+    ``ACCESS_PUBLIC_KEY``, ``TOKEN_ISSUER``, ``TOKEN_AUDIENCE``, and
+    optionally ``JWKS_URI`` / ``JWKS_CACHE_TTL_SECONDS`` from *settings*.
+
+    When ``JWKS_URI`` is set and the algorithm is asymmetric, a
+    ``JwksKeyResolver`` is used instead of a static public key — enabling
+    zero-downtime key rotation without redeploying consumer services.
 
     Args:
         settings: A CommonSettings (or compatible) instance.
@@ -29,6 +32,28 @@ def build_access_validator(
         A module-level–safe TokenValidator ready for request-time use.
     """
     algo = settings.ACCESS_TOKEN_ALGORITHM
+    issuer: Optional[str] = getattr(settings, "TOKEN_ISSUER", None) or None
+    audience: Optional[str] = getattr(settings, "TOKEN_AUDIENCE", None) or None
+    config = TokenValidationConfig(
+        allowed_algorithms=[algo],
+        issuer=issuer,
+        audience=audience,
+        require_iss=bool(issuer),
+        require_aud=bool(audience),
+    )
+
+    jwks_uri: Optional[str] = getattr(settings, "JWKS_URI", None) or None
+    if jwks_uri and algo in ASYMMETRIC_ALGORITHMS:
+        from auth_sdk_m8.security.jwks_resolver import JwksKeyResolver
+
+        cache_ttl: int = getattr(settings, "JWKS_CACHE_TTL_SECONDS", 300)
+        return TokenValidator(
+            secrets=None,
+            config=config,
+            key_resolver=JwksKeyResolver(jwks_uri, algorithm=algo, cache_ttl=cache_ttl),
+            hooks=hooks,
+        )
+
     if algo in ASYMMETRIC_ALGORITHMS:
         secret = TokenSecret(
             secret_key=SecretStr(settings.ACCESS_PUBLIC_KEY or ""),
@@ -40,17 +65,4 @@ def build_access_validator(
             algorithm=algo,
         )
 
-    issuer: Optional[str] = getattr(settings, "TOKEN_ISSUER", None) or None
-    audience: Optional[str] = getattr(settings, "TOKEN_AUDIENCE", None) or None
-
-    return TokenValidator(
-        secrets=secret,
-        config=TokenValidationConfig(
-            allowed_algorithms=[algo],
-            issuer=issuer,
-            audience=audience,
-            require_iss=bool(issuer),
-            require_aud=bool(audience),
-        ),
-        hooks=hooks,
-    )
+    return TokenValidator(secrets=secret, config=config, hooks=hooks)
