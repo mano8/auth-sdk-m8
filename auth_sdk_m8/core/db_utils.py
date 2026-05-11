@@ -1,6 +1,9 @@
 """
-dm_model's helpers
+dm_model's helpers - UUID TypeDecorator
 """
+
+from __future__ import annotations
+
 import uuid
 from typing import Any
 
@@ -8,16 +11,14 @@ from sqlalchemy import types
 from sqlalchemy.engine.interfaces import Dialect
 
 
-# pylint: disable=too-many-ancestors, disable=abstract-method
 class UUIDChar(types.TypeDecorator):
     """
     Store UUID values as CHAR(36).
 
-    Converts:
-    - uuid.UUID -> str on bind
-    - str -> uuid.UUID on result
-
-    Compatible with PostgreSQL, MySQL, and SQLite.
+    Normalization rules:
+    - Always store as string
+    - Accept uuid.UUID or valid UUID string
+    - Always return uuid.UUID on read
     """
 
     impl = types.CHAR(36)
@@ -25,29 +26,44 @@ class UUIDChar(types.TypeDecorator):
 
     @property
     def python_type(self) -> type[uuid.UUID]:
-        """Return the underlying Python type."""
+        """Python type exposed to SQLAlchemy."""
         return uuid.UUID
+
+    def _normalize(self, value: Any) -> uuid.UUID | None:
+        """
+        Normalize input into uuid.UUID.
+
+        Accepts:
+        - uuid.UUID
+        - valid UUID string
+        """
+        if value is None:
+            return None
+
+        if isinstance(value, uuid.UUID):
+            return value
+
+        return uuid.UUID(str(value))
 
     def process_bind_param(
         self,
         value: Any,
         dialect: Dialect,
     ) -> str | None:
-        """Convert UUID to string before storing."""
-        if value is None:
-            return None
-
-        if isinstance(value, uuid.UUID):
-            return str(value)
-
-        return str(uuid.UUID(value))
+        """
+        Convert Python value -> DB value (string).
+        """
+        uuid_value = self._normalize(value)
+        return None if uuid_value is None else str(uuid_value)
 
     def process_result_value(
         self,
         value: Any,
         dialect: Dialect,
     ) -> uuid.UUID | None:
-        """Convert database value back to UUID."""
+        """
+        Convert DB value -> Python UUID.
+        """
         if value is None:
             return None
 
@@ -58,11 +74,8 @@ class UUIDChar(types.TypeDecorator):
         value: Any,
         dialect: Dialect,
     ) -> str | None:
-        """Render UUID literals safely."""
-        if value is None:
-            return None
-
-        if isinstance(value, uuid.UUID):
-            return str(value)
-
-        return str(uuid.UUID(value))
+        """
+        Convert literal SQL param safely.
+        """
+        uuid_value = self._normalize(value)
+        return None if uuid_value is None else str(uuid_value)
