@@ -45,31 +45,6 @@ class Period(str, Enum):
     DAY = "day"
 
 
-class CategoryType(str, Enum):
-    """Category types for content classification."""
-
-    PROMPT_BLOCK = "prompt_block"
-    PROMPT_TEMPLATE = "prompt_template"
-
-
-class PromptBlockType(str, Enum):
-    """Block types within a prompt template."""
-
-    ROLE = "role"
-    TASK = "task"
-    CONTEXT = "context"
-    INSTRUCTION = "instruction"
-    EXAMPLE = "example"
-    FORMAT = "format"
-
-
-class LLMProviderType(str, Enum):
-    """LLM providers supported by the platform."""
-
-    MISTRAL = "mistral"
-    OPENAI = "openai"
-
-
 # ── Response schemas ──────────────────────────────────────────────────────────
 
 

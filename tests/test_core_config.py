@@ -9,9 +9,11 @@ from auth_sdk_m8.core.config import (
     EnvProvider,
     SecretProvider,
     VaultProvider,
+    check_config_health,
     parse_cors,
     settings_customise_sources,
 )
+from auth_sdk_m8.core.exceptions import ConfigurationError
 from tests.conftest import VALID_SETTINGS_KWARGS, IsolatedSettings
 
 # ── SecretProvider ────────────────────────────────────────────────────────────
@@ -269,3 +271,149 @@ def test_common_settings_cors_origins_not_string() -> None:
     kwargs = {**VALID_SETTINGS_KWARGS, "BACKEND_CORS_ORIGINS": 123}
     with pytest.raises(Exception, match="comma-separated string"):
         IsolatedSettings(**kwargs)
+
+
+# ── check_config_health ────────────────────────────────────────────────────────────
+class DummySettings:
+    """Minimal settings object for testing."""
+
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class DummyLogger:
+    """Logger spy for capturing logs."""
+
+    def __init__(self) -> None:
+        self.warnings: list[str] = []
+        self.criticals: list[str] = []
+
+    def warning(self, msg: str, *args) -> None:
+        self.warnings.append(msg % args if args else msg)
+
+    def critical(self, msg: str, *args) -> None:
+        self.criticals.append(msg % args if args else msg)
+
+
+def test_valid_config_no_logs() -> None:
+    """Should produce no warnings or errors for valid config."""
+    settings = DummySettings(
+        ACCESS_TOKEN_ALGORITHM="HS256",
+        TOKEN_MODE="stateful",
+        REDIS_HOST="localhost",
+        REDIS_PASSWORD="pass",
+        JWKS_CACHE_TTL_SECONDS=300,
+    )
+
+    logger = DummyLogger()
+
+    check_config_health(settings, logger)
+
+    assert logger.warnings == []
+    assert logger.criticals == []
+
+
+def test_missing_keys_fatal_error() -> None:
+    """Should raise when asymmetric algo has no keys or JWKS."""
+    settings = DummySettings(
+        ACCESS_TOKEN_ALGORITHM="RS256",
+        ACCESS_PUBLIC_KEY=None,
+        JWKS_URI=None,
+        TOKEN_MODE="stateful",
+        REDIS_HOST="localhost",
+        REDIS_PASSWORD="pass",
+    )
+
+    logger = DummyLogger()
+
+    with pytest.raises(ConfigurationError):
+        check_config_health(settings, logger)
+
+
+def test_jwks_with_hs256_warning() -> None:
+    """Should warn when JWKS is useless with HS256."""
+    settings = DummySettings(
+        ACCESS_TOKEN_ALGORITHM="HS256",
+        JWKS_URI="https://example.com/jwks",
+        TOKEN_MODE="stateful",
+        REDIS_HOST="localhost",
+        REDIS_PASSWORD="pass",
+    )
+
+    logger = DummyLogger()
+
+    check_config_health(settings, logger)
+
+    assert any("JWKS_URI is set but" in w for w in logger.warnings)
+
+
+def test_private_key_without_public_warning() -> None:
+    """Should warn when private key exists without public key."""
+    settings = DummySettings(
+        ACCESS_TOKEN_ALGORITHM="HS256",
+        ACCESS_PRIVATE_KEY="secret",
+        ACCESS_PUBLIC_KEY=None,
+        TOKEN_MODE="stateful",
+        REDIS_HOST="localhost",
+        REDIS_PASSWORD="pass",
+    )
+
+    logger = DummyLogger()
+
+    check_config_health(settings, logger)
+
+    assert any("ACCESS_PRIVATE_KEY is set" in w for w in logger.warnings)
+
+
+def test_missing_redis_fatal() -> None:
+    """Should fail when stateful mode has no Redis config."""
+    settings = DummySettings(
+        ACCESS_TOKEN_ALGORITHM="HS256",
+        TOKEN_MODE="stateful",
+        REDIS_HOST="",
+        REDIS_PASSWORD=None,
+    )
+
+    logger = DummyLogger()
+
+    with pytest.raises(ConfigurationError):
+        check_config_health(settings, logger)
+
+
+def test_low_jwks_cache_ttl_warning() -> None:
+    """Should warn when JWKS cache TTL is too low."""
+    settings = DummySettings(
+        ACCESS_TOKEN_ALGORITHM="RS256",
+        JWKS_URI="https://example.com/jwks",
+        ACCESS_PUBLIC_KEY="key",
+        TOKEN_MODE="stateful",
+        REDIS_HOST="localhost",
+        REDIS_PASSWORD="pass",
+        JWKS_CACHE_TTL_SECONDS=5,
+    )
+
+    logger = DummyLogger()
+
+    check_config_health(settings, logger)
+
+    assert any("JWKS_CACHE_TTL_SECONDS" in w for w in logger.warnings)
+
+
+def test_multiple_fatal_errors_combined() -> None:
+    """Should collect multiple fatal errors and raise once."""
+    settings = DummySettings(
+        ACCESS_TOKEN_ALGORITHM="RS256",
+        ACCESS_PUBLIC_KEY=None,
+        JWKS_URI=None,
+        TOKEN_MODE="stateful",
+        REDIS_HOST="",
+        REDIS_PASSWORD=None,
+    )
+
+    logger = DummyLogger()
+
+    with pytest.raises(ConfigurationError):
+        check_config_health(settings, logger)
+
+    # Should have logged multiple critical messages
+    assert len(logger.criticals) >= 1
