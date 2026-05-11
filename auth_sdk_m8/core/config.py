@@ -38,6 +38,7 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings
 
+from auth_sdk_m8.core.exceptions import ConfigurationError
 from auth_sdk_m8.schemas.shared import ValidationConstants
 
 # ── Secret providers ──────────────────────────────────────────────────────────
@@ -387,8 +388,16 @@ class CommonSettings(BaseSettings):
         return self
 
 
-def check_config_health(settings: "CommonSettings", logger: logging.Logger) -> None:
-    """Log warnings for known env-var inconsistencies at service startup.
+def check_config_health(
+    settings: CommonSettings,
+    logger: logging.Logger,
+) -> None:
+    """
+    Validate critical application configuration at startup.
+
+    Logs warnings for suspicious or inefficient configuration and raises
+    ConfigurationError for fatal misconfigurations that would cause
+    runtime authentication or security failures.
 
     Call this inside the FastAPI lifespan (or equivalent) so operators see
     mis-configurations in logs before they cause runtime failures.
@@ -400,55 +409,84 @@ def check_config_health(settings: "CommonSettings", logger: logging.Logger) -> N
     - TOKEN_MODE is stateful/hybrid but Redis credentials are absent
     - JWKS_CACHE_TTL_SECONDS set to an unusually low value (< 30 s)
     """
+    fatal_errors: list[str] = []
+    warnings: list[str] = []
+
     algo = settings.ACCESS_TOKEN_ALGORITHM
-    jwks_uri: Optional[str] = getattr(settings, "JWKS_URI", None) or None
-    pub_key: Optional[str] = getattr(settings, "ACCESS_PUBLIC_KEY", None) or None
+    jwks_uri: str | None = getattr(settings, "JWKS_URI", None) or None
+    pub_key: str | None = getattr(settings, "ACCESS_PUBLIC_KEY", None) or None
     priv_key = getattr(settings, "ACCESS_PRIVATE_KEY", None)
     token_mode: str = getattr(settings, "TOKEN_MODE", "stateful")
     cache_ttl: int = getattr(settings, "JWKS_CACHE_TTL_SECONDS", 300)
 
     # RS256/ES256 with neither static key nor JWKS endpoint
     if algo != "HS256" and not pub_key and not jwks_uri:
-        logger.error(
-            "CONFIG: ACCESS_TOKEN_ALGORITHM=%s but neither ACCESS_PUBLIC_KEY nor "
-            "JWKS_URI is set — token validation will fail at runtime",
-            algo,
+        fatal_errors.append(
+            (
+                "CONFIG: ACCESS_TOKEN_ALGORITHM="
+                f"{algo} but neither ACCESS_PUBLIC_KEY nor "
+                "JWKS_URI is set — token validation will fail at runtime"
+            ),
         )
 
-    # JWKS_URI configured but algorithm is symmetric — the endpoint serves nothing useful
+    # JWKS_URI configured but algorithm is symmetric
     if jwks_uri and algo == "HS256":
-        logger.warning(
-            "CONFIG: JWKS_URI is set but ACCESS_TOKEN_ALGORITHM=HS256 — "
-            "JWKS is only meaningful for asymmetric algorithms (RS256, ES256). "
-            "Remove JWKS_URI or switch the algorithm.",
+        warnings.append(
+            (
+                "CONFIG: JWKS_URI is set but "
+                "ACCESS_TOKEN_ALGORITHM=HS256 — "
+                "JWKS is only meaningful for asymmetric algorithms "
+                "(RS256, ES256). Remove JWKS_URI or switch the algorithm."
+            ),
         )
 
-    # Private key present on a service that likely shouldn't be signing tokens
+    # Private key present on a service that likely should not sign tokens
     # (consumers only verify; the auth service is the only legitimate signer)
-    if priv_key and not getattr(settings, "ACCESS_PUBLIC_KEY", None):
-        logger.warning(
-            "CONFIG: ACCESS_PRIVATE_KEY is set but ACCESS_PUBLIC_KEY is absent — "
-            "this service can sign tokens but cannot verify them locally. "
-            "Ensure this is the auth service, not a consumer.",
+    if priv_key and not pub_key:
+        warnings.append(
+            (
+                "CONFIG: ACCESS_PRIVATE_KEY is set but "
+                "ACCESS_PUBLIC_KEY is absent — "
+                "this service can sign tokens but cannot verify them locally. "
+                "Ensure this is the auth service, not a consumer."
+            ),
         )
 
     # Stateful/hybrid mode without Redis credentials
     if token_mode in {"stateful", "hybrid"}:
         redis_host: str = getattr(settings, "REDIS_HOST", "") or ""
         redis_pass = getattr(settings, "REDIS_PASSWORD", None)
+
         if not redis_host or not redis_pass:
-            logger.critical(
-                "CONFIG: TOKEN_MODE=%s requires Redis for token revocation "
-                "but REDIS_HOST or REDIS_PASSWORD is not configured — "
-                "refresh token rotation and blacklisting are disabled",
-                token_mode,
+            fatal_errors.append(
+                (
+                    "CONFIG: TOKEN_MODE="
+                    f"{token_mode} requires Redis for token revocation "
+                    "but REDIS_HOST or REDIS_PASSWORD is not configured — "
+                    "refresh token rotation and blacklisting are disabled"
+                ),
             )
 
     # Unusually short JWKS cache TTL causes excessive key-fetch traffic
     if jwks_uri and cache_ttl < 30:
-        logger.warning(
-            "CONFIG: JWKS_CACHE_TTL_SECONDS=%d is very low — "
-            "the JWKS endpoint will be fetched on nearly every request. "
-            "Recommended minimum: 30 s; default: 300 s.",
-            cache_ttl,
+        warnings.append(
+            (
+                "CONFIG: JWKS_CACHE_TTL_SECONDS="
+                f"{cache_ttl} is very low — "
+                "the JWKS endpoint will be fetched on nearly every request. "
+                "Recommended minimum: 30 s; default: 300 s."
+            ),
+        )
+
+    # Emit warnings
+    for warning in warnings:
+        logger.warning(warning)
+
+    # Emit fatal errors and abort startup
+    if fatal_errors:
+        for error in fatal_errors:
+            logger.critical(error)
+
+        raise ConfigurationError(
+            "Fatal configuration errors detected during startup.",
         )
