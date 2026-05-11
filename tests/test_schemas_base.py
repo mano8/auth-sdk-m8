@@ -2,10 +2,7 @@
 
 from auth_sdk_m8.schemas.base import (
     AuthProviderType,
-    CategoryType,
-    LLMProviderType,
     Period,
-    PromptBlockType,
     ResponseError,
     ResponseErrorBase,
     ResponseMessage,
@@ -55,25 +52,6 @@ def test_period_values() -> None:
     assert Period.MINUTE == "minute"
     assert Period.HOUR == "hour"
     assert Period.DAY == "day"
-
-
-def test_category_type_values() -> None:
-    assert CategoryType.PROMPT_BLOCK == "prompt_block"
-    assert CategoryType.PROMPT_TEMPLATE == "prompt_template"
-
-
-def test_prompt_block_type_values() -> None:
-    assert PromptBlockType.ROLE == "role"
-    assert PromptBlockType.TASK == "task"
-    assert PromptBlockType.CONTEXT == "context"
-    assert PromptBlockType.INSTRUCTION == "instruction"
-    assert PromptBlockType.EXAMPLE == "example"
-    assert PromptBlockType.FORMAT == "format"
-
-
-def test_llm_provider_type_values() -> None:
-    assert LLMProviderType.MISTRAL == "mistral"
-    assert LLMProviderType.OPENAI == "openai"
 
 
 def test_response_error_defaults() -> None:
