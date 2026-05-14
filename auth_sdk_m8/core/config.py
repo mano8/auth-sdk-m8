@@ -298,6 +298,25 @@ class CommonSettings(BaseSettings):
     #   hybrid    — access tokens are stateless; refresh JTIs tracked in Redis
     #   stateful  — full Redis blacklist + DB session (default, current behaviour)
     TOKEN_MODE: Literal["stateless", "stateful", "hybrid"] = "stateful"
+
+    @computed_field
+    @property
+    def is_stateless(self) -> bool:
+        """True when TOKEN_MODE is ``stateless`` — no Redis or DB session needed."""
+        return self.TOKEN_MODE == "stateless"
+
+    @computed_field
+    @property
+    def is_stateful(self) -> bool:
+        """True when TOKEN_MODE is ``stateful`` — full Redis blacklist + DB session."""
+        return self.TOKEN_MODE == "stateful"
+
+    @computed_field
+    @property
+    def requires_redis(self) -> bool:
+        """True when TOKEN_MODE requires Redis (``stateful`` or ``hybrid``)."""
+        return self.TOKEN_MODE in {"stateful", "hybrid"}
+
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 120
     REFRESH_TOKEN_COOKIE_EXPIRE_SECONDS: int = 3600
@@ -533,7 +552,6 @@ def check_config_health(
     priv_key_file: str | None = (
         getattr(settings, "ACCESS_PRIVATE_KEY_FILE", None) or None
     )
-    token_mode: str = getattr(settings, "TOKEN_MODE", "stateful")
     cache_ttl: int = getattr(settings, "JWKS_CACHE_TTL_SECONDS", 300)
     role: str = getattr(settings, "AUTH_SERVICE_ROLE", "issuer")
 
@@ -583,7 +601,7 @@ def check_config_health(
             warnings.append(msg)
 
     # Stateful/hybrid mode without Redis credentials
-    if token_mode in {"stateful", "hybrid"}:
+    if settings.requires_redis:
         redis_host: str = getattr(settings, "REDIS_HOST", "") or ""
         redis_pass = getattr(settings, "REDIS_PASSWORD", None)
 
@@ -591,7 +609,7 @@ def check_config_health(
             fatal_errors.append(
                 (
                     "CONFIG: TOKEN_MODE="
-                    f"{token_mode} requires Redis for token revocation "
+                    f"{settings.TOKEN_MODE} requires Redis for token revocation "
                     "but REDIS_HOST or REDIS_PASSWORD is not configured — "
                     "refresh token rotation and blacklisting are disabled"
                 ),
@@ -645,7 +663,7 @@ def check_config_health(
                 warnings.append(msg)
 
     # Consumer in stateless mode with a DB configured is likely unnecessary
-    if role == "consumer" and token_mode == "stateless":
+    if role == "consumer" and settings.is_stateless:
         db_host: str = getattr(settings, "DB_HOST", "") or ""
         if db_host:
             warnings.append(
