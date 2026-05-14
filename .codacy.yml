@@ -4,6 +4,16 @@ engines:
     enabled: true
   ruff:
     enabled: true
+  pylint:
+    enabled: false
+  prospector:
+    enabled: false
+  pydocstyle:
+    enabled: false
+  pycodestyle:
+    enabled: false
+  pyflakes:
+    enabled: false
 
 exclude_paths:
   - "tests/**"
