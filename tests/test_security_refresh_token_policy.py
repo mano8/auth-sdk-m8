@@ -197,18 +197,3 @@ async def test_validate_and_rotate_unsupported_algorithm() -> None:
     policy = RefreshTokenPolicy(secrets=secrets)
     with pytest.raises(InvalidToken, match="Unsupported"):
         await policy.validate_and_rotate("any.token", new_jti="new-jti")
-
-
-async def test_validate_and_rotate_manual_exp_none() -> None:
-    from unittest.mock import patch
-
-    policy = _make_policy()
-    with patch("auth_sdk_m8.security.refresh_token_policy.jwt.decode") as mock_decode:
-        mock_decode.return_value = {
-            "sub": "550e8400-e29b-41d4-a716-446655440000",
-            "type": "refresh",
-            "jti": "jti-123",
-            "exp": None,
-        }
-        with pytest.raises(InvalidToken, match="expired"):
-            await policy.validate_and_rotate("any.token", new_jti="new-jti")

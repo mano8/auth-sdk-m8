@@ -6,8 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class TokenValidationConfig(BaseModel):
-    """
-    Configuration for JWT validation behavior.
+    """Configuration for JWT validation behavior.
 
     Defaults are permissive for backward compatibility.
     """

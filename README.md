@@ -5,7 +5,7 @@ Shared authentication schemas, JWT validation, and FastAPI base components for *
 Extracted from `auth_user_service` and installed by any service that integrates with it via Docker Compose.
 Provides Pydantic schemas, JWT validation, `CommonSettings`, Redis event bus, and optional Prometheus metrics.
 
-![CI/CD](https://github.com/mano8/auth-sdk-m8/actions/workflows/CI.yml/badge.svg?branch=main)
+![CI/CD](https://github.com/mano8/auth-sdk-m8/actions/workflows/CI.yaml/badge.svg?branch=main)
 [![PyPI version](https://img.shields.io/pypi/v/auth-sdk-m8)](https://pypi.org/project/auth-sdk-m8/)
 [![Python](https://img.shields.io/pypi/pyversions/auth-sdk-m8)](https://pypi.org/project/auth-sdk-m8/)
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/auth-sdk-m8?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/auth-sdk-m8)

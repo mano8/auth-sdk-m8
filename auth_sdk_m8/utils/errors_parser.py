@@ -1,5 +1,4 @@
-"""
-Database and validation error parsers.
+"""Database and validation error parsers.
 
 Requires the `db` extra:  pip install "auth-sdk-m8[db]"
 """
@@ -12,21 +11,10 @@ from sqlalchemy.exc import IntegrityError
 from auth_sdk_m8.schemas.base import ResponseError
 
 
-def parse_integrity_error(exc: IntegrityError) -> list[ResponseError]:
-    """
-    Parse an SQLAlchemy ``IntegrityError`` into structured error details.
-
-    Handles both MySQL and PostgreSQL error message formats.
-
-    Returns:
-        A list of dicts with keys ``table``, ``field_name``, and ``error``.
-    """
-    error_message = str(exc.orig)
+def _parse_mysql_errors(message: str) -> list[ResponseError]:
     errors: list[ResponseError] = []
-
-    # MySQL: Duplicate entry 'val' for key 'table.field'
     for match in re.findall(
-        r"Duplicate entry '(.+)' for key '([^'.]+)\.([^'.]+)'", error_message
+        r"Duplicate entry '(.+)' for key '([^'.]+)\.([^'.]+)'", message
     ):
         errors.append(
             ResponseError(
@@ -35,25 +23,7 @@ def parse_integrity_error(exc: IntegrityError) -> list[ResponseError]:
                 error="Duplicate entry already exists.",
             )
         )
-
-    # PostgreSQL: duplicate key value violates unique constraint
-    for match in re.findall(
-        r'duplicate key value violates unique constraint "[^"]+"\nDETAIL:.*?Key \(([^)]+)\)=\([^)]*\) already exists',
-        error_message,
-        re.DOTALL | re.IGNORECASE,
-    ):
-        errors.append(
-            ResponseError(
-                table=None,
-                field_name=match,
-                error="Duplicate entry already exists.",
-            )
-        )
-
-    # MySQL: FOREIGN KEY (`field`) REFERENCES `table`
-    for match in re.findall(
-        r"FOREIGN KEY \(`(.+?)`\) REFERENCES `(.+?)`", error_message
-    ):
+    for match in re.findall(r"FOREIGN KEY \(`(.+?)`\) REFERENCES `(.+?)`", message):
         errors.append(
             ResponseError(
                 table=match[1],
@@ -61,11 +31,36 @@ def parse_integrity_error(exc: IntegrityError) -> list[ResponseError]:
                 error=f"Invalid foreign key reference in '{match[0]}'.",
             )
         )
+    for match in re.findall(r"Column '(.+?)' cannot be null", message):
+        errors.append(
+            ResponseError(
+                table=None, field_name=match, error=f"Field '{match}' cannot be null."
+            )
+        )
+    for match in re.findall(r"Field '(.+?)' doesn't have a default value", message):
+        errors.append(
+            ResponseError(
+                table=None, field_name=match, error=f"Field '{match}' requires a value."
+            )
+        )
+    return errors
 
-    # PostgreSQL: foreign key constraint violation
+
+def _parse_postgres_errors(message: str) -> list[ResponseError]:
+    errors: list[ResponseError] = []
+    for match in re.findall(
+        r'duplicate key value violates unique constraint "[^"]+"\nDETAIL:.*?Key \(([^)]+)\)=\([^)]*\) already exists',
+        message,
+        re.DOTALL | re.IGNORECASE,
+    ):
+        errors.append(
+            ResponseError(
+                table=None, field_name=match, error="Duplicate entry already exists."
+            )
+        )
     for match in re.findall(
         r'on table "[^"]+" violates foreign key constraint "[^"]+"\nDETAIL:.*?Key \(([^)]+)\)=\([^)]*\) is not present in table "([^"]+)"',
-        error_message,
+        message,
         re.DOTALL,
     ):
         errors.append(
@@ -75,21 +70,9 @@ def parse_integrity_error(exc: IntegrityError) -> list[ResponseError]:
                 error=f"Invalid foreign key reference in '{match[0]}'.",
             )
         )
-
-    # MySQL: Column 'field' cannot be null
-    for match in re.findall(r"Column '(.+?)' cannot be null", error_message):
-        errors.append(
-            ResponseError(
-                table=None,
-                field_name=match,
-                error=f"Field '{match}' cannot be null.",
-            )
-        )
-
-    # PostgreSQL: null value in column "field" of relation "table"
     for match in re.findall(
         r'null value in column "([^"]+)" of relation "([^"]+)" violates not-null constraint',
-        error_message,
+        message,
     ):
         errors.append(
             ResponseError(
@@ -98,37 +81,33 @@ def parse_integrity_error(exc: IntegrityError) -> list[ResponseError]:
                 error=f"Field '{match[0]}' cannot be null.",
             )
         )
+    return errors
 
-    # MySQL: Field 'field' doesn't have a default value
-    for match in re.findall(
-        r"Field '(.+?)' doesn't have a default value", error_message
-    ):
-        errors.append(
-            ResponseError(
-                table=None,
-                field_name=match,
-                error=f"Field '{match}' requires a value.",
-            )
-        )
 
+def parse_integrity_error(exc: IntegrityError) -> list[ResponseError]:
+    """Parse an SQLAlchemy ``IntegrityError`` into structured error details.
+
+    Handles both MySQL and PostgreSQL error message formats.
+
+    Returns:
+        A list of ``ResponseError`` with ``table``, ``field_name``, and ``error``.
+    """
+    message = str(exc.orig)
+    errors = _parse_mysql_errors(message) + _parse_postgres_errors(message)
     if not errors:
         errors.append(
             ResponseError(
-                table=None,
-                field_name=None,
-                error="Unknown database integrity error",
+                table=None, field_name=None, error="Unknown database integrity error"
             )
         )
-
     return errors
 
 
 def parse_pydantic_errors(exc: ValidationError) -> list[ResponseError]:
-    """
-    Parse a Pydantic ``ValidationError`` into structured error details.
+    """Parse a Pydantic ``ValidationError`` into structured error details.
 
     Returns:
-        A list of dicts with keys ``field_name`` and ``error``.
+        A list of ``ResponseError`` with ``field_name`` and ``error``.
     """
     errors: list[ResponseError] = []
     for error in exc.errors():

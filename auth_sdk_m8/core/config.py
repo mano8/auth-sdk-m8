@@ -1,5 +1,4 @@
-"""
-CommonSettings — base pydantic-settings class for m8 microservices.
+"""CommonSettings — base pydantic-settings class for m8 microservices.
 
 Requires the `config` extra:  pip install "auth-sdk-m8[config]"
 
@@ -21,7 +20,6 @@ Usage::
     settings = Settings()
 """
 
-import logging
 from os import getenv
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple
@@ -39,7 +37,7 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings
 
-from auth_sdk_m8.core.exceptions import ConfigurationError
+from auth_sdk_m8.core.config_health import check_config_health as check_config_health
 from auth_sdk_m8.schemas.shared import ValidationConstants
 
 # ── Secret providers ──────────────────────────────────────────────────────────
@@ -57,6 +55,7 @@ class EnvProvider(SecretProvider):
     """Fetch secrets from OS environment variables."""
 
     def get(self, key: str) -> Optional[str]:
+        """Return the value of the environment variable *key*, or None."""
         return getenv(key)
 
 
@@ -81,9 +80,7 @@ def settings_customise_sources(
     env_settings: Any,
     file_secret_settings: Any,
 ) -> Tuple[Any, ...]:
-    """
-    Source priority: init kwargs > .env file > env vars > Vault (prod/staging).
-    """
+    """Source priority: init kwargs > .env file > env vars > Vault (prod/staging)."""
     sources: list[Any] = [init_settings, file_secret_settings, env_settings]
     env = getenv("ENVIRONMENT", "").lower()
     secret_provider = getenv("SECRET_PROVIDER", "").lower()
@@ -110,8 +107,7 @@ def settings_customise_sources(
 
 
 def parse_cors(value: str) -> List[str]:
-    """
-    Parse a comma-separated CORS origins string into a validated list.
+    """Parse a comma-separated CORS origins string into a validated list.
 
     Each origin is validated against ``HTTP_HOST_REGEX``.
 
@@ -189,8 +185,7 @@ def _assert_key_strength(pem: str, algo: str, *, is_private: bool) -> None:
 
 
 class CommonSettings(BaseSettings):
-    """
-    Base settings class for all m8 microservices.
+    """Base settings class for all m8 microservices.
 
     Subclass this in each service and add service-specific fields.
     """
@@ -508,199 +503,3 @@ class CommonSettings(BaseSettings):
                     "Set a strong unique value."
                 )
         return self
-
-
-def check_config_health(
-    settings: CommonSettings,
-    logger: logging.Logger,
-) -> None:
-    """
-    Validate critical application configuration at startup.
-
-    Logs warnings for suspicious or inefficient configuration and raises
-    ConfigurationError for fatal misconfigurations that would cause
-    runtime authentication or security failures.
-
-    Call this inside the FastAPI lifespan (or equivalent) so operators see
-    mis-configurations in logs before they cause runtime failures.
-
-    Checks performed:
-    - RS256/ES256 algorithm without any public-key source (fatal)
-    - JWKS_URI set but ACCESS_TOKEN_ALGORITHM is HS256 (warning)
-    - AUTH_SERVICE_ROLE=consumer with ACCESS_PRIVATE_KEY_FILE (fatal)
-    - AUTH_SERVICE_ROLE=issuer with asymmetric algorithm but no private key (fatal)
-    - AUTH_SERVICE_ROLE=issuer with JWKS_URI set
-        (warning normally; fatal under STRICT_PRODUCTION_MODE)
-    - TOKEN_MODE is stateful/hybrid but Redis credentials are absent (fatal)
-    - JWKS_CACHE_TTL_SECONDS set to an unusually low value (< 30 s) (warning)
-    - ENVIRONMENT=production with localhost origins in ALLOWED_ORIGINS (fatal)
-    - ENVIRONMENT=production with SET_DOCS/SET_OPEN_API enabled
-        (warning normally; fatal under STRICT_PRODUCTION_MODE)
-    - AUTH_SERVICE_ROLE=consumer + TOKEN_MODE=stateless + DB_HOST set (warning)
-    - STRICT_PRODUCTION_MODE only: wildcard ('*') in ALLOWED_ORIGINS (fatal)
-    - STRICT_PRODUCTION_MODE only: SESSION_COOKIE_SECURE=false outside local
-        ENVIRONMENT (fatal)
-    """
-    fatal_errors: list[str] = []
-    warnings: list[str] = []
-
-    strict: bool = getattr(settings, "STRICT_PRODUCTION_MODE", False)
-
-    algo = settings.ACCESS_TOKEN_ALGORITHM
-    jwks_uri: str | None = getattr(settings, "JWKS_URI", None) or None
-    pub_key: str | None = getattr(settings, "ACCESS_PUBLIC_KEY", None) or None
-    priv_key_file: str | None = (
-        getattr(settings, "ACCESS_PRIVATE_KEY_FILE", None) or None
-    )
-    cache_ttl: int = getattr(settings, "JWKS_CACHE_TTL_SECONDS", 300)
-    role: str = getattr(settings, "AUTH_SERVICE_ROLE", "issuer")
-
-    # RS256/ES256 with neither static key nor JWKS endpoint
-    if algo != "HS256" and not pub_key and not jwks_uri:
-        fatal_errors.append(
-            f"CONFIG: ACCESS_TOKEN_ALGORITHM={algo} but neither "
-            "ACCESS_PUBLIC_KEY_FILE nor JWKS_URI is set — "
-            "token validation will fail at runtime"
-        )
-
-    # JWKS_URI configured but algorithm is symmetric
-    if jwks_uri and algo == "HS256":
-        warnings.append(
-            "CONFIG: JWKS_URI is set but ACCESS_TOKEN_ALGORITHM=HS256 — "
-            "JWKS is only meaningful for asymmetric algorithms "
-            "(RS256, ES256). Remove JWKS_URI or switch the algorithm."
-        )
-
-    # Consumer must never hold a signing private key
-    if role == "consumer" and priv_key_file:
-        fatal_errors.append(
-            "CONFIG: AUTH_SERVICE_ROLE=consumer services must not hold a "
-            "signing private key. Remove ACCESS_PRIVATE_KEY_FILE — consumers "
-            "validate tokens via JWKS or a static public key only."
-        )
-
-    # Issuer with asymmetric algorithm must hold the private key to sign tokens
-    if role == "issuer" and algo != "HS256" and not priv_key_file:
-        fatal_errors.append(
-            f"CONFIG: AUTH_SERVICE_ROLE=issuer with {algo} requires "
-            "ACCESS_PRIVATE_KEY_FILE — issuers must hold the signing key "
-            "to issue tokens."
-        )
-
-    # Issuer with JWKS_URI is unusual — issuers validate using their own keys
-    if role == "issuer" and jwks_uri:
-        msg = (
-            "CONFIG: AUTH_SERVICE_ROLE=issuer has JWKS_URI set — issuers "
-            "validate tokens using their own key material, not a remote JWKS. "
-            "Remove JWKS_URI unless this service also consumes tokens from "
-            "another issuer."
-        )
-        if strict:
-            fatal_errors.append(msg)
-        else:
-            warnings.append(msg)
-
-    # Stateful/hybrid mode without Redis credentials
-    if settings.requires_redis:
-        redis_host: str = getattr(settings, "REDIS_HOST", "") or ""
-        redis_pass = getattr(settings, "REDIS_PASSWORD", None)
-
-        if not redis_host or not redis_pass:
-            fatal_errors.append(
-                (
-                    "CONFIG: TOKEN_MODE="
-                    f"{settings.TOKEN_MODE} requires Redis for token revocation "
-                    "but REDIS_HOST or REDIS_PASSWORD is not configured — "
-                    "refresh token rotation and blacklisting are disabled"
-                ),
-            )
-
-    # Unusually short JWKS cache TTL causes excessive key-fetch traffic
-    if jwks_uri and cache_ttl < 30:
-        warnings.append(
-            (
-                "CONFIG: JWKS_CACHE_TTL_SECONDS="
-                f"{cache_ttl} is very low — "
-                "the JWKS endpoint will be fetched on nearly every request. "
-                "Recommended minimum: 30 s; default: 300 s."
-            ),
-        )
-
-    environment: str = getattr(settings, "ENVIRONMENT", "local")
-
-    # Production: localhost CORS origins are a misconfiguration
-    if environment == "production":
-        allowed_origins: list[str] = getattr(settings, "ALLOWED_ORIGINS", []) or []
-        local_origins = [
-            o for o in allowed_origins if "localhost" in o or "127.0.0.1" in o
-        ]
-        if local_origins:
-            fatal_errors.append(
-                f"CONFIG: ENVIRONMENT=production but ALLOWED_ORIGINS contains "
-                f"localhost entries {local_origins} — "
-                "remove all localhost/127.0.0.1 origins before deploying to production."
-            )
-
-        if getattr(settings, "SET_DOCS", True):
-            msg = (
-                "CONFIG: ENVIRONMENT=production with SET_DOCS=true — "
-                "Swagger UI is publicly accessible. "
-                "Set SET_DOCS=false to disable API documentation in production."
-            )
-            if strict:
-                fatal_errors.append(msg)
-            else:
-                warnings.append(msg)
-        if getattr(settings, "SET_OPEN_API", True):
-            msg = (
-                "CONFIG: ENVIRONMENT=production with SET_OPEN_API=true — "
-                "OpenAPI schema endpoint is publicly accessible. "
-                "Set SET_OPEN_API=false to hide the schema in production."
-            )
-            if strict:
-                fatal_errors.append(msg)
-            else:
-                warnings.append(msg)
-
-    # Consumer in stateless mode with a DB configured is likely unnecessary
-    if role == "consumer" and settings.is_stateless:
-        db_host: str = getattr(settings, "DB_HOST", "") or ""
-        if db_host:
-            warnings.append(
-                "CONFIG: AUTH_SERVICE_ROLE=consumer with TOKEN_MODE=stateless "
-                f"but DB_HOST={db_host!r} is set — "
-                "consumer services in stateless mode typically do not require a "
-                "database. Remove DB_* settings if this service does not use the "
-                "database directly."
-            )
-
-    # Strict-mode-only checks
-    if strict:
-        allowed_origins: list[str] = getattr(settings, "ALLOWED_ORIGINS", []) or []
-        if "*" in allowed_origins:
-            fatal_errors.append(
-                "CONFIG: STRICT_PRODUCTION_MODE=true but ALLOWED_ORIGINS contains "
-                "a wildcard ('*') origin — specify explicit origins instead."
-            )
-
-        if environment not in {"local"}:
-            cookie_secure: bool = getattr(settings, "SESSION_COOKIE_SECURE", True)
-            if not cookie_secure:
-                fatal_errors.append(
-                    f"CONFIG: STRICT_PRODUCTION_MODE=true but "
-                    f"SESSION_COOKIE_SECURE=false in ENVIRONMENT={environment!r} — "
-                    "set SESSION_COOKIE_SECURE=true to enforce the Secure cookie flag."
-                )
-
-    # Emit warnings
-    for warning in warnings:
-        logger.warning(warning)
-
-    # Emit fatal errors and abort startup
-    if fatal_errors:
-        for error in fatal_errors:
-            logger.critical(error)
-
-        raise ConfigurationError(
-            "Fatal configuration errors detected during startup.",
-        )

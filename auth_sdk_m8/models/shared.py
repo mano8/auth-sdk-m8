@@ -1,5 +1,4 @@
-"""
-Shared SQLModel mixins and base models.
+"""Shared SQLModel mixins and base models.
 
 Requires the `db` extra:  pip install "auth-sdk-m8[db]"
 """
@@ -12,8 +11,7 @@ from sqlmodel import Field, SQLModel
 
 
 class TimestampMixin(SQLModel):
-    """
-    Adds ``created_at`` and ``updated_at`` UTC timestamp columns.
+    """Adds ``created_at`` and ``updated_at`` UTC timestamp columns.
 
     Include this in any SQLModel table model::
 

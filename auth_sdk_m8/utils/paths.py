@@ -1,6 +1,4 @@
-"""
-File-path utilities for locating `.env` files.
-"""
+"""File-path utilities for locating `.env` files."""
 
 import logging
 from os.path import join as join_path
@@ -12,8 +10,7 @@ ROOT_DIR = Path(__file__).resolve().parent
 
 
 def find_dotenv(start_path: Path = ROOT_DIR) -> Path:
-    """
-    Walk up the directory tree from *start_path* to locate a ``.env`` file.
+    """Walk up the directory tree from *start_path* to locate a ``.env`` file.
 
     Args:
         start_path: Directory (or file) to begin the search from.

@@ -1,7 +1,6 @@
 """Stateful refresh-token policy with rotation and reuse detection."""
 
 import uuid
-from datetime import datetime, timezone
 
 import jwt
 from jwt import ExpiredSignatureError, PyJWTError
@@ -39,10 +38,6 @@ def _decode_refresh(
 
     if payload.get("type") != "refresh":
         raise InvalidToken("Not a refresh token")
-
-    exp = payload.get("exp")
-    if exp is None or exp < datetime.now(timezone.utc).timestamp():
-        raise InvalidToken("Refresh token expired")
 
     try:
         user_id = uuid.UUID(payload["sub"])

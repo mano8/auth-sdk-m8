@@ -1,5 +1,4 @@
-"""
-Lightweight Redis event subscriber.
+"""Lightweight Redis event subscriber.
 
 Requires the `redis` extra:  pip install "auth-sdk-m8[redis]"
 """
@@ -15,8 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class EventSubscriber:
-    """
-    Subscribe to Redis Pub/Sub channels and dispatch raw dict payloads.
+    """Subscribe to Redis Pub/Sub channels and dispatch raw dict payloads.
 
     For typed events with Pydantic validation, prefer ``EventBus`` instead.
     """
@@ -31,8 +29,7 @@ class EventSubscriber:
         channel: str,
         handler: Callable[[Dict[str, Any]], Awaitable[None]],
     ) -> None:
-        """
-        Subscribe to *channel* and invoke *handler* for each message.
+        """Subscribe to *channel* and invoke *handler* for each message.
 
         Args:
             channel: Redis channel name.

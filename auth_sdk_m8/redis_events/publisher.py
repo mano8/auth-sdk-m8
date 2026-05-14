@@ -1,5 +1,4 @@
-"""
-Lightweight Redis event publisher.
+"""Lightweight Redis event publisher.
 
 Requires the `redis` extra:  pip install "auth-sdk-m8[redis]"
 """
@@ -14,8 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class EventPublisher:
-    """
-    Publish raw dict payloads to Redis Pub/Sub channels.
+    """Publish raw dict payloads to Redis Pub/Sub channels.
 
     For typed publishing, prefer ``EventBus.publish`` instead.
     """
@@ -24,8 +22,7 @@ class EventPublisher:
         self.redis: redis.Redis = redis.from_url(redis_url, decode_responses=True)
 
     async def publish(self, channel: str, event: Dict[str, Any]) -> None:
-        """
-        Serialize *event* to JSON and publish it to *channel*.
+        """Serialize *event* to JSON and publish it to *channel*.
 
         Args:
             channel: Redis channel name.

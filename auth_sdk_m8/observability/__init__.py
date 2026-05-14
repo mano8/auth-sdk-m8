@@ -1,5 +1,4 @@
-"""
-Optional Prometheus observability for m8 services.
+"""Optional Prometheus observability for m8 services.
 
 Install the extra to use:  pip install auth-sdk-m8[observability]
 
