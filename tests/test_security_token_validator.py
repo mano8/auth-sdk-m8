@@ -13,7 +13,7 @@ from auth_sdk_m8.security import (
     TokenValidationConfig,
     TokenValidator,
 )
-from tests.conftest import VALID_KEY, make_access_token
+from tests.conftest import VALID_KEY, WRONG_KEY, make_access_token
 
 ROTATED_KEY = "Bcdefg-2345_ABC-bcdefg-hijklm-nopqrs-tuvwxy"
 
@@ -91,7 +91,7 @@ def test_validate_access_token_invalid_signature() -> None:
     )
 
     with pytest.raises(InvalidToken, match="Invalid access token"):
-        validator.validate_access_token(make_access_token(secret="wrong-secret-key"))
+        validator.validate_access_token(make_access_token(secret=WRONG_KEY))
 
 
 def test_validate_access_token_invalid_payload_structure() -> None:

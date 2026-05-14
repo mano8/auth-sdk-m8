@@ -15,7 +15,7 @@ from auth_sdk_m8.security import (
     TokenValidator,
     ValidationHooks,
 )
-from tests.conftest import VALID_KEY, make_access_token
+from tests.conftest import VALID_KEY, WRONG_KEY, make_access_token
 
 
 def _mock_hooks() -> MagicMock:
@@ -62,7 +62,7 @@ def test_hooks_on_failure_called_for_invalid_signature() -> None:
     validator = _make_validator(hooks=hooks)
 
     with pytest.raises(InvalidToken):
-        validator.validate_access_token(make_access_token(secret="wrong-secret-key"))
+        validator.validate_access_token(make_access_token(secret=WRONG_KEY))
 
     hooks.on_failure.assert_called_once_with(reason="invalid", token_type="access")
 

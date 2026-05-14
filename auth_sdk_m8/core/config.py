@@ -139,6 +139,55 @@ REQUIRE_UPDATE_FIELDS: List[str] = [
 ]
 
 
+def _assert_key_strength(pem: str, algo: str, *, is_private: bool) -> None:
+    """Raise ValueError if an asymmetric key fails minimum strength requirements.
+
+    Args:
+        pem: PEM-encoded key material (private or public).
+        algo: JWT algorithm the key will be used with (``RS256``, ``ES256``).
+        is_private: ``True`` when *pem* encodes a private key.
+
+    Raises:
+        ValueError: Key cannot be parsed, wrong type, or is too weak.
+    """
+    from cryptography.hazmat.primitives.asymmetric import ec, rsa  # noqa: PLC0415
+    from cryptography.hazmat.primitives.serialization import (  # noqa: PLC0415
+        load_pem_private_key,
+        load_pem_public_key,
+    )
+
+    encoded = pem.encode()
+    try:
+        key: Any = (
+            load_pem_private_key(encoded, password=None)
+            if is_private
+            else load_pem_public_key(encoded)
+        )
+    except Exception as exc:
+        raise ValueError(f"Cannot parse PEM key material: {exc}") from exc
+
+    if algo == "RS256":
+        if not isinstance(key, (rsa.RSAPrivateKey, rsa.RSAPublicKey)):
+            raise ValueError(f"RS256 requires an RSA key; got {type(key).__name__}")
+        if key.key_size < 2048:
+            raise ValueError(
+                f"RS256 requires a minimum 2048-bit RSA key; "
+                f"loaded key is {key.key_size} bits"
+            )
+    elif algo == "ES256":
+        if not isinstance(key, (ec.EllipticCurvePrivateKey, ec.EllipticCurvePublicKey)):
+            raise ValueError(f"ES256 requires an EC key; got {type(key).__name__}")
+        from cryptography.hazmat.primitives.asymmetric.ec import (  # noqa: PLC0415
+            SECP256R1,
+        )
+
+        if not isinstance(key.curve, SECP256R1):
+            raise ValueError(
+                f"ES256 requires a P-256 (secp256r1) EC curve; "
+                f"loaded key uses {type(key.curve).__name__}"
+            )
+
+
 class CommonSettings(BaseSettings):
     """
     Base settings class for all m8 microservices.
@@ -270,6 +319,11 @@ class CommonSettings(BaseSettings):
     # Example: "https://auth.example.com/user/.well-known/jwks.json"
     JWKS_URI: Optional[str] = None
     JWKS_CACHE_TTL_SECONDS: int = 300
+    # Declares whether this process issues tokens (signs and serves JWKS) or
+    # only validates tokens from another issuer.  Drives role-aware enforcement
+    # in check_config_health(): consumers must not hold private keys; issuers
+    # with asymmetric algorithms must hold a private key.
+    AUTH_SERVICE_ROLE: Literal["issuer", "consumer"] = "issuer"
 
     SENTRY_DSN: Optional[HttpUrl] = None
     SELECTED_DB: Literal["Mysql", "Postgres"] = "Mysql"
@@ -374,6 +428,21 @@ class CommonSettings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _validate_key_strength(self) -> "CommonSettings":
+        """Enforce minimum cryptographic strength for asymmetric key material."""
+        algo = self.ACCESS_TOKEN_ALGORITHM
+        if algo == "HS256":
+            return self
+        if self._access_private_key:
+            _assert_key_strength(
+                self._access_private_key.get_secret_value(), algo, is_private=True
+            )
+        elif self._access_public_key:
+            _assert_key_strength(self._access_public_key, algo, is_private=False)
+        # Consumer with only JWKS_URI — no local key to validate here.
+        return self
+
+    @model_validator(mode="after")
     def validate_sensitive_fields(self) -> "CommonSettings":
         """Enforce strength requirements on passwords and secret keys."""
         for name in self.secret_fields:
@@ -432,7 +501,9 @@ def check_config_health(
     Checks performed:
     - RS256/ES256 algorithm without any public-key source
     - JWKS_URI set but ACCESS_TOKEN_ALGORITHM is HS256 (JWKS is meaningless)
-    - ACCESS_PRIVATE_KEY_FILE set on a consumer that also has JWKS_URI
+    - AUTH_SERVICE_ROLE=consumer with ACCESS_PRIVATE_KEY_FILE (fatal)
+    - AUTH_SERVICE_ROLE=issuer with asymmetric algorithm but no private key (fatal)
+    - AUTH_SERVICE_ROLE=issuer with JWKS_URI set (warning — unusual)
     - TOKEN_MODE is stateful/hybrid but Redis credentials are absent
     - JWKS_CACHE_TTL_SECONDS set to an unusually low value (< 30 s)
     """
@@ -447,6 +518,7 @@ def check_config_health(
     )
     token_mode: str = getattr(settings, "TOKEN_MODE", "stateful")
     cache_ttl: int = getattr(settings, "JWKS_CACHE_TTL_SECONDS", 300)
+    role: str = getattr(settings, "AUTH_SERVICE_ROLE", "issuer")
 
     # RS256/ES256 with neither static key nor JWKS endpoint
     if algo != "HS256" and not pub_key and not jwks_uri:
@@ -464,12 +536,29 @@ def check_config_health(
             "(RS256, ES256). Remove JWKS_URI or switch the algorithm."
         )
 
-    # Signing key on a consumer service (consumers must never hold private keys)
-    if priv_key_file and jwks_uri:
+    # Consumer must never hold a signing private key
+    if role == "consumer" and priv_key_file:
+        fatal_errors.append(
+            "CONFIG: AUTH_SERVICE_ROLE=consumer services must not hold a "
+            "signing private key. Remove ACCESS_PRIVATE_KEY_FILE — consumers "
+            "validate tokens via JWKS or a static public key only."
+        )
+
+    # Issuer with asymmetric algorithm must hold the private key to sign tokens
+    if role == "issuer" and algo != "HS256" and not priv_key_file:
+        fatal_errors.append(
+            f"CONFIG: AUTH_SERVICE_ROLE=issuer with {algo} requires "
+            "ACCESS_PRIVATE_KEY_FILE — issuers must hold the signing key "
+            "to issue tokens."
+        )
+
+    # Issuer with JWKS_URI is unusual — issuers validate using their own keys
+    if role == "issuer" and jwks_uri:
         warnings.append(
-            "CONFIG: ACCESS_PRIVATE_KEY_FILE is set on a service that also "
-            "has JWKS_URI — consumers validate via JWKS and must not hold "
-            "signing keys. Remove ACCESS_PRIVATE_KEY_FILE from this service."
+            "CONFIG: AUTH_SERVICE_ROLE=issuer has JWKS_URI set — issuers "
+            "validate tokens using their own key material, not a remote JWKS. "
+            "Remove JWKS_URI unless this service also consumes tokens from "
+            "another issuer."
         )
 
     # Stateful/hybrid mode without Redis credentials

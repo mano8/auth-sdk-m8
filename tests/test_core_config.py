@@ -14,7 +14,12 @@ from auth_sdk_m8.core.config import (
     settings_customise_sources,
 )
 from auth_sdk_m8.core.exceptions import ConfigurationError
-from tests.conftest import VALID_SETTINGS_KWARGS, IsolatedSettings
+from tests.conftest import (
+    RSA_PRIVATE_PEM,
+    RSA_PUBLIC_PEM,
+    VALID_SETTINGS_KWARGS,
+    IsolatedSettings,
+)
 
 # ── SecretProvider ────────────────────────────────────────────────────────────
 
@@ -346,13 +351,56 @@ def test_jwks_with_hs256_warning() -> None:
     assert any("JWKS_URI is set but" in w for w in logger.warnings)
 
 
-def test_private_key_file_on_consumer_warning() -> None:
-    """Should warn when a signing key file is set alongside JWKS_URI (consumer role)."""
+def test_consumer_with_private_key_is_fatal() -> None:
+    """Consumer role must not hold a private key — should raise ConfigurationError."""
     settings = DummySettings(
         ACCESS_TOKEN_ALGORITHM="RS256",
         ACCESS_PRIVATE_KEY_FILE="/opt/keys/private.pem",
         ACCESS_PUBLIC_KEY="dummy-pub-key",
         JWKS_URI="https://auth.example.com/.well-known/jwks.json",
+        AUTH_SERVICE_ROLE="consumer",
+        TOKEN_MODE="stateful",
+        REDIS_HOST="localhost",
+        REDIS_PASSWORD="pass",
+    )
+
+    logger = DummyLogger()
+
+    with pytest.raises(ConfigurationError):
+        check_config_health(settings, logger)
+
+    assert any("must not hold a signing private key" in e for e in logger.criticals)
+
+
+def test_issuer_rs256_without_private_key_is_fatal() -> None:
+    """Issuer role with RS256 but no private key should raise ConfigurationError."""
+    settings = DummySettings(
+        ACCESS_TOKEN_ALGORITHM="RS256",
+        ACCESS_PUBLIC_KEY="dummy-pub-key",
+        ACCESS_PRIVATE_KEY_FILE=None,
+        JWKS_URI=None,
+        AUTH_SERVICE_ROLE="issuer",
+        TOKEN_MODE="stateful",
+        REDIS_HOST="localhost",
+        REDIS_PASSWORD="pass",
+    )
+
+    logger = DummyLogger()
+
+    with pytest.raises(ConfigurationError):
+        check_config_health(settings, logger)
+
+    assert any("issuers must hold the signing key" in e for e in logger.criticals)
+
+
+def test_issuer_with_jwks_uri_warns() -> None:
+    """Issuer role with JWKS_URI set should log a warning (unusual but not fatal)."""
+    settings = DummySettings(
+        ACCESS_TOKEN_ALGORITHM="RS256",
+        ACCESS_PUBLIC_KEY="dummy-pub-key",
+        ACCESS_PRIVATE_KEY_FILE="/opt/keys/private.pem",
+        JWKS_URI="https://other-auth.example.com/.well-known/jwks.json",
+        AUTH_SERVICE_ROLE="issuer",
         TOKEN_MODE="stateful",
         REDIS_HOST="localhost",
         REDIS_PASSWORD="pass",
@@ -362,7 +410,7 @@ def test_private_key_file_on_consumer_warning() -> None:
 
     check_config_health(settings, logger)
 
-    assert any("ACCESS_PRIVATE_KEY_FILE is set" in w for w in logger.warnings)
+    assert any("AUTH_SERVICE_ROLE=issuer has JWKS_URI" in w for w in logger.warnings)
 
 
 def test_missing_redis_fatal() -> None:
@@ -386,6 +434,7 @@ def test_low_jwks_cache_ttl_warning() -> None:
         ACCESS_TOKEN_ALGORITHM="RS256",
         JWKS_URI="https://example.com/jwks",
         ACCESS_PUBLIC_KEY="key",
+        AUTH_SERVICE_ROLE="consumer",
         TOKEN_MODE="stateful",
         REDIS_HOST="localhost",
         REDIS_PASSWORD="pass",
@@ -426,8 +475,8 @@ def test_pem_files_loaded_from_disk(tmp_path: pytest.TempPathFactory) -> None:
     """ACCESS_PRIVATE/PUBLIC_KEY properties return content from *_FILE paths."""
     priv = tmp_path / "private.pem"
     pub = tmp_path / "public.pem"
-    priv.write_text("PRIVATE_PEM_CONTENT")
-    pub.write_text("PUBLIC_PEM_CONTENT")
+    priv.write_text(RSA_PRIVATE_PEM.strip())
+    pub.write_text(RSA_PUBLIC_PEM.strip())
 
     s = IsolatedSettings(
         **{
@@ -439,8 +488,8 @@ def test_pem_files_loaded_from_disk(tmp_path: pytest.TempPathFactory) -> None:
         }
     )
     assert s.ACCESS_PRIVATE_KEY is not None
-    assert s.ACCESS_PRIVATE_KEY.get_secret_value() == "PRIVATE_PEM_CONTENT"
-    assert s.ACCESS_PUBLIC_KEY == "PUBLIC_PEM_CONTENT"
+    assert "BEGIN RSA PRIVATE KEY" in s.ACCESS_PRIVATE_KEY.get_secret_value()
+    assert "BEGIN PUBLIC KEY" in (s.ACCESS_PUBLIC_KEY or "")
 
 
 def test_pem_private_file_missing_raises(tmp_path: pytest.TempPathFactory) -> None:
