@@ -1,12 +1,14 @@
+---
 engines:
-  eslint:
-    enabled: true
   bandit:
-    enabled: true  # Python security
-  pylint:
+    enabled: true
+  ruff:
     enabled: true
 
 exclude_paths:
-  - "tests/"
-  - "dist/"
-  - "node_modules/"
+  - "tests/**"
+  - "dist/**"
+  - "*.egg-info/**"
+  - ".pytest_cache/**"
+  - "**/__pycache__/**"
+  - "examples/**"
