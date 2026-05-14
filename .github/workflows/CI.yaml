@@ -57,9 +57,9 @@ jobs:
           files: coverage.xml
           verbose: true
 
-      #- name: Upload coverage to Codacy
-      #  if: matrix.python-version == '3.11'
-      #  uses: codacy/codacy-coverage-reporter-action@v1
-      #  with:
-      #    project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
-      #    coverage-reports: coverage.xml
+      - name: Upload coverage to Codacy
+        if: matrix.python-version == '3.11'
+        uses: codacy/codacy-coverage-reporter-action@v1
+        with:
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          coverage-reports: coverage.xml
