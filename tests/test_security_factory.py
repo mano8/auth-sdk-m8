@@ -12,6 +12,7 @@ from auth_sdk_m8.security import (
 )
 from tests.conftest import (
     VALID_SETTINGS_KWARGS,
+    WRONG_KEY,
     IsolatedSettings,
     make_access_token,
 )
@@ -63,7 +64,7 @@ def test_hooks_on_failure_called_for_bad_token(valid_settings) -> None:
     validator = build_access_validator(valid_settings, hooks=hooks)
 
     with pytest.raises(InvalidToken):
-        validator.validate_access_token(make_access_token(secret="wrong-key"))
+        validator.validate_access_token(make_access_token(secret=WRONG_KEY))
 
     hooks.on_failure.assert_called_once_with(reason="invalid", token_type="access")
 

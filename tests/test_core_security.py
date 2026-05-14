@@ -10,7 +10,7 @@ from pydantic import SecretStr
 from auth_sdk_m8.core.exceptions import InvalidToken
 from auth_sdk_m8.core.security import ComSecurityHelper
 from auth_sdk_m8.schemas.auth import TokenDecodeProps, TokenSecret
-from tests.conftest import VALID_KEY, make_access_token, make_refresh_token
+from tests.conftest import VALID_KEY, WRONG_KEY, make_access_token, make_refresh_token
 
 # ── decode_access_token ───────────────────────────────────────────────────────
 
@@ -53,7 +53,7 @@ def test_decode_access_token_manually_expired() -> None:
 
 
 def test_decode_access_token_invalid_signature() -> None:
-    token = make_access_token(secret="wrong-secret-key")
+    token = make_access_token(secret=WRONG_KEY)
     props = TokenDecodeProps(
         access_token=token,
         secret_key=SecretStr(VALID_KEY),
@@ -120,7 +120,7 @@ def test_decode_refresh_token_wrong_type() -> None:
 
 
 def test_decode_refresh_token_invalid_signature() -> None:
-    token = make_refresh_token(secret="wrong-key")
+    token = make_refresh_token(secret=WRONG_KEY)
     secrets = TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256")
     with pytest.raises(InvalidToken, match="Invalid refresh token"):
         ComSecurityHelper.decode_refresh_token(token, secrets)

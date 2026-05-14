@@ -11,6 +11,8 @@ from auth_sdk_m8.core.config import CommonSettings
 
 # 46-char key: upper, lower, digit, hyphen, underscore — passes SECRET_KEY_REGEX
 VALID_KEY = "Abcdef-1234_XYZ-abcdef-ghijkl-mnopqr-stuvwx"
+# Different 46-char key used to produce tokens with an invalid signature
+WRONG_KEY = "Zyxwvu-9876_ABC-zyxwvu-tsrqpo-nmlkji-hgfedc"
 
 # 2048-bit RSA keypair generated for tests only — never use in production.
 RSA_PRIVATE_PEM = """-----BEGIN RSA PRIVATE KEY-----
