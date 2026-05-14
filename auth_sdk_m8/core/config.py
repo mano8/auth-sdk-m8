@@ -1,5 +1,4 @@
-"""
-CommonSettings — base pydantic-settings class for m8 microservices.
+"""CommonSettings — base pydantic-settings class for m8 microservices.
 
 Requires the `config` extra:  pip install "auth-sdk-m8[config]"
 
@@ -56,6 +55,7 @@ class EnvProvider(SecretProvider):
     """Fetch secrets from OS environment variables."""
 
     def get(self, key: str) -> Optional[str]:
+        """Return the value of the environment variable *key*, or None."""
         return getenv(key)
 
 
@@ -80,9 +80,7 @@ def settings_customise_sources(
     env_settings: Any,
     file_secret_settings: Any,
 ) -> Tuple[Any, ...]:
-    """
-    Source priority: init kwargs > .env file > env vars > Vault (prod/staging).
-    """
+    """Source priority: init kwargs > .env file > env vars > Vault (prod/staging)."""
     sources: list[Any] = [init_settings, file_secret_settings, env_settings]
     env = getenv("ENVIRONMENT", "").lower()
     secret_provider = getenv("SECRET_PROVIDER", "").lower()
@@ -109,8 +107,7 @@ def settings_customise_sources(
 
 
 def parse_cors(value: str) -> List[str]:
-    """
-    Parse a comma-separated CORS origins string into a validated list.
+    """Parse a comma-separated CORS origins string into a validated list.
 
     Each origin is validated against ``HTTP_HOST_REGEX``.
 
@@ -188,8 +185,7 @@ def _assert_key_strength(pem: str, algo: str, *, is_private: bool) -> None:
 
 
 class CommonSettings(BaseSettings):
-    """
-    Base settings class for all m8 microservices.
+    """Base settings class for all m8 microservices.
 
     Subclass this in each service and add service-specific fields.
     """

@@ -32,6 +32,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        """Record request duration and delegate to the next middleware."""
         m = get()
         if m is None:
             return await call_next(request)

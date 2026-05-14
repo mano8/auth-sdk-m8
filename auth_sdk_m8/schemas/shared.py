@@ -1,13 +1,10 @@
-"""
-Shared validation constants used across schemas and configuration.
-"""
+"""Shared validation constants used across schemas and configuration."""
 
 import re
 
 
 class ValidationConstants:
-    """
-    Regular expression constants for validating configuration values.
+    """Regular expression constants for validating configuration values.
 
     Covers host/domain names, URLs, file paths, passwords, secret keys,
     and MySQL identifiers.
@@ -69,8 +66,8 @@ class ValidationConstants:
 
     @classmethod
     def remove_invisible_chars(cls, text: str) -> str:
-        """
-        Strip invisible or control Unicode characters from a string,
-        preserving line breaks and tabs.
+        """Strip invisible or control Unicode characters from a string.
+
+        Preserves line breaks and tabs.
         """
         return cls.CONTROL_CHAR_PATTERN.sub("", text)

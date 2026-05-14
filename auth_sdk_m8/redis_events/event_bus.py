@@ -1,5 +1,4 @@
-"""
-Typed Redis Pub/Sub event bus.
+"""Typed Redis Pub/Sub event bus.
 
 Requires the `redis` extra:  pip install "auth-sdk-m8[redis]"
 """
@@ -17,8 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class EventBus:
-    """
-    Publish and subscribe to strongly-typed Redis Pub/Sub events.
+    """Publish and subscribe to strongly-typed Redis Pub/Sub events.
 
     Usage::
 
@@ -47,8 +45,7 @@ class EventBus:
         event_schema: Type[EventBase],
         handler: Callable[[EventBase], Awaitable[None]],
     ) -> None:
-        """
-        Subscribe to *channel* and dispatch validated events to *handler*.
+        """Subscribe to *channel* and dispatch validated events to *handler*.
 
         Args:
             channel: Redis channel name.

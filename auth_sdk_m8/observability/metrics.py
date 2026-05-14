@@ -1,5 +1,4 @@
-"""
-Prometheus metrics registry and setup.
+"""Prometheus metrics registry and setup.
 
 Metric groups (set via METRICS_GROUPS, comma-separated):
   all          — enable every group below

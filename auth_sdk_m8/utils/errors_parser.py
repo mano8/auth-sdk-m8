@@ -1,5 +1,4 @@
-"""
-Database and validation error parsers.
+"""Database and validation error parsers.
 
 Requires the `db` extra:  pip install "auth-sdk-m8[db]"
 """

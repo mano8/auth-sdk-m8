@@ -1,5 +1,4 @@
-"""
-JWT validation, token hashing and PKCE helpers.
+"""JWT validation, token hashing and PKCE helpers.
 
 Requires the `security` extra:  pip install "auth-sdk-m8[security]"
 FastAPI cookie helpers additionally require:  pip install "auth-sdk-m8[fastapi]"
