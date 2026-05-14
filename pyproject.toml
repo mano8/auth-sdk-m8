@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "auth-sdk-m8"
-version = "0.6.2"
+version = "0.6.3"
 description = "Shared authentication schemas, JWT utilities and FastAPI base components for m8 microservices."
 readme = "README.md"
 license = { file = "LICENSE" }

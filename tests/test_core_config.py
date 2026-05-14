@@ -521,3 +521,134 @@ def test_pem_public_file_missing_raises(tmp_path: pytest.TempPathFactory) -> Non
                 "ACCESS_PUBLIC_KEY_FILE": str(tmp_path / "missing_public.pem"),
             }
         )
+
+
+# ── STRICT_PRODUCTION_MODE ────────────────────────────────────────────────────
+
+
+def _strict_base(**overrides) -> DummySettings:
+    """Minimal valid settings with STRICT_PRODUCTION_MODE enabled."""
+    defaults = dict(
+        ACCESS_TOKEN_ALGORITHM="HS256",
+        TOKEN_MODE="stateful",
+        REDIS_HOST="localhost",
+        REDIS_PASSWORD="pass",
+        JWKS_CACHE_TTL_SECONDS=300,
+        STRICT_PRODUCTION_MODE=True,
+        ENVIRONMENT="production",
+        ALLOWED_ORIGINS=["https://example.com"],
+        SESSION_COOKIE_SECURE=True,
+        SET_DOCS=False,
+        SET_OPEN_API=False,
+    )
+    defaults.update(overrides)
+    return DummySettings(**defaults)
+
+
+def test_strict_mode_clean_production_passes() -> None:
+    """Properly hardened production config should pass with strict mode on."""
+    settings = _strict_base()
+    logger = DummyLogger()
+    check_config_health(settings, logger)
+    assert logger.warnings == []
+    assert logger.criticals == []
+
+
+def test_strict_mode_set_docs_production_is_fatal() -> None:
+    """SET_DOCS=true in production with strict mode should be fatal."""
+    settings = _strict_base(SET_DOCS=True)
+    logger = DummyLogger()
+    with pytest.raises(ConfigurationError):
+        check_config_health(settings, logger)
+    assert any("SET_DOCS=true" in e for e in logger.criticals)
+
+
+def test_strict_mode_set_open_api_production_is_fatal() -> None:
+    """SET_OPEN_API=true in production with strict mode should be fatal."""
+    settings = _strict_base(SET_OPEN_API=True)
+    logger = DummyLogger()
+    with pytest.raises(ConfigurationError):
+        check_config_health(settings, logger)
+    assert any("SET_OPEN_API=true" in e for e in logger.criticals)
+
+
+def test_normal_mode_set_docs_production_is_warning() -> None:
+    """SET_DOCS=true in production without strict mode should only warn."""
+    settings = DummySettings(
+        ACCESS_TOKEN_ALGORITHM="HS256",
+        TOKEN_MODE="stateful",
+        REDIS_HOST="localhost",
+        REDIS_PASSWORD="pass",
+        JWKS_CACHE_TTL_SECONDS=300,
+        STRICT_PRODUCTION_MODE=False,
+        ENVIRONMENT="production",
+        ALLOWED_ORIGINS=["https://example.com"],
+        SESSION_COOKIE_SECURE=True,
+        SET_DOCS=True,
+        SET_OPEN_API=False,
+    )
+    logger = DummyLogger()
+    check_config_health(settings, logger)
+    assert any("SET_DOCS=true" in w for w in logger.warnings)
+    assert logger.criticals == []
+
+
+def test_strict_mode_issuer_with_jwks_uri_is_fatal() -> None:
+    """Issuer with JWKS_URI set should be fatal under strict mode."""
+    settings = _strict_base(
+        ACCESS_TOKEN_ALGORITHM="RS256",
+        ACCESS_PUBLIC_KEY="dummy-pub-key",
+        ACCESS_PRIVATE_KEY_FILE="/opt/keys/private.pem",
+        JWKS_URI="https://other-auth.example.com/.well-known/jwks.json",
+        AUTH_SERVICE_ROLE="issuer",
+    )
+    logger = DummyLogger()
+    with pytest.raises(ConfigurationError):
+        check_config_health(settings, logger)
+    assert any("JWKS_URI set" in e for e in logger.criticals)
+
+
+def test_normal_mode_issuer_with_jwks_uri_is_warning() -> None:
+    """Issuer with JWKS_URI set should only warn without strict mode."""
+    settings = DummySettings(
+        ACCESS_TOKEN_ALGORITHM="RS256",
+        ACCESS_PUBLIC_KEY="dummy-pub-key",
+        ACCESS_PRIVATE_KEY_FILE="/opt/keys/private.pem",
+        JWKS_URI="https://other-auth.example.com/.well-known/jwks.json",
+        AUTH_SERVICE_ROLE="issuer",
+        TOKEN_MODE="stateful",
+        REDIS_HOST="localhost",
+        REDIS_PASSWORD="pass",
+        JWKS_CACHE_TTL_SECONDS=300,
+        STRICT_PRODUCTION_MODE=False,
+    )
+    logger = DummyLogger()
+    check_config_health(settings, logger)
+    assert any("AUTH_SERVICE_ROLE=issuer has JWKS_URI" in w for w in logger.warnings)
+    assert logger.criticals == []
+
+
+def test_strict_mode_wildcard_cors_is_fatal() -> None:
+    """Wildcard CORS origin should be fatal under strict mode."""
+    settings = _strict_base(ALLOWED_ORIGINS=["*"])
+    logger = DummyLogger()
+    with pytest.raises(ConfigurationError):
+        check_config_health(settings, logger)
+    assert any("wildcard" in e for e in logger.criticals)
+
+
+def test_strict_mode_insecure_cookie_non_local_is_fatal() -> None:
+    """SESSION_COOKIE_SECURE=false outside local env should be fatal in strict mode."""
+    settings = _strict_base(ENVIRONMENT="staging", SESSION_COOKIE_SECURE=False)
+    logger = DummyLogger()
+    with pytest.raises(ConfigurationError):
+        check_config_health(settings, logger)
+    assert any("SESSION_COOKIE_SECURE=false" in e for e in logger.criticals)
+
+
+def test_strict_mode_insecure_cookie_local_is_allowed() -> None:
+    """SESSION_COOKIE_SECURE=false in local env should not fail even with strict mode."""
+    settings = _strict_base(ENVIRONMENT="local", SESSION_COOKIE_SECURE=False)
+    logger = DummyLogger()
+    check_config_health(settings, logger)
+    assert not any("SESSION_COOKIE_SECURE" in e for e in logger.criticals)

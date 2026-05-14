@@ -325,6 +325,13 @@ class CommonSettings(BaseSettings):
     # with asymmetric algorithms must hold a private key.
     AUTH_SERVICE_ROLE: Literal["issuer", "consumer"] = "issuer"
 
+    # When true, warnings that indicate production security risks become fatal
+    # errors, aborting startup.  Recommended for staging/production CI gates.
+    STRICT_PRODUCTION_MODE: bool = False
+    # Controls the Secure flag on session cookies (Starlette SessionMiddleware
+    # https_only parameter).  Defaults True; only set False in local/dev.
+    SESSION_COOKIE_SECURE: bool = True
+
     SENTRY_DSN: Optional[HttpUrl] = None
     SELECTED_DB: Literal["Mysql", "Postgres"] = "Mysql"
 
@@ -499,19 +506,26 @@ def check_config_health(
     mis-configurations in logs before they cause runtime failures.
 
     Checks performed:
-    - RS256/ES256 algorithm without any public-key source
-    - JWKS_URI set but ACCESS_TOKEN_ALGORITHM is HS256 (JWKS is meaningless)
+    - RS256/ES256 algorithm without any public-key source (fatal)
+    - JWKS_URI set but ACCESS_TOKEN_ALGORITHM is HS256 (warning)
     - AUTH_SERVICE_ROLE=consumer with ACCESS_PRIVATE_KEY_FILE (fatal)
     - AUTH_SERVICE_ROLE=issuer with asymmetric algorithm but no private key (fatal)
-    - AUTH_SERVICE_ROLE=issuer with JWKS_URI set (warning — unusual)
-    - TOKEN_MODE is stateful/hybrid but Redis credentials are absent
-    - JWKS_CACHE_TTL_SECONDS set to an unusually low value (< 30 s)
+    - AUTH_SERVICE_ROLE=issuer with JWKS_URI set
+        (warning normally; fatal under STRICT_PRODUCTION_MODE)
+    - TOKEN_MODE is stateful/hybrid but Redis credentials are absent (fatal)
+    - JWKS_CACHE_TTL_SECONDS set to an unusually low value (< 30 s) (warning)
     - ENVIRONMENT=production with localhost origins in ALLOWED_ORIGINS (fatal)
-    - ENVIRONMENT=production with SET_DOCS/SET_OPEN_API enabled (warning)
+    - ENVIRONMENT=production with SET_DOCS/SET_OPEN_API enabled
+        (warning normally; fatal under STRICT_PRODUCTION_MODE)
     - AUTH_SERVICE_ROLE=consumer + TOKEN_MODE=stateless + DB_HOST set (warning)
+    - STRICT_PRODUCTION_MODE only: wildcard ('*') in ALLOWED_ORIGINS (fatal)
+    - STRICT_PRODUCTION_MODE only: SESSION_COOKIE_SECURE=false outside local
+        ENVIRONMENT (fatal)
     """
     fatal_errors: list[str] = []
     warnings: list[str] = []
+
+    strict: bool = getattr(settings, "STRICT_PRODUCTION_MODE", False)
 
     algo = settings.ACCESS_TOKEN_ALGORITHM
     jwks_uri: str | None = getattr(settings, "JWKS_URI", None) or None
@@ -557,12 +571,16 @@ def check_config_health(
 
     # Issuer with JWKS_URI is unusual — issuers validate using their own keys
     if role == "issuer" and jwks_uri:
-        warnings.append(
+        msg = (
             "CONFIG: AUTH_SERVICE_ROLE=issuer has JWKS_URI set — issuers "
             "validate tokens using their own key material, not a remote JWKS. "
             "Remove JWKS_URI unless this service also consumes tokens from "
             "another issuer."
         )
+        if strict:
+            fatal_errors.append(msg)
+        else:
+            warnings.append(msg)
 
     # Stateful/hybrid mode without Redis credentials
     if token_mode in {"stateful", "hybrid"}:
@@ -606,17 +624,25 @@ def check_config_health(
             )
 
         if getattr(settings, "SET_DOCS", True):
-            warnings.append(
+            msg = (
                 "CONFIG: ENVIRONMENT=production with SET_DOCS=true — "
                 "Swagger UI is publicly accessible. "
                 "Set SET_DOCS=false to disable API documentation in production."
             )
+            if strict:
+                fatal_errors.append(msg)
+            else:
+                warnings.append(msg)
         if getattr(settings, "SET_OPEN_API", True):
-            warnings.append(
+            msg = (
                 "CONFIG: ENVIRONMENT=production with SET_OPEN_API=true — "
                 "OpenAPI schema endpoint is publicly accessible. "
                 "Set SET_OPEN_API=false to hide the schema in production."
             )
+            if strict:
+                fatal_errors.append(msg)
+            else:
+                warnings.append(msg)
 
     # Consumer in stateless mode with a DB configured is likely unnecessary
     if role == "consumer" and token_mode == "stateless":
@@ -629,6 +655,24 @@ def check_config_health(
                 "database. Remove DB_* settings if this service does not use the "
                 "database directly."
             )
+
+    # Strict-mode-only checks
+    if strict:
+        allowed_origins: list[str] = getattr(settings, "ALLOWED_ORIGINS", []) or []
+        if "*" in allowed_origins:
+            fatal_errors.append(
+                "CONFIG: STRICT_PRODUCTION_MODE=true but ALLOWED_ORIGINS contains "
+                "a wildcard ('*') origin — specify explicit origins instead."
+            )
+
+        if environment not in {"local"}:
+            cookie_secure: bool = getattr(settings, "SESSION_COOKIE_SECURE", True)
+            if not cookie_secure:
+                fatal_errors.append(
+                    f"CONFIG: STRICT_PRODUCTION_MODE=true but "
+                    f"SESSION_COOKIE_SECURE=false in ENVIRONMENT={environment!r} — "
+                    "set SESSION_COOKIE_SECURE=true to enforce the Secure cookie flag."
+                )
 
     # Emit warnings
     for warning in warnings:
