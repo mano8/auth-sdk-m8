@@ -31,6 +31,7 @@ from pydantic import (
     EmailStr,
     Field,
     HttpUrl,
+    PrivateAttr,
     SecretStr,
     computed_field,
     field_validator,
@@ -159,14 +160,11 @@ class CommonSettings(BaseSettings):
     ]
     secret_fields: ClassVar[List[str]] = [
         "ACCESS_SECRET_KEY",
-        "ACCESS_PRIVATE_KEY",
         "REFRESH_SECRET_KEY",
         "DB_PASSWORD",
         "REDIS_PASSWORD",
     ]
     passwords: ClassVar[List[str]] = ["DB_PASSWORD", "REDIS_PASSWORD"]
-    # PEM keys (ACCESS_PRIVATE_KEY) are excluded — they do not match the
-    # symmetric-secret regex and must not be validated against it.
     secret_keys: ClassVar[List[str]] = [
         "ACCESS_SECRET_KEY",
         "REFRESH_SECRET_KEY",
@@ -217,11 +215,28 @@ class CommonSettings(BaseSettings):
     # Deprecated: no longer used for token signing. Kept for backward compat.
     SECRET_KEY: Optional[SecretStr] = None
     # HS256: set ACCESS_SECRET_KEY (symmetric).
-    # RS256/ES256: set ACCESS_PRIVATE_KEY (signing, auth service only) and
-    #              ACCESS_PUBLIC_KEY (validation, all services).
+    # RS256/ES256: provide key files via ACCESS_PRIVATE_KEY_FILE / ACCESS_PUBLIC_KEY_FILE
+    # (Docker/K8s volume mount) or ACCESS_PUBLIC_KEY_FILE + JWKS_URI for consumers.
     ACCESS_SECRET_KEY: Optional[SecretStr] = None
-    ACCESS_PRIVATE_KEY: Optional[SecretStr] = None  # PEM RSA/EC private key
-    ACCESS_PUBLIC_KEY: Optional[str] = None  # PEM RSA/EC public key
+    # File paths — the only supported way to supply RSA/EC key material.
+    # Mount ./keys:/opt/keys:ro and set these to the container paths.
+    ACCESS_PRIVATE_KEY_FILE: Optional[str] = None
+    ACCESS_PUBLIC_KEY_FILE: Optional[str] = None
+    # Internal — populated by _load_pem_files from the *_FILE paths above.
+    # Not settable via environment variable.
+    _access_private_key: Optional[SecretStr] = PrivateAttr(default=None)
+    _access_public_key: Optional[str] = PrivateAttr(default=None)
+
+    @property
+    def ACCESS_PRIVATE_KEY(self) -> Optional[SecretStr]:
+        """RSA/EC private key loaded from ACCESS_PRIVATE_KEY_FILE."""
+        return self._access_private_key
+
+    @property
+    def ACCESS_PUBLIC_KEY(self) -> Optional[str]:
+        """RSA/EC public key loaded from ACCESS_PUBLIC_KEY_FILE."""
+        return self._access_public_key
+
     REFRESH_SECRET_KEY: SecretStr  # Always HS256 (internal)
     # Deprecated: set ACCESS_TOKEN_ALGORITHM / REFRESH_TOKEN_ALGORITHM instead.
     # Kept as a fallback: if the per-type fields are not explicitly set they
@@ -324,6 +339,21 @@ class CommonSettings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _load_pem_files(self) -> "CommonSettings":
+        """Load PEM content from *_FILE paths into private attributes."""
+        if self.ACCESS_PRIVATE_KEY_FILE:
+            path = Path(self.ACCESS_PRIVATE_KEY_FILE)
+            if not path.is_file():
+                raise ValueError(f"ACCESS_PRIVATE_KEY_FILE not found: {path}")
+            self._access_private_key = SecretStr(path.read_text().strip())
+        if self.ACCESS_PUBLIC_KEY_FILE:
+            path = Path(self.ACCESS_PUBLIC_KEY_FILE)
+            if not path.is_file():
+                raise ValueError(f"ACCESS_PUBLIC_KEY_FILE not found: {path}")
+            self._access_public_key = path.read_text().strip()
+        return self
+
+    @model_validator(mode="after")
     def _validate_key_material(self) -> "CommonSettings":
         """Ensure the right key material is present for the configured algorithm."""
         algo = self.ACCESS_TOKEN_ALGORITHM
@@ -333,16 +363,13 @@ class CommonSettings(BaseSettings):
                     "ACCESS_SECRET_KEY is required when ACCESS_TOKEN_ALGORITHM=HS256"
                 )
         else:
-            # Consumer services may use JWKS_URI for dynamic key resolution instead
-            # of a static ACCESS_PUBLIC_KEY — both are acceptable for verification.
-            # The auth service always needs ACCESS_PRIVATE_KEY + ACCESS_PUBLIC_KEY.
+            # Consumers use JWKS_URI (preferred) or ACCESS_PUBLIC_KEY_FILE.
+            # The auth service needs ACCESS_PRIVATE_KEY_FILE + ACCESS_PUBLIC_KEY_FILE.
             if not self.ACCESS_PUBLIC_KEY and not self.JWKS_URI:
                 raise ValueError(
-                    f"ACCESS_PUBLIC_KEY (PEM) or JWKS_URI is required when "
-                    f"ACCESS_TOKEN_ALGORITHM={algo}. "
-                    "Consumer services: set JWKS_URI for automatic key resolution "
-                    "(zero-downtime rotation) or ACCESS_PUBLIC_KEY for a static key. "
-                    "The auth service additionally needs ACCESS_PRIVATE_KEY to sign tokens."
+                    f"ACCESS_TOKEN_ALGORITHM={algo} requires a public key source. "
+                    "Auth service: set ACCESS_PRIVATE_KEY_FILE and ACCESS_PUBLIC_KEY_FILE. "
+                    "Consumer: set JWKS_URI (preferred) or ACCESS_PUBLIC_KEY_FILE."
                 )
         return self
 
@@ -405,7 +432,7 @@ def check_config_health(
     Checks performed:
     - RS256/ES256 algorithm without any public-key source
     - JWKS_URI set but ACCESS_TOKEN_ALGORITHM is HS256 (JWKS is meaningless)
-    - ACCESS_PRIVATE_KEY present outside the auth service (signing key leak risk)
+    - ACCESS_PRIVATE_KEY_FILE set on a consumer that also has JWKS_URI
     - TOKEN_MODE is stateful/hybrid but Redis credentials are absent
     - JWKS_CACHE_TTL_SECONDS set to an unusually low value (< 30 s)
     """
@@ -415,41 +442,34 @@ def check_config_health(
     algo = settings.ACCESS_TOKEN_ALGORITHM
     jwks_uri: str | None = getattr(settings, "JWKS_URI", None) or None
     pub_key: str | None = getattr(settings, "ACCESS_PUBLIC_KEY", None) or None
-    priv_key = getattr(settings, "ACCESS_PRIVATE_KEY", None)
+    priv_key_file: str | None = (
+        getattr(settings, "ACCESS_PRIVATE_KEY_FILE", None) or None
+    )
     token_mode: str = getattr(settings, "TOKEN_MODE", "stateful")
     cache_ttl: int = getattr(settings, "JWKS_CACHE_TTL_SECONDS", 300)
 
     # RS256/ES256 with neither static key nor JWKS endpoint
     if algo != "HS256" and not pub_key and not jwks_uri:
         fatal_errors.append(
-            (
-                "CONFIG: ACCESS_TOKEN_ALGORITHM="
-                f"{algo} but neither ACCESS_PUBLIC_KEY nor "
-                "JWKS_URI is set — token validation will fail at runtime"
-            ),
+            f"CONFIG: ACCESS_TOKEN_ALGORITHM={algo} but neither "
+            "ACCESS_PUBLIC_KEY_FILE nor JWKS_URI is set — "
+            "token validation will fail at runtime"
         )
 
     # JWKS_URI configured but algorithm is symmetric
     if jwks_uri and algo == "HS256":
         warnings.append(
-            (
-                "CONFIG: JWKS_URI is set but "
-                "ACCESS_TOKEN_ALGORITHM=HS256 — "
-                "JWKS is only meaningful for asymmetric algorithms "
-                "(RS256, ES256). Remove JWKS_URI or switch the algorithm."
-            ),
+            "CONFIG: JWKS_URI is set but ACCESS_TOKEN_ALGORITHM=HS256 — "
+            "JWKS is only meaningful for asymmetric algorithms "
+            "(RS256, ES256). Remove JWKS_URI or switch the algorithm."
         )
 
-    # Private key present on a service that likely should not sign tokens
-    # (consumers only verify; the auth service is the only legitimate signer)
-    if priv_key and not pub_key:
+    # Signing key on a consumer service (consumers must never hold private keys)
+    if priv_key_file and jwks_uri:
         warnings.append(
-            (
-                "CONFIG: ACCESS_PRIVATE_KEY is set but "
-                "ACCESS_PUBLIC_KEY is absent — "
-                "this service can sign tokens but cannot verify them locally. "
-                "Ensure this is the auth service, not a consumer."
-            ),
+            "CONFIG: ACCESS_PRIVATE_KEY_FILE is set on a service that also "
+            "has JWKS_URI — consumers validate via JWKS and must not hold "
+            "signing keys. Remove ACCESS_PRIVATE_KEY_FILE from this service."
         )
 
     # Stateful/hybrid mode without Redis credentials

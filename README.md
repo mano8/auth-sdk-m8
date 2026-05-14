@@ -1,102 +1,183 @@
 # auth-sdk-m8
 
-Shared authentication schemas, JWT utilities, and FastAPI base components for **m8 microservices**.
+Shared authentication schemas, JWT validation, and FastAPI base components for **m8 microservices**.
 
-This package is extracted from `auth_user_service` and is intended to be installed by any service
-that integrates with it via Docker Compose. It provides the Pydantic schemas matching the auth
-service's API, JWT validation helpers, and optional FastAPI/SQLModel base classes.
+Extracted from `auth_user_service` and installed by any service that integrates with it via Docker Compose.
+Provides Pydantic schemas, JWT validation, `CommonSettings`, Redis event bus, and optional Prometheus metrics.
 
 [![PyPI version](https://img.shields.io/pypi/v/auth-sdk-m8)](https://pypi.org/project/auth-sdk-m8/)
 [![Python](https://img.shields.io/pypi/pyversions/auth-sdk-m8)](https://pypi.org/project/auth-sdk-m8/)
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/auth-sdk-m8?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/auth-sdk-m8)
+
 ---
 
 ## Installation
 
-### From PyPI (recommended)
-
 ```bash
 pip install auth-sdk-m8 --upgrade
 ```
-
-### Directly from GitHub
-
-```bash
-pip install "auth-sdk-m8 @ git+https://github.com/mano8/auth-sdk-m8.git@v0.2.0"
-```
-
-### For development (editable install)
-
-```bash
-git clone https://github.com/mano8/auth-sdk-m8.git
-cd auth-sdk-m8
-pip install -e ".[all,dev]"
-```
-
----
-
-## Optional dependency groups
 
 Install only what your service needs:
 
 | Extra | Installs | Use when |
 | --- | --- | --- |
 | *(none)* | `pydantic`, `email-validator` | schemas only |
-| `[security]` | `PyJWT` | local JWT validation |
+| `[security]` | `PyJWT`, `cryptography` | JWT validation |
 | `[fastapi]` | `fastapi` | cookie helpers, `BaseController` |
-| `[redis]` | `redis` | Redis event bus |
 | `[config]` | `pydantic-settings` | `CommonSettings` base class |
+| `[redis]` | `redis` | Redis event bus / blacklist |
 | `[db]` | `sqlmodel`, `sqlalchemy` | `TimestampMixin`, DB error parsing |
-| `[mysql]` | `pymysql` | MySQL database driver |
-| `[postgres]` | `psycopg2-binary` | PostgreSQL database driver |
+| `[mysql]` | `pymysql` | MySQL driver |
+| `[postgres]` | `psycopg2-binary` | PostgreSQL driver |
 | `[observability]` | `prometheus-client`, `fastapi` | Prometheus metrics middleware |
-| `[all]` | everything above | full feature set |
-
-Examples:
+| `[all]` | everything | full feature set |
 
 ```bash
-# A FastAPI service using MySQL
-pip install "auth-sdk-m8[security,fastapi,db,mysql]"
-
-# A FastAPI service using PostgreSQL
-pip install "auth-sdk-m8[security,fastapi,db,postgres]"
-
-# A service that only validates tokens locally
-pip install "auth-sdk-m8[security]"
-
-# A service that only listens to Redis events
-pip install "auth-sdk-m8[redis]"
-
-# A service with Prometheus metrics support
-pip install "auth-sdk-m8[observability]"
+pip install "auth-sdk-m8[security,fastapi,config,db,mysql]"
 ```
 
 ---
 
-## Quick start
+## Deployment modes
 
-### Validate a JWT from auth_user_service
+### HS256 — symmetric (simple, single-service or monolith)
 
-The recommended approach uses `build_access_validator`, which reads `ACCESS_TOKEN_ALGORITHM`,
-`ACCESS_SECRET_KEY` / `ACCESS_PUBLIC_KEY`, `TOKEN_ISSUER`, and `TOKEN_AUDIENCE` from your
-`CommonSettings` instance automatically:
+Every service shares the same secret. Simple to set up; not recommended when consumers are
+maintained by different teams.
+
+#### .env
+
+```ini
+ACCESS_TOKEN_ALGORITHM=HS256
+ACCESS_SECRET_KEY=your-strong-secret-key
+REFRESH_SECRET_KEY=your-strong-refresh-secret
+```
+
+#### Settings
+
+```python
+from pathlib import Path
+from pydantic_settings import SettingsConfigDict
+from auth_sdk_m8.core.config import CommonSettings
+from auth_sdk_m8.utils.paths import find_dotenv
+
+class Settings(CommonSettings):
+    ENV_FILE_DIR = Path(__file__).resolve().parent
+    model_config = SettingsConfigDict(
+        env_file=find_dotenv(ENV_FILE_DIR),
+        env_file_encoding="utf-8",
+    )
+
+settings = Settings()
+```
+
+#### Validate a token
 
 ```python
 from auth_sdk_m8.core.exceptions import InvalidToken
 from auth_sdk_m8.security import build_access_validator
 
-# Create once at module level — never per-request.
-_validator = build_access_validator(settings)
+validator = build_access_validator(settings)  # create once at module level
 
 try:
-    payload = _validator.validate_access_token(bearer_token)
-    print(payload.email, payload.role)
+    payload = validator.validate_access_token(bearer_token)
+    print(payload.sub, payload.role)
 except InvalidToken:
-    # token expired or invalid signature
     ...
 ```
 
-### FastAPI dependency for token validation with revocation check
+---
+
+### RS256 — asymmetric, issuer side (`auth_user_service`)
+
+The auth service holds the private key and publishes a JWKS endpoint.
+Consumer services never receive the private key.
+
+#### Generate keys
+
+```bash
+openssl genrsa -out keys/private.pem 2048
+openssl rsa -in keys/private.pem -pubout -out keys/public.pem
+```
+
+#### docker-compose.yml (auth service)
+
+```yaml
+environment:
+  ACCESS_TOKEN_ALGORITHM: RS256
+  REFRESH_TOKEN_ALGORITHM: HS256
+  ACCESS_KEY_ID: main-2026-01
+  ACCESS_PRIVATE_KEY_FILE: /opt/keys/private.pem
+  ACCESS_PUBLIC_KEY_FILE: /opt/keys/public.pem
+volumes:
+  - ./keys:/opt/keys:ro
+```
+
+#### .env (auth service)
+
+```ini
+ACCESS_TOKEN_ALGORITHM=RS256
+REFRESH_TOKEN_ALGORITHM=HS256
+ACCESS_KEY_ID=main-2026-01
+ACCESS_PRIVATE_KEY_FILE=/opt/keys/private.pem
+ACCESS_PUBLIC_KEY_FILE=/opt/keys/public.pem
+```
+
+> Keys are loaded from disk at startup via `ACCESS_PRIVATE_KEY_FILE` /
+> `ACCESS_PUBLIC_KEY_FILE`. Inline PEM strings in env vars are **not supported** —
+> newline escaping breaks silently across shells and orchestrators.
+
+---
+
+### RS256 — asymmetric, consumer side (JWKS, recommended)
+
+Consumers fetch the public key dynamically from the auth service JWKS endpoint.
+No key files needed. Supports zero-downtime key rotation.
+
+#### .env (consumer service)
+
+```ini
+ACCESS_TOKEN_ALGORITHM=RS256
+JWKS_URI=http://auth_user_service:8000/user/.well-known/jwks.json
+JWKS_CACHE_TTL_SECONDS=300
+```
+
+`build_access_validator` automatically uses `JwksKeyResolver` when `JWKS_URI` is set:
+
+```python
+# No key file needed — the validator fetches the public key from JWKS.
+validator = build_access_validator(settings)
+payload = validator.validate_access_token(bearer_token)
+```
+
+On an unknown `kid` the resolver refreshes once before raising, so key rotation on the issuer
+side is transparent to consumers with no restart required.
+
+---
+
+### RS256 — asymmetric, consumer offline (static public key file)
+
+For air-gapped or embedded deployments where the JWKS endpoint is unreachable.
+
+#### .env (consumer)
+
+```ini
+ACCESS_TOKEN_ALGORITHM=RS256
+ACCESS_PUBLIC_KEY_FILE=/opt/keys/public.pem
+```
+
+Mount only the public key — never the private key — to consumer containers:
+
+```yaml
+volumes:
+  - ./keys/public.pem:/opt/keys/public.pem:ro
+```
+
+---
+
+## FastAPI integration
+
+### Token validation dependency
 
 ```python
 from typing import Annotated, Optional
@@ -105,222 +186,123 @@ from fastapi.security import OAuth2PasswordBearer
 from redis import Redis
 from auth_sdk_m8.core.exceptions import InvalidToken
 from auth_sdk_m8.schemas.user import UserModel
-from auth_sdk_m8.security import AccessTokenBlacklist, ValidationHooks, build_access_validator
+from auth_sdk_m8.security import AccessTokenBlacklist, build_access_validator
 
-oauth2 = OAuth2PasswordBearer(tokenUrl="/auth/login/access-token")
+oauth2 = OAuth2PasswordBearer(tokenUrl="/user/login/access-token")
 TokenDep = Annotated[str, Depends(oauth2)]
 
 _validator = build_access_validator(settings)  # module-level singleton
 
-def get_redis_client() -> Optional[Redis]:
+def get_redis() -> Optional[Redis]:
     try:
-        client = Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT,
-                       decode_responses=True, socket_connect_timeout=1)
-        client.ping()
-        return client
+        r = Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT,
+                  decode_responses=True, socket_connect_timeout=1)
+        r.ping()
+        return r
     except Exception:
         return None
 
-RedisDep = Annotated[Optional[Redis], Depends(get_redis_client)]
+RedisDep = Annotated[Optional[Redis], Depends(get_redis)]
 
 def get_current_user(token: TokenDep, redis: RedisDep) -> UserModel:
     try:
         payload = _validator.validate_access_token(token)
     except InvalidToken as exc:
         raise HTTPException(status_code=403, detail="Could not validate credentials.") from exc
-    # Stateful mode: check whether the JTI was revoked by the auth service.
-    if settings.TOKEN_MODE == "stateful" and redis is not None:
+
+    if settings.TOKEN_MODE != "stateless" and redis is not None:
         if AccessTokenBlacklist(redis).is_revoked(payload.jti):
             raise HTTPException(status_code=403, detail="Token has been revoked.")
-    payload_dict = payload.model_dump(exclude={"sub", "jti", "exp", "type"})
-    payload_dict["id"] = payload.sub
-    return UserModel(**payload_dict)
+
+    return UserModel(**{**payload.model_dump(exclude={"sub", "jti", "exp", "type"}), "id": payload.sub})
 ```
 
-### Extend CommonSettings for your service
+### Startup config validation
+
+Call `check_config_health` inside the FastAPI lifespan to surface misconfigurations before the
+first request:
 
 ```python
-from pathlib import Path
-from auth_sdk_m8.core.config import CommonSettings
-from auth_sdk_m8.utils.paths import find_dotenv
-from pydantic_settings import SettingsConfigDict
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from auth_sdk_m8.core.config import check_config_health
+import logging
 
-class Settings(CommonSettings):
-    ENV_FILE_DIR = Path(__file__).resolve().parent
-    model_config = SettingsConfigDict(
-        env_file=find_dotenv(ENV_FILE_DIR),
-        env_file_encoding="utf-8",
-    )
-    # add service-specific fields here
-    MY_SERVICE_SECRET: str
+_logger = logging.getLogger(__name__)
 
-settings = Settings()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    check_config_health(settings, _logger)  # raises ConfigurationError on fatal issues
+    yield
+
+app = FastAPI(lifespan=lifespan)
 ```
 
-Set `SELECTED_DB` in your `.env` to choose the database backend (defaults to `Mysql`):
+Checks performed:
+
+| Condition | Severity |
+| --- | --- |
+| RS256/ES256 without `ACCESS_PUBLIC_KEY_FILE` or `JWKS_URI` | **fatal** |
+| `JWKS_URI` set but algorithm is `HS256` | warning |
+| `ACCESS_PRIVATE_KEY_FILE` set on a service that also has `JWKS_URI` | warning |
+| `TOKEN_MODE=stateful/hybrid` without Redis credentials | **fatal** |
+| `JWKS_CACHE_TTL_SECONDS` below 30 s | warning |
+
+---
+
+## Token modes
+
+Set `TOKEN_MODE` to control session strategy. Both auth service and consumers must agree.
+
+| `TOKEN_MODE` | Access tokens | Refresh tokens | Redis required |
+| --- | --- | --- | --- |
+| `stateless` | pure JWT, no revocation | pure JWT | no |
+| `hybrid` | pure JWT | JTI tracked in Redis | yes |
+| `stateful` | JTI blacklisted in Redis | JTI tracked in Redis | yes |
+
+---
+
+## Issuer / audience enforcement
+
+Set these in both the auth service and consumers to prevent token reuse across services:
 
 ```ini
-# .env
-SELECTED_DB=Postgres   # or Mysql (default)
-DB_HOST=localhost
-DB_PORT=5432
-DB_DATABASE=mydb
-DB_USER=myuser
-DB_PASSWORD=MyPassw0rd!
+TOKEN_ISSUER=https://auth.example.com
+TOKEN_AUDIENCE=https://api.example.com
 ```
 
-`settings.SQLALCHEMY_DATABASE_URI` returns the appropriate SQLAlchemy connection string for the
-selected backend (`mysql+pymysql://…` or `postgresql+psycopg2://…`).
-
-### Listen to Redis events from auth_user_service
-
-```python
-import asyncio
-from auth_sdk_m8.redis_events.event_bus import EventBus
-from auth_sdk_m8.schemas.user_events import UserDeletedEvent
-
-bus = EventBus(redis_url="redis://localhost:6379")
-
-async def on_user_deleted(event: UserDeletedEvent) -> None:
-    print(f"User {event.user_id} was deleted — cleaning up local data.")
-
-async def main():
-    await bus.subscribe("user.deleted", UserDeletedEvent, on_user_deleted)
-    await asyncio.sleep(3600)  # keep running
-
-asyncio.run(main())
-```
+`build_access_validator` automatically enforces `iss` and `aud` claims when these are set.
 
 ---
 
-## Package layout
+## Refresh token rotation
 
-```text
-auth_sdk_m8/
-├── schemas/
-│   ├── auth.py          # JWT payload schemas (TokenUserData, TokenAccessData, TokenSecret, …)
-│   ├── base.py          # Enums (AuthProviderType, RoleType, Period) + response models
-│   ├── shared.py        # ValidationConstants (regex patterns)
-│   ├── user.py          # UserModel, SessionModel
-│   ├── redis_events.py  # EventBase
-│   └── user_events.py   # UserDeletedEvent
-├── core/
-│   ├── config.py        # CommonSettings (pydantic-settings base class)
-│   ├── exceptions.py    # InvalidToken
-│   └── security.py      # ComSecurityHelper (legacy helpers: PKCE, token hashing)
-├── security/
-│   ├── factory.py               # build_access_validator() — settings-driven validator factory
-│   ├── blacklist.py             # AccessTokenBlacklist — Redis JTI revocation check
-│   ├── token_validator.py       # TokenValidator — stateless JWT access-token validation
-│   ├── token_policy.py          # TokenPolicy — stateful validation with revocation store
-│   ├── refresh_token_policy.py  # RefreshTokenPolicy — one-time-use refresh token rotation
-│   ├── refresh_token_store.py   # RefreshTokenStore protocol (implement against Redis, DB, …)
-│   ├── session_store.py         # SessionStore protocol (revocation checks)
-│   ├── key_resolver.py          # KeyResolver protocol (dynamic kid-based key lookup)
-│   ├── hooks.py                 # ValidationHooks protocol (observability callbacks)
-│   └── validation.py            # TokenValidationConfig (algorithm whitelist, claim rules)
-├── redis_events/
-│   ├── event_bus.py     # EventBus (typed pub/sub)
-│   ├── publisher.py     # EventPublisher
-│   └── subscriber.py   # EventSubscriber
-├── controllers/
-│   └── base.py          # BaseController: unified exception → JSONResponse
-├── models/
-│   └── shared.py        # TimestampMixin, Message, Token, TokenPayload (SQLModel)
-└── utils/
-    ├── errors_parser.py # parse_integrity_error (MySQL + PostgreSQL), parse_pydantic_errors
-    └── paths.py         # find_dotenv
-```
-
----
-
-## Publishing a new version
-
-1. Bump `version` in `pyproject.toml`
-2. Add an entry to `CHANGELOG.md`
-3. Commit and push
-4. Create a git tag: `git tag v0.2.0 && git push origin v0.2.0`
-5. GitHub Actions builds and publishes automatically to PyPI
-
----
-
-## Architecture note
-
-This SDK is intentionally thin. It contains **no business logic** — only schemas,
-validation helpers, and infrastructure base classes. Each consuming service validates
-JWTs locally (no network call per request). The `auth_user_service` remains the sole
-authority for **issuing** tokens; this SDK provides the tools to **read** and **rotate** them.
-
-For multi-team deployments consider **RS256** or **ES256** asymmetric signing — consuming
-services only need the public key, never the signing secret.
-
----
-
-## Validation models
-
-### Stateless (default)
-
-Pure JWT validation with no I/O dependency — recommended for most services.
+`RefreshTokenPolicy` enforces one-time use and atomic JTI rotation. A reused token is rejected
+immediately — treat that as a compromise signal.
 
 ```python
-from pydantic import SecretStr
-from auth_sdk_m8.schemas.auth import TokenSecret
-from auth_sdk_m8.security import TokenValidationConfig, TokenValidator
-
-validator = TokenValidator(
-    secrets=TokenSecret(
-        secret_key=SecretStr(ACCESS_SECRET_KEY),
-        algorithm="HS256",
-    ),
-    config=TokenValidationConfig(),
-)
-
-payload = validator.validate_access_token(token)
-```
-
-### Stateful (optional)
-
-Adds revocation checks via `SessionStore` — use for admin APIs or high-risk operations.
-
-```python
-from auth_sdk_m8.security import TokenPolicy
-
-policy = TokenPolicy(validator, store=my_session_store)
-payload = await policy.validate(token)  # raises InvalidToken if JTI is revoked
-```
-
-### Refresh token rotation
-
-`RefreshTokenPolicy` enforces one-time use and atomic JTI rotation. A reused refresh
-token is rejected immediately, which acts as a compromise signal.
-
-```python
-import uuid
 from auth_sdk_m8.security import RefreshTokenPolicy
+import uuid
 
-policy = RefreshTokenPolicy(
-    secrets=refresh_secrets,
-    store=my_refresh_store,  # implements RefreshTokenStore protocol
-)
+policy = RefreshTokenPolicy(secrets=refresh_secrets, store=my_refresh_store)
 
-# On each refresh request:
+# On each /refresh request:
 user_id, old_jti = await policy.validate_and_rotate(
     token=refresh_token,
     new_jti=str(uuid.uuid4()),
     ttl_seconds=86_400,
 )
-# old_jti is now revoked; issue a new token pair for user_id
+# Issue a new token pair for user_id. old_jti is now revoked.
 
 # On logout:
 await policy.revoke(jti)
 ```
 
-Implement `RefreshTokenStore` against Redis or any backend:
+Implement `RefreshTokenStore` against any backend:
 
 ```python
 class RedisRefreshStore:
-    def __init__(self, redis) -> None:
-        self._r = redis
+    def __init__(self, redis): self._r = redis
 
     async def is_valid(self, jti: str) -> bool:
         return bool(await self._r.exists(f"rt:{jti}"))
@@ -335,132 +317,155 @@ class RedisRefreshStore:
         await self._r.delete(f"rt:{jti}")
 ```
 
-### Prometheus metrics
+---
 
-Instrument any FastAPI / Starlette service with optional Prometheus metrics.
+## Observability hooks
+
+Attach logging, metrics, or tracing to token validation events via `ValidationHooks`:
+
+```python
+import logging
+from auth_sdk_m8.security import ValidationHooks, build_access_validator
+
+class LogHooks:
+    def on_success(self, *, jti: str, sub: str, token_type: str) -> None:
+        logging.info("token_ok type=%s sub=%s", token_type, sub)
+
+    def on_failure(self, *, reason: str, token_type: str) -> None:
+        logging.warning("token_fail type=%s reason=%s", token_type, reason)
+
+validator = build_access_validator(settings, hooks=LogHooks())
+```
+
+Failure reasons: `"expired"`, `"invalid"`, `"wrong_type"`, `"invalid_payload"`, `"revoked"`, `"reused"`.
+
+---
+
+## Prometheus metrics
+
 Requires `pip install "auth-sdk-m8[observability]"`.
 
 ```python
 # main.py
 from auth_sdk_m8.observability import metrics as _metrics
 from auth_sdk_m8.observability.middleware import MetricsMiddleware
+from auth_sdk_m8.observability.settings import ObservabilitySettingsMixin
 from fastapi import FastAPI, Response
 
-# Call once at startup — no-op when enabled=False.
+class Settings(ObservabilitySettingsMixin, CommonSettings):
+    ...
+
 _metrics.setup(
     enabled=settings.METRICS_ENABLED,
-    groups_str=settings.METRICS_GROUPS,   # e.g. "all" or "traffic,performance"
-    api_prefix=settings.API_PREFIX,        # e.g. "/user"  → metric prefix "user_"
+    groups_str=settings.METRICS_GROUPS,
+    api_prefix=settings.API_PREFIX,
 )
 
 app = FastAPI(...)
-
 if settings.METRICS_ENABLED:
     app.add_middleware(MetricsMiddleware)
 
-    @app.get(f"{settings.API_PREFIX}/metrics", include_in_schema=False, tags=["observability"])
+    @app.get(f"{settings.API_PREFIX}/metrics", include_in_schema=False)
     def metrics_endpoint() -> Response:
         content, content_type = _metrics.render()
         return Response(content=content, media_type=content_type)
 ```
 
-Add `ObservabilitySettingsMixin` to your settings class:
-
-```python
-from auth_sdk_m8.observability.settings import ObservabilitySettingsMixin
-from auth_sdk_m8.core.config import CommonSettings
-
-class Settings(ObservabilitySettingsMixin, CommonSettings):
-    ...
-```
-
-Then in your `.env`:
-
 ```ini
-# Master switch — when false the /metrics endpoint is never registered.
 METRICS_ENABLED=true
-
-# Which groups to collect.  Comma-separated or "all".
-# Groups: traffic | performance | reliability | health | auth
-METRICS_GROUPS=all
+METRICS_GROUPS=all   # or: traffic,performance,reliability,health,auth
 ```
 
-#### Metric groups
+| Group | Metrics |
+| --- | --- |
+| `traffic` | `http_requests_total` (method, endpoint, status_code) |
+| `performance` | `http_request_duration_seconds` histogram |
+| `reliability` | `http_errors_total` (4xx/5xx) |
+| `health` | `http_status_total` by exact status code |
+| `auth` | login attempts, token refresh, logout, validation failures, OAuth attempts |
 
-| Group | Metric | Labels |
-| --- | --- | --- |
-| `traffic` | `{prefix}_http_requests_total` | method, endpoint, status_code |
-| `performance` | `{prefix}_http_request_duration_seconds` | method, endpoint |
-| `reliability` | `{prefix}_http_errors_total` | method, endpoint, status_class (4xx/5xx) |
-| `health` | `{prefix}_http_status_total` | status_code |
-| `auth` | `{prefix}_auth_login_attempts_total` | result |
-| `auth` | `{prefix}_auth_token_refresh_total` | result |
-| `auth` | `{prefix}_auth_logout_total` | — |
-| `auth` | `{prefix}_auth_token_validation_failures_total` | reason |
-| `auth` | `{prefix}_auth_oauth_attempts_total` | provider, result |
+---
 
-The `auth` group is only meaningful in services that have auth routes.  HTTP-only services
-should use `METRICS_GROUPS=traffic,performance,reliability,health`.
-
-Record auth-specific events manually in your route handlers:
+## Redis event bus
 
 ```python
-from auth_sdk_m8.observability.metrics import get as _get_metrics
+import asyncio
+from auth_sdk_m8.redis_events.event_bus import EventBus
+from auth_sdk_m8.schemas.user_events import UserDeletedEvent
 
-def login(...):
-    ...
-    m = _get_metrics()
-    if m and m.login_attempts_total:
-        m.login_attempts_total.labels(result="success").inc()
+bus = EventBus(redis_url="redis://localhost:6379")
+
+async def on_user_deleted(event: UserDeletedEvent) -> None:
+    print(f"User {event.user_id} deleted — cleaning up local data.")
+
+async def main():
+    await bus.subscribe("user.deleted", UserDeletedEvent, on_user_deleted)
+    await asyncio.sleep(3600)
+
+asyncio.run(main())
 ```
 
-### Observability hooks
+---
 
-Attach structured logging, metrics, or tracing via `ValidationHooks`:
+## Package layout
 
-```python
-import logging
-from auth_sdk_m8.security import ValidationHooks
-
-class LogHooks:
-    def on_success(self, *, jti: str, sub: str, token_type: str) -> None:
-        logging.info("token_ok type=%s sub=%s jti=%s", token_type, sub, jti)
-
-    def on_failure(self, *, reason: str, token_type: str) -> None:
-        logging.warning("token_fail type=%s reason=%s", token_type, reason)
-
-validator = TokenValidator(secrets=..., config=..., hooks=LogHooks())
+```text
+auth_sdk_m8/
+├── schemas/
+│   ├── auth.py          # TokenUserData, TokenAccessData, TokenSecret, ASYMMETRIC_ALGORITHMS
+│   ├── base.py          # AuthProviderType, RoleType, Period, response models
+│   ├── shared.py        # ValidationConstants (regex patterns)
+│   ├── user.py          # UserModel, SessionModel
+│   └── user_events.py   # UserDeletedEvent
+├── core/
+│   ├── config.py        # CommonSettings, check_config_health, SecretProvider
+│   ├── exceptions.py    # InvalidToken, ConfigurationError
+│   └── security.py      # ComSecurityHelper (legacy: PKCE, token hashing)
+├── security/
+│   ├── factory.py            # build_access_validator() — settings-driven factory
+│   ├── blacklist.py          # AccessTokenBlacklist — Redis JTI revocation check
+│   ├── jwks_resolver.py      # JwksKeyResolver — JWKS endpoint with TTL cache
+│   ├── token_validator.py    # TokenValidator — stateless JWT validation
+│   ├── token_policy.py       # TokenPolicy — stateful validation with revocation store
+│   ├── refresh_token_policy.py  # RefreshTokenPolicy — one-time-use rotation
+│   ├── refresh_token_store.py   # RefreshTokenStore protocol
+│   ├── session_store.py      # SessionStore protocol
+│   ├── key_resolver.py       # KeyResolver protocol
+│   ├── hooks.py              # ValidationHooks protocol
+│   └── validation.py         # TokenValidationConfig
+├── observability/
+│   ├── metrics.py        # setup(), get(), render()
+│   ├── middleware.py     # MetricsMiddleware
+│   └── settings.py       # ObservabilitySettingsMixin
+├── redis_events/
+│   ├── event_bus.py      # EventBus (typed pub/sub)
+│   ├── publisher.py      # EventPublisher
+│   └── subscriber.py     # EventSubscriber
+├── controllers/
+│   └── base.py           # BaseController: exception → JSONResponse
+├── models/
+│   └── shared.py         # TimestampMixin, Message, Token, TokenPayload
+└── utils/
+    ├── errors_parser.py  # parse_integrity_error (MySQL + PostgreSQL), parse_pydantic_errors
+    └── paths.py          # find_dotenv
 ```
 
-Failure reasons: `"expired"`, `"invalid"`, `"wrong_type"`, `"invalid_payload"`, `"revoked"`, `"reused"`.
+---
 
-### Key rotation
+## Architecture note
 
-Resolve keys dynamically from the JWT `kid` header while keeping verification local:
+This SDK is intentionally thin — no business logic, only schemas, validation helpers, and base
+classes. JWTs are validated locally (no network call per request). `auth_user_service` is the
+sole token **issuer**; this SDK provides the tools to **read** and **rotate** them.
 
-```python
-from auth_sdk_m8.security import KeyResolver, TokenValidationConfig, TokenValidator
+For multi-team or multi-service deployments use **RS256** with JWKS: consumers only need the
+JWKS URI, never the signing key.
 
-class MyResolver(KeyResolver):
-    def resolve(self, kid: str | None):
-        return lookup_token_secret(kid)
+---
 
-validator = TokenValidator(
-    secrets=None,
-    config=TokenValidationConfig(),
-    key_resolver=MyResolver(),
-)
-```
+## Publishing a new version
 
-### Asymmetric keys (RS256 / ES256)
-
-```python
-from pydantic import SecretStr
-from auth_sdk_m8.schemas.auth import TokenSecret
-
-# Public key used for verification only — never share the private key with consumers.
-ts = TokenSecret(
-    secret_key=SecretStr(open("public.pem").read()),
-    algorithm="RS256",
-)
-```
+1. Bump `version` in `pyproject.toml` and `auth_sdk_m8/__init__.py`
+2. Add an entry to `CHANGELOG.md`
+3. Commit, tag, and push: `git tag v0.x.y && git push origin v0.x.y`
+4. GitHub Actions publishes to PyPI automatically

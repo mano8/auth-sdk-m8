@@ -314,10 +314,9 @@ def test_valid_config_no_logs() -> None:
 
 
 def test_missing_keys_fatal_error() -> None:
-    """Should raise when asymmetric algo has no keys or JWKS."""
+    """Should raise when asymmetric algo has no public key source or JWKS."""
     settings = DummySettings(
         ACCESS_TOKEN_ALGORITHM="RS256",
-        ACCESS_PUBLIC_KEY=None,
         JWKS_URI=None,
         TOKEN_MODE="stateful",
         REDIS_HOST="localhost",
@@ -347,12 +346,13 @@ def test_jwks_with_hs256_warning() -> None:
     assert any("JWKS_URI is set but" in w for w in logger.warnings)
 
 
-def test_private_key_without_public_warning() -> None:
-    """Should warn when private key exists without public key."""
+def test_private_key_file_on_consumer_warning() -> None:
+    """Should warn when a signing key file is set alongside JWKS_URI (consumer role)."""
     settings = DummySettings(
-        ACCESS_TOKEN_ALGORITHM="HS256",
-        ACCESS_PRIVATE_KEY="secret",
-        ACCESS_PUBLIC_KEY=None,
+        ACCESS_TOKEN_ALGORITHM="RS256",
+        ACCESS_PRIVATE_KEY_FILE="/opt/keys/private.pem",
+        ACCESS_PUBLIC_KEY="dummy-pub-key",
+        JWKS_URI="https://auth.example.com/.well-known/jwks.json",
         TOKEN_MODE="stateful",
         REDIS_HOST="localhost",
         REDIS_PASSWORD="pass",
@@ -362,7 +362,7 @@ def test_private_key_without_public_warning() -> None:
 
     check_config_health(settings, logger)
 
-    assert any("ACCESS_PRIVATE_KEY is set" in w for w in logger.warnings)
+    assert any("ACCESS_PRIVATE_KEY_FILE is set" in w for w in logger.warnings)
 
 
 def test_missing_redis_fatal() -> None:
@@ -417,3 +417,58 @@ def test_multiple_fatal_errors_combined() -> None:
 
     # Should have logged multiple critical messages
     assert len(logger.criticals) >= 1
+
+
+# ── _load_pem_files ───────────────────────────────────────────────────────────
+
+
+def test_pem_files_loaded_from_disk(tmp_path: pytest.TempPathFactory) -> None:
+    """ACCESS_PRIVATE/PUBLIC_KEY properties return content from *_FILE paths."""
+    priv = tmp_path / "private.pem"
+    pub = tmp_path / "public.pem"
+    priv.write_text("PRIVATE_PEM_CONTENT")
+    pub.write_text("PUBLIC_PEM_CONTENT")
+
+    s = IsolatedSettings(
+        **{
+            **VALID_SETTINGS_KWARGS,
+            "ACCESS_SECRET_KEY": None,
+            "ACCESS_TOKEN_ALGORITHM": "RS256",
+            "ACCESS_PRIVATE_KEY_FILE": str(priv),
+            "ACCESS_PUBLIC_KEY_FILE": str(pub),
+        }
+    )
+    assert s.ACCESS_PRIVATE_KEY is not None
+    assert s.ACCESS_PRIVATE_KEY.get_secret_value() == "PRIVATE_PEM_CONTENT"
+    assert s.ACCESS_PUBLIC_KEY == "PUBLIC_PEM_CONTENT"
+
+
+def test_pem_private_file_missing_raises(tmp_path: pytest.TempPathFactory) -> None:
+    """Should raise ValueError when ACCESS_PRIVATE_KEY_FILE path does not exist."""
+    with pytest.raises(Exception, match="ACCESS_PRIVATE_KEY_FILE not found"):
+        IsolatedSettings(
+            **{
+                **VALID_SETTINGS_KWARGS,
+                "ACCESS_SECRET_KEY": None,
+                "ACCESS_TOKEN_ALGORITHM": "RS256",
+                "ACCESS_PRIVATE_KEY_FILE": str(tmp_path / "missing.pem"),
+                "ACCESS_PUBLIC_KEY_FILE": str(tmp_path / "also_missing.pem"),
+            }
+        )
+
+
+def test_pem_public_file_missing_raises(tmp_path: pytest.TempPathFactory) -> None:
+    """Should raise ValueError when ACCESS_PUBLIC_KEY_FILE path does not exist."""
+    priv = tmp_path / "private.pem"
+    priv.write_text("PRIVATE_PEM_CONTENT")
+
+    with pytest.raises(Exception, match="ACCESS_PUBLIC_KEY_FILE not found"):
+        IsolatedSettings(
+            **{
+                **VALID_SETTINGS_KWARGS,
+                "ACCESS_SECRET_KEY": None,
+                "ACCESS_TOKEN_ALGORITHM": "RS256",
+                "ACCESS_PRIVATE_KEY_FILE": str(priv),
+                "ACCESS_PUBLIC_KEY_FILE": str(tmp_path / "missing_public.pem"),
+            }
+        )
