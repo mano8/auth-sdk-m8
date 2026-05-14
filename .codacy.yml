@@ -1,0 +1,12 @@
+engines:
+  eslint:
+    enabled: true
+  bandit:
+    enabled: true  # Python security
+  pylint:
+    enabled: true
+
+exclude_paths:
+  - "tests/"
+  - "dist/"
+  - "node_modules/"
