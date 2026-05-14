@@ -282,31 +282,40 @@ def test_common_settings_cors_origins_not_string() -> None:
 # ── TOKEN_MODE computed flags ─────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("mode,expected", [
-    ("stateless", True),
-    ("stateful", False),
-    ("hybrid", False),
-])
+@pytest.mark.parametrize(
+    "mode,expected",
+    [
+        ("stateless", True),
+        ("stateful", False),
+        ("hybrid", False),
+    ],
+)
 def test_is_stateless(mode: str, expected: bool) -> None:
     s = IsolatedSettings(**{**VALID_SETTINGS_KWARGS, "TOKEN_MODE": mode})
     assert s.is_stateless is expected
 
 
-@pytest.mark.parametrize("mode,expected", [
-    ("stateful", True),
-    ("stateless", False),
-    ("hybrid", False),
-])
+@pytest.mark.parametrize(
+    "mode,expected",
+    [
+        ("stateful", True),
+        ("stateless", False),
+        ("hybrid", False),
+    ],
+)
 def test_is_stateful(mode: str, expected: bool) -> None:
     s = IsolatedSettings(**{**VALID_SETTINGS_KWARGS, "TOKEN_MODE": mode})
     assert s.is_stateful is expected
 
 
-@pytest.mark.parametrize("mode,expected", [
-    ("stateful", True),
-    ("hybrid", True),
-    ("stateless", False),
-])
+@pytest.mark.parametrize(
+    "mode,expected",
+    [
+        ("stateful", True),
+        ("hybrid", True),
+        ("stateless", False),
+    ],
+)
 def test_requires_redis(mode: str, expected: bool) -> None:
     s = IsolatedSettings(**{**VALID_SETTINGS_KWARGS, "TOKEN_MODE": mode})
     assert s.requires_redis is expected
@@ -722,9 +731,11 @@ def test_assert_key_strength_rs256_ec_key() -> None:
     from auth_sdk_m8.core.config import _assert_key_strength
 
     ec_key = ec.generate_private_key(ec.SECP256R1())
-    ec_pem = ec_key.public_key().public_bytes(
-        Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
-    ).decode()
+    ec_pem = (
+        ec_key.public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        .decode()
+    )
     with pytest.raises(ValueError, match="RS256 requires an RSA key"):
         _assert_key_strength(ec_pem, "RS256", is_private=False)
 
@@ -736,9 +747,11 @@ def test_assert_key_strength_rsa_too_small() -> None:
     from auth_sdk_m8.core.config import _assert_key_strength
 
     small_key = rsa.generate_private_key(65537, 1024)
-    small_pem = small_key.public_key().public_bytes(
-        Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
-    ).decode()
+    small_pem = (
+        small_key.public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        .decode()
+    )
     with pytest.raises(ValueError, match="2048-bit"):
         _assert_key_strength(small_pem, "RS256", is_private=False)
 
@@ -757,9 +770,11 @@ def test_assert_key_strength_es256_wrong_curve() -> None:
     from auth_sdk_m8.core.config import _assert_key_strength
 
     wrong_curve_key = ec.generate_private_key(ec.SECP384R1())
-    wrong_pem = wrong_curve_key.public_key().public_bytes(
-        Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
-    ).decode()
+    wrong_pem = (
+        wrong_curve_key.public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        .decode()
+    )
     with pytest.raises(ValueError, match="P-256"):
         _assert_key_strength(wrong_pem, "ES256", is_private=False)
 
@@ -778,7 +793,9 @@ def test_sync_token_algorithms_propagates_non_hs256() -> None:
 
 
 def test_validate_key_material_hs256_no_secret_key() -> None:
-    kwargs = {k: v for k, v in VALID_SETTINGS_KWARGS.items() if k != "ACCESS_SECRET_KEY"}
+    kwargs = {
+        k: v for k, v in VALID_SETTINGS_KWARGS.items() if k != "ACCESS_SECRET_KEY"
+    }
     with pytest.raises(Exception, match="ACCESS_SECRET_KEY is required"):
         IsolatedSettings(**kwargs)
 

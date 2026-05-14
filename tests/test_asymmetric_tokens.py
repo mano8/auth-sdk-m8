@@ -51,9 +51,11 @@ def ec_keypair() -> Tuple[str, str]:
     priv_pem = priv.private_bytes(
         Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()
     ).decode()
-    pub_pem = priv.public_key().public_bytes(
-        Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
-    ).decode()
+    pub_pem = (
+        priv.public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        .decode()
+    )
     return priv_pem, pub_pem
 
 
@@ -73,9 +75,11 @@ def rsa_keypair_b() -> Tuple[str, str]:
     priv_pem = priv.private_bytes(
         Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
     ).decode()
-    pub_pem = priv.public_key().public_bytes(
-        Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
-    ).decode()
+    pub_pem = (
+        priv.public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        .decode()
+    )
     return priv_pem, pub_pem
 
 
@@ -127,9 +131,7 @@ def test_rs256_valid_token_validates() -> None:
 
 
 def test_rs256_user_fields_preserved() -> None:
-    token = _make_token(
-        RSA_PRIVATE_PEM, "RS256", full_name="Alice", is_superuser=True
-    )
+    token = _make_token(RSA_PRIVATE_PEM, "RS256", full_name="Alice", is_superuser=True)
     result = _validator(RSA_PUBLIC_PEM, "RS256").validate_access_token(token)
     assert result.full_name == "Alice"
     assert result.is_superuser is True
