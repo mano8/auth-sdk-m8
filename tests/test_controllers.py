@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock
 
+import pytest
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.exc import IntegrityError
 
@@ -82,3 +83,11 @@ def test_handle_exception_rolls_back_session() -> None:
     session = MagicMock()
     BaseController.handle_exception(RuntimeError("err"), session)
     session.rollback.assert_called_once()
+
+
+def test_handle_http_exception_reraises() -> None:
+    from fastapi import HTTPException
+
+    exc = HTTPException(status_code=404, detail="not found")
+    with pytest.raises(HTTPException):
+        BaseController.handle_exception(exc)

@@ -209,3 +209,71 @@ def test_build_access_validator_uses_jwks_resolver_when_uri_set():
     assert validator._key_resolver is not None
     assert isinstance(validator._key_resolver, JwksKeyResolver)
     assert validator._default_secrets is None
+
+
+# ── _guarded_refresh — rate-limiting branches ────────────────────────────────
+
+
+def test_guarded_refresh_rate_limited_skips_fetch() -> None:
+    resolver = JwksKeyResolver("http://auth/jwks.json")
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = _make_jwks_response(["kid-a"])
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+
+    with patch("urllib.request.urlopen", return_value=mock_resp) as mock_open:
+        resolver._guarded_refresh()  # first call — fetches, sets _last_refresh_attempt
+        resolver._guarded_refresh()  # second call — rate-limited, hits line 92 early return
+
+    assert mock_open.call_count == 1
+
+
+def test_guarded_refresh_inner_lock_double_check() -> None:
+    resolver = JwksKeyResolver("http://auth/jwks.json")
+    resolver._last_refresh_attempt = 0.0
+
+    call_count = [0]
+
+    def patched_monotonic() -> float:
+        call_count[0] += 1
+        if call_count[0] == 1:
+            # Outer check: 100-0=100 > _MIN_REFRESH_INTERVAL → pass outer gate
+            return 100.0
+        # Inner check (under lock): simulate concurrent refresh by bumping last_attempt
+        resolver._last_refresh_attempt = 99.0
+        return 100.0  # 100-99=1 < 10 → rate-limited inside lock → hits line 99
+
+    with (
+        patch("auth_sdk_m8.security.jwks_resolver.time.monotonic", patched_monotonic),
+        patch.object(resolver, "_refresh") as mock_refresh,
+    ):
+        resolver._guarded_refresh()
+
+    mock_refresh.assert_not_called()
+
+
+# ── _refresh — stale-cache fallback ──────────────────────────────────────────
+
+
+def test_refresh_stale_cache_served_on_fetch_failure() -> None:
+    from pydantic import SecretStr
+
+    from auth_sdk_m8.schemas.auth import TokenSecret
+
+    resolver = JwksKeyResolver("http://auth/jwks.json")
+    resolver._cache = {
+        "old-kid": TokenSecret(secret_key=SecretStr("old-key"), algorithm="RS256")
+    }
+
+    with patch("urllib.request.urlopen", side_effect=OSError("connection refused")):
+        resolver._refresh()  # should serve stale cache, not raise
+
+    assert "old-kid" in resolver._cache
+
+
+def test_refresh_raises_when_cache_empty_and_fetch_fails() -> None:
+    resolver = JwksKeyResolver("http://auth/jwks.json")
+    # Cache is empty — no stale fallback available.
+    with patch("urllib.request.urlopen", side_effect=OSError("connection refused")):
+        with pytest.raises(OSError):
+            resolver._refresh()
