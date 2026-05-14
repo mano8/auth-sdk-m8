@@ -64,33 +64,7 @@ class TokenValidator:
             InvalidToken: Token expired, invalid, wrong type, or malformed.
         """
         secrets = self._resolve_secrets(token)
-        decode_kwargs: dict[str, Any] = {
-            "key": secrets.secret_key.get_secret_value(),
-            "algorithms": self._config.allowed_algorithms,
-            "options": {
-                "require": self._config.required_claims,
-                "verify_aud": self._config.require_aud,
-                "verify_iss": self._config.require_iss,
-            },
-            "leeway": self._config.leeway_seconds,
-        }
-
-        if self._config.require_aud:
-            decode_kwargs["audience"] = self._config.audience
-
-        if self._config.require_iss:
-            decode_kwargs["issuer"] = self._config.issuer
-
-        try:
-            payload = jwt.decode(token, **decode_kwargs)
-        except ExpiredSignatureError as ex:
-            if self._hooks:
-                self._hooks.on_failure(reason="expired", token_type="access")  # nosec B106 - event label, not a password
-            raise InvalidToken("Access token expired") from ex
-        except PyJWTError as ex:
-            if self._hooks:
-                self._hooks.on_failure(reason="invalid", token_type="access")  # nosec B106
-            raise InvalidToken("Invalid access token") from ex
+        payload = self._decode_payload(token, secrets)
 
         if payload.get("type") != "access":
             if self._hooks:
@@ -108,6 +82,35 @@ class TokenValidator:
             self._hooks.on_success(jti=result.jti, sub=result.sub, token_type="access")  # nosec B106
 
         return result
+
+    def _build_decode_kwargs(self, secrets: TokenSecret) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            "key": secrets.secret_key.get_secret_value(),
+            "algorithms": self._config.allowed_algorithms,
+            "options": {
+                "require": self._config.required_claims,
+                "verify_aud": self._config.require_aud,
+                "verify_iss": self._config.require_iss,
+            },
+            "leeway": self._config.leeway_seconds,
+        }
+        if self._config.require_aud:
+            kwargs["audience"] = self._config.audience
+        if self._config.require_iss:
+            kwargs["issuer"] = self._config.issuer
+        return kwargs
+
+    def _decode_payload(self, token: str, secrets: TokenSecret) -> dict[str, Any]:
+        try:
+            return jwt.decode(token, **self._build_decode_kwargs(secrets))
+        except ExpiredSignatureError as ex:
+            if self._hooks:
+                self._hooks.on_failure(reason="expired", token_type="access")  # nosec B106
+            raise InvalidToken("Access token expired") from ex
+        except PyJWTError as ex:
+            if self._hooks:
+                self._hooks.on_failure(reason="invalid", token_type="access")  # nosec B106
+            raise InvalidToken("Invalid access token") from ex
 
     def _resolve_secrets(self, token: str) -> TokenSecret:
         """Resolve the signing key for this token."""
