@@ -1,0 +1,14 @@
+---
+engines:
+  bandit:
+    enabled: true
+  ruff:
+    enabled: true
+
+exclude_paths:
+  - "tests/**"
+  - "dist/**"
+  - "*.egg-info/**"
+  - ".pytest_cache/**"
+  - "**/__pycache__/**"
+  - "examples/**"

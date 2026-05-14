@@ -154,6 +154,39 @@ def test_decode_refresh_token_missing_jti() -> None:
             ComSecurityHelper.decode_refresh_token("token", secrets)
 
 
+# ── decode_refresh_token — additional branch coverage ────────────────────────
+
+
+def test_decode_refresh_token_unsupported_algorithm() -> None:
+    secrets = TokenSecret.model_construct(
+        secret_key=SecretStr(VALID_KEY), algorithm="RS512"
+    )
+    with pytest.raises(InvalidToken, match="Unsupported"):
+        ComSecurityHelper.decode_refresh_token("any.token.here", secrets)
+
+
+def test_decode_refresh_token_jwt_expired_signature() -> None:
+    expired_token = make_refresh_token(
+        exp=int((datetime.now(timezone.utc) - timedelta(hours=1)).timestamp())
+    )
+    secrets = TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256")
+    with pytest.raises(InvalidToken, match="Refresh token expired"):
+        ComSecurityHelper.decode_refresh_token(expired_token, secrets)
+
+
+def test_decode_refresh_token_bad_uuid_sub() -> None:
+    secrets = TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256")
+    with patch("auth_sdk_m8.core.security.jwt.decode") as mock_decode:
+        mock_decode.return_value = {
+            "sub": "not-a-uuid",
+            "type": "refresh",
+            "jti": "jti-123",
+            "exp": int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()),
+        }
+        with pytest.raises(InvalidToken, match="Invalid refresh token"):
+            ComSecurityHelper.decode_refresh_token("token", secrets)
+
+
 # ── cookie helpers ────────────────────────────────────────────────────────────
 
 

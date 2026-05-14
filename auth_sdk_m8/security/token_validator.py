@@ -85,34 +85,37 @@ class TokenValidator:
             payload = jwt.decode(token, **decode_kwargs)
         except ExpiredSignatureError as ex:
             if self._hooks:
-                self._hooks.on_failure(reason="expired", token_type="access")
+                self._hooks.on_failure(reason="expired", token_type="access")  # nosec B106 - event label, not a password
             raise InvalidToken("Access token expired") from ex
         except PyJWTError as ex:
             if self._hooks:
-                self._hooks.on_failure(reason="invalid", token_type="access")
+                self._hooks.on_failure(reason="invalid", token_type="access")  # nosec B106
             raise InvalidToken("Invalid access token") from ex
 
         if payload.get("type") != "access":
             if self._hooks:
-                self._hooks.on_failure(reason="wrong_type", token_type="access")
+                self._hooks.on_failure(reason="wrong_type", token_type="access")  # nosec B106
             raise InvalidToken("Not an access token")
 
         try:
             result = TokenUserData(**payload)
         except ValidationError as ex:
             if self._hooks:
-                self._hooks.on_failure(reason="invalid_payload", token_type="access")
+                self._hooks.on_failure(reason="invalid_payload", token_type="access")  # nosec B106
             raise InvalidToken("Invalid access token") from ex
 
         if self._hooks:
-            self._hooks.on_success(jti=result.jti, sub=result.sub, token_type="access")
+            self._hooks.on_success(jti=result.jti, sub=result.sub, token_type="access")  # nosec B106
 
         return result
 
     def _resolve_secrets(self, token: str) -> TokenSecret:
         """Resolve the signing key for this token."""
         if self._key_resolver is None:
-            assert self._default_secrets is not None
+            if self._default_secrets is None:
+                raise RuntimeError(
+                    "key_resolver is None but default_secrets was not provided"
+                )
             return self._default_secrets
 
         try:

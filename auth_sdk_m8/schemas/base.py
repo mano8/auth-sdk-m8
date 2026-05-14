@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 class AuthProviderType(str, Enum):
     """Authentication providers supported by auth_user_service."""
 
-    PASSWORD = "password"
+    PASSWORD = "password"  # nosec B105  # noqa: S105
     GOOGLE = "google"
 
 

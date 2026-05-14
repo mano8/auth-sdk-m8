@@ -1,6 +1,7 @@
 """Tests for auth_sdk_m8.core.config."""
 
 import sys
+from typing import ClassVar, Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -278,12 +279,71 @@ def test_common_settings_cors_origins_not_string() -> None:
         IsolatedSettings(**kwargs)
 
 
+# ── TOKEN_MODE computed flags ─────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "mode,expected",
+    [
+        ("stateless", True),
+        ("stateful", False),
+        ("hybrid", False),
+    ],
+)
+def test_is_stateless(mode: str, expected: bool) -> None:
+    s = IsolatedSettings(**{**VALID_SETTINGS_KWARGS, "TOKEN_MODE": mode})
+    assert s.is_stateless is expected
+
+
+@pytest.mark.parametrize(
+    "mode,expected",
+    [
+        ("stateful", True),
+        ("stateless", False),
+        ("hybrid", False),
+    ],
+)
+def test_is_stateful(mode: str, expected: bool) -> None:
+    s = IsolatedSettings(**{**VALID_SETTINGS_KWARGS, "TOKEN_MODE": mode})
+    assert s.is_stateful is expected
+
+
+@pytest.mark.parametrize(
+    "mode,expected",
+    [
+        ("stateful", True),
+        ("hybrid", True),
+        ("stateless", False),
+    ],
+)
+def test_requires_redis(mode: str, expected: bool) -> None:
+    s = IsolatedSettings(**{**VALID_SETTINGS_KWARGS, "TOKEN_MODE": mode})
+    assert s.requires_redis is expected
+
+
+def test_flags_are_mutually_consistent_for_all_modes() -> None:
+    """is_stateless and requires_redis must never both be True."""
+    for mode in ("stateless", "stateful", "hybrid"):
+        s = IsolatedSettings(**{**VALID_SETTINGS_KWARGS, "TOKEN_MODE": mode})
+        assert not (s.is_stateless and s.requires_redis), (
+            f"TOKEN_MODE={mode}: is_stateless and requires_redis cannot both be True"
+        )
+
+
 # ── check_config_health ────────────────────────────────────────────────────────────
 class DummySettings:
     """Minimal settings object for testing."""
 
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
+
+    @property
+    def requires_redis(self) -> bool:
+        return getattr(self, "TOKEN_MODE", "stateful") in {"stateful", "hybrid"}
+
+    @property
+    def is_stateless(self) -> bool:
+        return getattr(self, "TOKEN_MODE", "stateful") == "stateless"
 
 
 class DummyLogger:
@@ -652,3 +712,186 @@ def test_strict_mode_insecure_cookie_local_is_allowed() -> None:
     logger = DummyLogger()
     check_config_health(settings, logger)
     assert not any("SESSION_COOKIE_SECURE" in e for e in logger.criticals)
+
+
+# ── _assert_key_strength ──────────────────────────────────────────────────────
+
+
+def test_assert_key_strength_invalid_pem() -> None:
+    from auth_sdk_m8.core.config import _assert_key_strength
+
+    with pytest.raises(ValueError, match="Cannot parse PEM key material"):
+        _assert_key_strength("not-a-pem-at-all", "RS256", is_private=False)
+
+
+def test_assert_key_strength_rs256_ec_key() -> None:
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    from auth_sdk_m8.core.config import _assert_key_strength
+
+    ec_key = ec.generate_private_key(ec.SECP256R1())
+    ec_pem = (
+        ec_key.public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        .decode()
+    )
+    with pytest.raises(ValueError, match="RS256 requires an RSA key"):
+        _assert_key_strength(ec_pem, "RS256", is_private=False)
+
+
+def test_assert_key_strength_rsa_too_small() -> None:
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    from auth_sdk_m8.core.config import _assert_key_strength
+
+    small_key = rsa.generate_private_key(65537, 1024)
+    small_pem = (
+        small_key.public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        .decode()
+    )
+    with pytest.raises(ValueError, match="2048-bit"):
+        _assert_key_strength(small_pem, "RS256", is_private=False)
+
+
+def test_assert_key_strength_es256_rsa_key() -> None:
+    from auth_sdk_m8.core.config import _assert_key_strength
+
+    with pytest.raises(ValueError, match="ES256 requires an EC key"):
+        _assert_key_strength(RSA_PUBLIC_PEM.strip(), "ES256", is_private=False)
+
+
+def test_assert_key_strength_es256_wrong_curve() -> None:
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    from auth_sdk_m8.core.config import _assert_key_strength
+
+    wrong_curve_key = ec.generate_private_key(ec.SECP384R1())
+    wrong_pem = (
+        wrong_curve_key.public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        .decode()
+    )
+    with pytest.raises(ValueError, match="P-256"):
+        _assert_key_strength(wrong_pem, "ES256", is_private=False)
+
+
+# ── _sync_token_algorithms ────────────────────────────────────────────────────
+
+
+def test_sync_token_algorithms_propagates_non_hs256() -> None:
+    # TOKEN_ALGORITHM=RS256 triggers lines 415-418 even if creation fails later
+    kwargs = {**VALID_SETTINGS_KWARGS, "TOKEN_ALGORITHM": "RS256"}
+    with pytest.raises(Exception):
+        IsolatedSettings(**kwargs)
+
+
+# ── _validate_key_material ────────────────────────────────────────────────────
+
+
+def test_validate_key_material_hs256_no_secret_key() -> None:
+    kwargs = {
+        k: v for k, v in VALID_SETTINGS_KWARGS.items() if k != "ACCESS_SECRET_KEY"
+    }
+    with pytest.raises(Exception, match="ACCESS_SECRET_KEY is required"):
+        IsolatedSettings(**kwargs)
+
+
+def test_validate_key_material_rs256_no_key_source() -> None:
+    kwargs = {**VALID_SETTINGS_KWARGS, "ACCESS_TOKEN_ALGORITHM": "RS256"}
+    with pytest.raises(Exception, match="requires a public key source"):
+        IsolatedSettings(**kwargs)
+
+
+# ── _validate_key_strength (public-key-only path) ────────────────────────────
+
+
+def test_validate_key_strength_public_key_only(tmp_path) -> None:
+    pub = tmp_path / "public.pem"
+    pub.write_text(RSA_PUBLIC_PEM.strip())
+    kwargs = {
+        **VALID_SETTINGS_KWARGS,
+        "ACCESS_TOKEN_ALGORITHM": "RS256",
+        "ACCESS_SECRET_KEY": None,
+        "ACCESS_PUBLIC_KEY_FILE": str(pub),
+    }
+    s = IsolatedSettings(**kwargs)
+    assert s.ACCESS_PUBLIC_KEY is not None
+
+
+# ── enforce_secure_and_required_values ────────────────────────────────────────
+
+
+class _RequiredCustomField(IsolatedSettings):
+    """Subclass exposing an Optional field as required (no pattern constraint)."""
+
+    CUSTOM_FIELD: str = "present"
+    required_fields: ClassVar = ["CUSTOM_FIELD"]
+    secret_fields: ClassVar = []
+    passwords: ClassVar = []
+    secret_keys: ClassVar = []
+
+
+def test_enforce_required_field_empty_raises() -> None:
+    with pytest.raises(Exception, match="must be provided"):
+        _RequiredCustomField(**{**VALID_SETTINGS_KWARGS, "CUSTOM_FIELD": ""})
+
+
+class _SecretCustomField(IsolatedSettings):
+    """Subclass with a custom secret not subject to strength checks."""
+
+    CUSTOM_SECRET: Optional[str] = None
+    required_fields: ClassVar = []
+    secret_fields: ClassVar = ["CUSTOM_SECRET"]
+    passwords: ClassVar = []
+    secret_keys: ClassVar = []
+
+
+def test_enforce_insecure_default_secret_raises() -> None:
+    with pytest.raises(Exception, match="Insecure default"):
+        _SecretCustomField(**{**VALID_SETTINGS_KWARGS, "CUSTOM_SECRET": "changethis"})
+
+
+# ── check_config_health: production deployment checks ────────────────────────
+
+
+def test_production_localhost_cors_is_fatal() -> None:
+    settings = DummySettings(
+        ACCESS_TOKEN_ALGORITHM="HS256",
+        TOKEN_MODE="stateless",
+        ENVIRONMENT="production",
+        ALLOWED_ORIGINS=["http://localhost:3000"],
+    )
+    logger = DummyLogger()
+    with pytest.raises(ConfigurationError):
+        check_config_health(settings, logger)
+
+
+def test_production_set_open_api_warns_non_strict() -> None:
+    settings = DummySettings(
+        ACCESS_TOKEN_ALGORITHM="HS256",
+        TOKEN_MODE="stateless",
+        ENVIRONMENT="production",
+        ALLOWED_ORIGINS=[],
+        SET_DOCS=False,
+        SET_OPEN_API=True,
+        STRICT_PRODUCTION_MODE=False,
+    )
+    logger = DummyLogger()
+    check_config_health(settings, logger)
+    assert any("SET_OPEN_API" in w for w in logger.warnings)
+
+
+def test_consumer_stateless_with_db_host_warns() -> None:
+    settings = DummySettings(
+        ACCESS_TOKEN_ALGORITHM="HS256",
+        TOKEN_MODE="stateless",
+        AUTH_SERVICE_ROLE="consumer",
+        DB_HOST="localhost",
+    )
+    logger = DummyLogger()
+    check_config_health(settings, logger)
+    assert any("DB_HOST" in w for w in logger.warnings)

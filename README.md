@@ -5,9 +5,12 @@ Shared authentication schemas, JWT validation, and FastAPI base components for *
 Extracted from `auth_user_service` and installed by any service that integrates with it via Docker Compose.
 Provides Pydantic schemas, JWT validation, `CommonSettings`, Redis event bus, and optional Prometheus metrics.
 
+![CI/CD](https://github.com/mano8/auth-sdk-m8/actions/workflows/CI.yml/badge.svg?branch=main)
 [![PyPI version](https://img.shields.io/pypi/v/auth-sdk-m8)](https://pypi.org/project/auth-sdk-m8/)
 [![Python](https://img.shields.io/pypi/pyversions/auth-sdk-m8)](https://pypi.org/project/auth-sdk-m8/)
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/auth-sdk-m8?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/auth-sdk-m8)
+[![codecov](https://codecov.io/gh/mano8/auth-sdk-m8/graph/badge.svg?token=TF6OGIHOGF)](https://codecov.io/gh/mano8/auth-sdk-m8)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/8b8e9726b0f8441ea480902ea8910812)](https://app.codacy.com/gh/mano8/auth-sdk-m8/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 
 ---
 
@@ -244,9 +247,69 @@ Checks performed:
 | --- | --- |
 | RS256/ES256 without `ACCESS_PUBLIC_KEY_FILE` or `JWKS_URI` | **fatal** |
 | `JWKS_URI` set but algorithm is `HS256` | warning |
-| `ACCESS_PRIVATE_KEY_FILE` set on a service that also has `JWKS_URI` | warning |
+| `AUTH_SERVICE_ROLE=consumer` with `ACCESS_PRIVATE_KEY_FILE` | **fatal** |
+| `AUTH_SERVICE_ROLE=issuer` with asymmetric algorithm but no private key | **fatal** |
+| `AUTH_SERVICE_ROLE=issuer` with `JWKS_URI` set | warning (fatal under `STRICT_PRODUCTION_MODE`) |
 | `TOKEN_MODE=stateful/hybrid` without Redis credentials | **fatal** |
 | `JWKS_CACHE_TTL_SECONDS` below 30 s | warning |
+| `ENVIRONMENT=production` with `localhost`/`127.0.0.1` in `ALLOWED_ORIGINS` | **fatal** |
+| `ENVIRONMENT=production` with `SET_DOCS=true` or `SET_OPEN_API=true` | warning (fatal under `STRICT_PRODUCTION_MODE`) |
+| `AUTH_SERVICE_ROLE=consumer` + `TOKEN_MODE=stateless` + `DB_HOST` set | warning |
+| `STRICT_PRODUCTION_MODE=true` with wildcard `*` in `ALLOWED_ORIGINS` | **fatal** |
+| `STRICT_PRODUCTION_MODE=true` with `SESSION_COOKIE_SECURE=false` outside `local` | **fatal** |
+
+---
+
+## Service role (`AUTH_SERVICE_ROLE`)
+
+Set `AUTH_SERVICE_ROLE` to declare whether a service issues tokens or only validates them.
+`check_config_health` uses this to enforce role-appropriate key configuration.
+
+```ini
+# auth_user_service — signs tokens and serves JWKS
+AUTH_SERVICE_ROLE=issuer
+
+# any consumer microservice — only validates
+AUTH_SERVICE_ROLE=consumer
+```
+
+| Role | Allowed | Rejected |
+| --- | --- | --- |
+| `issuer` | `ACCESS_PRIVATE_KEY_FILE` + `ACCESS_PUBLIC_KEY_FILE` | missing private key with asymmetric algorithm |
+| `consumer` | `JWKS_URI` or `ACCESS_PUBLIC_KEY_FILE` | `ACCESS_PRIVATE_KEY_FILE` (private key on a consumer is always fatal) |
+
+---
+
+## Asymmetric key-strength enforcement
+
+`CommonSettings` validates loaded key material at startup:
+
+- **RS256**: minimum **2048-bit** RSA key — smaller keys raise `ValueError` and abort startup.
+- **ES256**: requires a **P-256 (secp256r1)** EC key — other curves (P-384, secp256k1, …) are rejected.
+
+This runs for both private keys (issuer) and public keys (consumer with `ACCESS_PUBLIC_KEY_FILE`).
+Consumer services using `JWKS_URI` skip this check — key strength is validated by the issuer.
+
+---
+
+## Strict production mode
+
+Set `STRICT_PRODUCTION_MODE=true` to escalate security warnings to fatal errors, aborting
+startup instead of merely logging. Recommended for staging/production CI gates.
+
+```ini
+STRICT_PRODUCTION_MODE=true
+SESSION_COOKIE_SECURE=true
+SET_DOCS=false
+SET_OPEN_API=false
+```
+
+What strict mode adds on top of the base `check_config_health` checks:
+
+- `SET_DOCS=true` or `SET_OPEN_API=true` in production → **fatal** (base: warning)
+- `AUTH_SERVICE_ROLE=issuer` with `JWKS_URI` set → **fatal** (base: warning)
+- Wildcard `*` in `ALLOWED_ORIGINS` → **fatal**
+- `SESSION_COOKIE_SECURE=false` outside `ENVIRONMENT=local` → **fatal**
 
 ---
 
@@ -467,5 +530,6 @@ JWKS URI, never the signing key.
 
 1. Bump `version` in `pyproject.toml` and `auth_sdk_m8/__init__.py`
 2. Add an entry to `CHANGELOG.md`
-3. Commit, tag, and push: `git tag v0.x.y && git push origin v0.x.y`
-4. GitHub Actions publishes to PyPI automatically
+3. Run `pytest` (must reach ≥ 90 % coverage) and `ruff check .`
+4. Commit, tag, and push: `git tag v0.x.y && git push origin v0.x.y`
+5. GitHub Actions publishes to PyPI automatically

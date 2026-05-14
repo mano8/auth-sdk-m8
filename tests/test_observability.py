@@ -8,20 +8,19 @@ from prometheus_client import CollectorRegistry
 import auth_sdk_m8.observability.metrics as _mod
 from auth_sdk_m8.observability.metrics import (
     _ALL_GROUPS,
-    _norm_prefix,
-    _resolve_groups,
-    get,
-    render,
-    setup,
     GROUP_AUTH,
     GROUP_HEALTH,
     GROUP_PERFORMANCE,
     GROUP_RELIABILITY,
     GROUP_TRAFFIC,
+    _norm_prefix,
+    _resolve_groups,
+    get,
+    render,
+    setup,
 )
 from auth_sdk_m8.observability.middleware import MetricsMiddleware
 from auth_sdk_m8.observability.settings import ObservabilitySettingsMixin
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -354,8 +353,20 @@ async def test_middleware_all_groups_combined() -> None:
     middleware = MetricsMiddleware(app=AsyncMock())
     call_next = AsyncMock(return_value=_make_response(200))
     await middleware.dispatch(_make_request("GET", "/health"), call_next)
-    assert _sv("svc_http_requests_total", {"method": "GET", "endpoint": "/health", "status_code": "200"}) == 1.0
-    assert _sv("svc_http_request_duration_seconds_count", {"method": "GET", "endpoint": "/health"}) == 1.0
+    assert (
+        _sv(
+            "svc_http_requests_total",
+            {"method": "GET", "endpoint": "/health", "status_code": "200"},
+        )
+        == 1.0
+    )
+    assert (
+        _sv(
+            "svc_http_request_duration_seconds_count",
+            {"method": "GET", "endpoint": "/health"},
+        )
+        == 1.0
+    )
     assert _sv("svc_http_status_total", {"status_code": "200"}) == 1.0
 
 
@@ -369,7 +380,9 @@ def test_settings_mixin_defaults() -> None:
 
 
 def test_settings_mixin_custom_values() -> None:
-    mixin = ObservabilitySettingsMixin(METRICS_ENABLED=True, METRICS_GROUPS="traffic,auth")
+    mixin = ObservabilitySettingsMixin(
+        METRICS_ENABLED=True, METRICS_GROUPS="traffic,auth"
+    )
     assert mixin.METRICS_ENABLED is True
     assert mixin.METRICS_GROUPS == "traffic,auth"
 

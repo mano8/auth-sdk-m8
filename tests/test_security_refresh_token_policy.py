@@ -184,3 +184,31 @@ async def test_validate_and_rotate_rejects_empty_jti() -> None:
 
     with pytest.raises(InvalidToken):
         await policy.validate_and_rotate(empty_jti_token, new_jti="new-jti")
+
+
+async def test_validate_and_rotate_unsupported_algorithm() -> None:
+    from pydantic import SecretStr as _SecretStr
+
+    from auth_sdk_m8.schemas.auth import TokenSecret as _TokenSecret
+
+    secrets = _TokenSecret.model_construct(
+        secret_key=_SecretStr(VALID_KEY), algorithm="RS512"
+    )
+    policy = RefreshTokenPolicy(secrets=secrets)
+    with pytest.raises(InvalidToken, match="Unsupported"):
+        await policy.validate_and_rotate("any.token", new_jti="new-jti")
+
+
+async def test_validate_and_rotate_manual_exp_none() -> None:
+    from unittest.mock import patch
+
+    policy = _make_policy()
+    with patch("auth_sdk_m8.security.refresh_token_policy.jwt.decode") as mock_decode:
+        mock_decode.return_value = {
+            "sub": "550e8400-e29b-41d4-a716-446655440000",
+            "type": "refresh",
+            "jti": "jti-123",
+            "exp": None,
+        }
+        with pytest.raises(InvalidToken, match="expired"):
+            await policy.validate_and_rotate("any.token", new_jti="new-jti")

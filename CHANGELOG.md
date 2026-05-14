@@ -5,6 +5,69 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [0.6.4] — 2026-05-14 · RS256/ES256 round-trip tests
+
+- Added `tests/test_asymmetric_tokens.py`: comprehensive RS256 and ES256 key generation,
+  token signing, and validation round-trip tests covering both issuer and consumer paths.
+- No API changes; test-only release to lock in asymmetric coverage.
+
+---
+
+## [0.6.3] — 2026-05-14 · `STRICT_PRODUCTION_MODE`
+
+- **`STRICT_PRODUCTION_MODE: bool = False`** added to `CommonSettings`.
+  When `True`, `check_config_health` escalates the following from *warnings* to *fatal errors*:
+  - `SET_DOCS=true` or `SET_OPEN_API=true` in production
+  - `AUTH_SERVICE_ROLE=issuer` with `JWKS_URI` set
+- **New strict-mode-only checks:**
+  - Wildcard (`*`) origin in `ALLOWED_ORIGINS` → fatal
+  - `SESSION_COOKIE_SECURE=false` outside `ENVIRONMENT=local` → fatal
+- Recommended for staging/production CI gates where misconfigurations should abort deployment.
+
+---
+
+## [0.6.2] — 2026-05-14 · Production deployment enforcement
+
+- **`check_config_health`** now validates production-specific configuration:
+  - `ENVIRONMENT=production` with `localhost`/`127.0.0.1` in `ALLOWED_ORIGINS` → **fatal**
+  - `ENVIRONMENT=production` with `SET_DOCS=true` or `SET_OPEN_API=true` → warning
+    (fatal under `STRICT_PRODUCTION_MODE`)
+  - `AUTH_SERVICE_ROLE=consumer` + `TOKEN_MODE=stateless` + `DB_HOST` set → warning
+    (stateless consumers typically do not need a database)
+
+---
+
+## [0.6.1] — 2026-05-14 · Key-strength validation, JWKS hardening, `AUTH_SERVICE_ROLE`
+
+- **`_assert_key_strength(pem, algo, *, is_private)`** — new module-level helper that
+  enforces cryptographic minimums: RS256 requires ≥ 2048-bit RSA keys; ES256 requires
+  P-256 (secp256r1) EC keys.  Called automatically by `_validate_key_strength`.
+- **`_validate_key_strength`** model validator added to `CommonSettings`: runs at startup
+  and rejects under-strength private or public key files before the service starts serving
+  requests.
+- **JWKS fetch hardening** in `JwksKeyResolver`:
+  - *Throttling* — at most one remote fetch per `_MIN_REFRESH_INTERVAL` (10 s), serialised
+    by a `threading.Lock` so concurrent requests share a single in-flight fetch.
+  - *Negative cache* — failed fetches are rate-limited by the same interval, preventing
+    retry storms when the auth server is down.
+  - *Stale-cache fallback* — if a refresh fails but keys are already cached, the stale
+    cache is served and a warning is logged; only raises when the cache is entirely empty.
+- **`AUTH_SERVICE_ROLE: Literal["issuer", "consumer"] = "issuer"`** added to
+  `CommonSettings`.  Used by `check_config_health` to enforce role-aware rules:
+  - `consumer` must not hold `ACCESS_PRIVATE_KEY_FILE` (fatal).
+  - `issuer` with an asymmetric algorithm must hold `ACCESS_PRIVATE_KEY_FILE` (fatal).
+  - `issuer` with `JWKS_URI` set emits a warning (unusual configuration).
+
+---
+
+## [0.6.0] — 2026-05-14 · Cleanup and foundation for 0.6.x
+
+- **Removed** `UUIDChar` type decorator and all associated tests (not an auth SDK concern).
+- Fixed RS256 key injection in the `examples/fastapi_service` docker-compose template.
+- Added JWKS consumer example to `examples/`.
+
+---
+
 ## [0.5.x] — 2026-05-14 · **Breaking: file-backed PEM loading**
 
 - **`ACCESS_PRIVATE_KEY` / `ACCESS_PUBLIC_KEY` removed as env-var fields.**
