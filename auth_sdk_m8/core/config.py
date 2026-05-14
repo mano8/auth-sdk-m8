@@ -222,6 +222,10 @@ class CommonSettings(BaseSettings):
     ACCESS_SECRET_KEY: Optional[SecretStr] = None
     ACCESS_PRIVATE_KEY: Optional[SecretStr] = None  # PEM RSA/EC private key
     ACCESS_PUBLIC_KEY: Optional[str] = None  # PEM RSA/EC public key
+    # File paths — when set, the PEM content is loaded from disk at startup.
+    # Use these (via Docker volume mount) instead of embedding PEM in env vars.
+    ACCESS_PRIVATE_KEY_FILE: Optional[str] = None
+    ACCESS_PUBLIC_KEY_FILE: Optional[str] = None
     REFRESH_SECRET_KEY: SecretStr  # Always HS256 (internal)
     # Deprecated: set ACCESS_TOKEN_ALGORITHM / REFRESH_TOKEN_ALGORITHM instead.
     # Kept as a fallback: if the per-type fields are not explicitly set they
@@ -321,6 +325,25 @@ class CommonSettings(BaseSettings):
                 self.ACCESS_TOKEN_ALGORITHM = self.TOKEN_ALGORITHM
             if self.REFRESH_TOKEN_ALGORITHM == "HS256":
                 self.REFRESH_TOKEN_ALGORITHM = self.TOKEN_ALGORITHM
+        return self
+
+    @model_validator(mode="after")
+    def _load_pem_files(self) -> "CommonSettings":
+        """Load PEM content from file paths when *_FILE vars are set."""
+        if self.ACCESS_PRIVATE_KEY_FILE and not self.ACCESS_PRIVATE_KEY:
+            path = Path(self.ACCESS_PRIVATE_KEY_FILE)
+            if not path.is_file():
+                raise ValueError(
+                    f"ACCESS_PRIVATE_KEY_FILE not found: {path}"
+                )
+            self.ACCESS_PRIVATE_KEY = SecretStr(path.read_text().strip())
+        if self.ACCESS_PUBLIC_KEY_FILE and not self.ACCESS_PUBLIC_KEY:
+            path = Path(self.ACCESS_PUBLIC_KEY_FILE)
+            if not path.is_file():
+                raise ValueError(
+                    f"ACCESS_PUBLIC_KEY_FILE not found: {path}"
+                )
+            self.ACCESS_PUBLIC_KEY = path.read_text().strip()
         return self
 
     @model_validator(mode="after")
