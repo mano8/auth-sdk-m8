@@ -86,6 +86,7 @@ def test_rs256_uses_public_key_branch() -> None:
         "-----BEGIN PUBLIC KEY-----\ndummy\n-----END PUBLIC KEY-----"
     )
     settings.ACCESS_SECRET_KEY = None  # should be ignored for asymmetric
+    settings.JWKS_URI = None  # test the static public key branch, not JWKS
     # getattr fallback used by factory.py
     del settings.TOKEN_ISSUER
     del settings.TOKEN_AUDIENCE
