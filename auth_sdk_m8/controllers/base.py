@@ -18,8 +18,7 @@ from auth_sdk_m8.utils.errors_parser import parse_integrity_error, parse_pydanti
 
 
 class BaseController:
-    """
-    Mixin that provides standard error responses for FastAPI route handlers.
+    """Mixin that provides standard error responses for FastAPI route handlers.
 
     Usage::
 
@@ -41,67 +40,61 @@ class BaseController:
         return {500: {"model": ResponseErrorBase}}
 
     @staticmethod
-    def handle_exception(
-        ex: Exception,
-        session: Union[Session, None] = None,
-    ) -> JSONResponse:
-        """
-        Map a caught exception to a structured JSON error response.
-
-        Always rolls back *session* if provided.
-
-        Args:
-            ex: The caught exception.
-            session: Optional SQLModel session to roll back.
-
-        Returns:
-            A ``JSONResponse`` with ``HTTP 500`` status and a ``ResponseErrorBase`` body.
-        """
-        # HTTPException carries its own status code — let FastAPI handle it.
-        if isinstance(ex, HTTPException):
-            raise ex
-
-        content: ResponseErrorBase
-
+    def _build_content(ex: Exception) -> ResponseErrorBase:
         if isinstance(ex, IntegrityError):
-            content = ResponseErrorBase(
+            return ResponseErrorBase(
                 success=False,
-                msg=(
-                    "Database integrity error: "
-                    "Possibly duplicate entry or invalid reference."
-                ),
+                msg="Database integrity error: Possibly duplicate entry or invalid reference.",
                 status_code=status.HTTP_400_BAD_REQUEST,
                 from_error="IntegrityError",
                 errors=parse_integrity_error(ex),
             )
-        elif isinstance(ex, ValidationError):
-            content = ResponseErrorBase(
+        if isinstance(ex, ValidationError):
+            return ResponseErrorBase(
                 success=False,
                 msg="Validation error.",
                 from_error="ValidationError",
                 status_code=status.HTTP_400_BAD_REQUEST,
                 errors=parse_pydantic_errors(ex),
             )
-        elif isinstance(ex, (ValueError, TypeError, IOError)):
-            content = ResponseErrorBase(
+        if isinstance(ex, (ValueError, TypeError, IOError)):
+            return ResponseErrorBase(
                 success=False,
                 msg="Internal error.",
                 from_error="InternalError",
                 errors=[ResponseError(error=str(ex))],
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
-        else:
-            content = ResponseErrorBase(
-                success=False,
-                msg="An unexpected error occurred.",
-                from_error="Exception",
-                errors=[ResponseError(error=str(ex))],
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        return ResponseErrorBase(
+            success=False,
+            msg="An unexpected error occurred.",
+            from_error="Exception",
+            errors=[ResponseError(error=str(ex))],
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
+    @staticmethod
+    def handle_exception(
+        ex: Exception,
+        session: Union[Session, None] = None,
+    ) -> JSONResponse:
+        """Map a caught exception to a structured JSON error response.
+
+        Always rolls back *session* if provided.  ``HTTPException`` is
+        re-raised so FastAPI can handle it with its own status code.
+
+        Args:
+            ex: The caught exception.
+            session: Optional SQLModel session to roll back.
+
+        Returns:
+            A ``JSONResponse`` with a ``ResponseErrorBase`` body.
+        """
+        if isinstance(ex, HTTPException):
+            raise ex
+        content = BaseController._build_content(ex)
         if session:
             session.rollback()
-
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content=content.model_dump(),
