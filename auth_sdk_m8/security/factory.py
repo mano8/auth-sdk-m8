@@ -24,6 +24,10 @@ def build_access_validator(
     ``JwksKeyResolver`` is used instead of a static public key — enabling
     zero-downtime key rotation without redeploying consumer services.
 
+    The ``AUTH_SERVICE_ROLE`` field (``"issuer"`` or ``"consumer"``) is not
+    read here; it drives startup enforcement in ``check_config_health()``.
+    By the time this factory runs, settings have already been validated.
+
     Args:
         settings: A CommonSettings (or compatible) instance.
         hooks: Optional ValidationHooks for logging / metrics callbacks.

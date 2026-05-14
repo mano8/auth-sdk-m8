@@ -131,6 +131,7 @@ def test_resolve_refreshes_on_unknown_kid():
     with patch("urllib.request.urlopen", return_value=mock_resp) as mock_open:
         resolver.resolve("kid-1")  # populates cache
         mock_resp.read.return_value = _make_jwks_response(["kid-1", "kid-2"])
+        resolver._last_refresh_attempt = 0  # bypass throttle gate
         resolver.resolve("kid-2")  # unknown → triggers refresh
 
     assert mock_open.call_count == 2
@@ -160,8 +161,9 @@ def test_resolve_refetches_after_ttl_expiry():
 
     with patch("urllib.request.urlopen", return_value=mock_resp) as mock_open:
         resolver.resolve("kid-a")
-        # Force expiry
+        # Force expiry and reset throttle so the second call fetches
         resolver._cache_expires_at = time.monotonic() - 1
+        resolver._last_refresh_attempt = 0
         resolver.resolve("kid-a")
 
     assert mock_open.call_count == 2
