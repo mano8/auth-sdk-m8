@@ -506,6 +506,9 @@ def check_config_health(
     - AUTH_SERVICE_ROLE=issuer with JWKS_URI set (warning — unusual)
     - TOKEN_MODE is stateful/hybrid but Redis credentials are absent
     - JWKS_CACHE_TTL_SECONDS set to an unusually low value (< 30 s)
+    - ENVIRONMENT=production with localhost origins in ALLOWED_ORIGINS (fatal)
+    - ENVIRONMENT=production with SET_DOCS/SET_OPEN_API enabled (warning)
+    - AUTH_SERVICE_ROLE=consumer + TOKEN_MODE=stateless + DB_HOST set (warning)
     """
     fatal_errors: list[str] = []
     warnings: list[str] = []
@@ -586,6 +589,46 @@ def check_config_health(
                 "Recommended minimum: 30 s; default: 300 s."
             ),
         )
+
+    environment: str = getattr(settings, "ENVIRONMENT", "local")
+
+    # Production: localhost CORS origins are a misconfiguration
+    if environment == "production":
+        allowed_origins: list[str] = getattr(settings, "ALLOWED_ORIGINS", []) or []
+        local_origins = [
+            o for o in allowed_origins if "localhost" in o or "127.0.0.1" in o
+        ]
+        if local_origins:
+            fatal_errors.append(
+                f"CONFIG: ENVIRONMENT=production but ALLOWED_ORIGINS contains "
+                f"localhost entries {local_origins} — "
+                "remove all localhost/127.0.0.1 origins before deploying to production."
+            )
+
+        if getattr(settings, "SET_DOCS", True):
+            warnings.append(
+                "CONFIG: ENVIRONMENT=production with SET_DOCS=true — "
+                "Swagger UI is publicly accessible. "
+                "Set SET_DOCS=false to disable API documentation in production."
+            )
+        if getattr(settings, "SET_OPEN_API", True):
+            warnings.append(
+                "CONFIG: ENVIRONMENT=production with SET_OPEN_API=true — "
+                "OpenAPI schema endpoint is publicly accessible. "
+                "Set SET_OPEN_API=false to hide the schema in production."
+            )
+
+    # Consumer in stateless mode with a DB configured is likely unnecessary
+    if role == "consumer" and token_mode == "stateless":
+        db_host: str = getattr(settings, "DB_HOST", "") or ""
+        if db_host:
+            warnings.append(
+                "CONFIG: AUTH_SERVICE_ROLE=consumer with TOKEN_MODE=stateless "
+                f"but DB_HOST={db_host!r} is set — "
+                "consumer services in stateless mode typically do not require a "
+                "database. Remove DB_* settings if this service does not use the "
+                "database directly."
+            )
 
     # Emit warnings
     for warning in warnings:
