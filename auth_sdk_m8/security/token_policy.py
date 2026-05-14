@@ -34,7 +34,7 @@ class TokenPolicy:
 
         if self.store and await self.store.is_revoked(payload.jti):
             if self._hooks:
-                self._hooks.on_failure(reason="revoked", token_type="access")
+                self._hooks.on_failure(reason="revoked", token_type="access")  # nosec B106 - event label, not a password
             raise InvalidToken("Token revoked")
 
         return payload

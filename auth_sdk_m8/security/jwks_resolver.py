@@ -6,6 +6,7 @@ import threading
 import time
 import urllib.request
 from typing import Optional
+from urllib.parse import urlparse
 
 from pydantic import SecretStr
 
@@ -51,6 +52,11 @@ class JwksKeyResolver:
         algorithm: str = "RS256",
         cache_ttl: int = 300,
     ) -> None:
+        parsed = urlparse(jwks_uri)
+        if parsed.scheme not in {"http", "https"}:
+            raise ValueError(
+                f"JWKS URI must use http or https scheme, got: {jwks_uri!r}"
+            )
         self._jwks_uri = jwks_uri
         self._algorithm = algorithm
         self._cache_ttl = cache_ttl
@@ -142,7 +148,7 @@ class JwksKeyResolver:
 
     def _fetch_jwks(self) -> list[dict]:
         """Download and parse the JWKS JSON document."""
-        with urllib.request.urlopen(self._jwks_uri, timeout=5) as resp:  # noqa: S310
+        with urllib.request.urlopen(self._jwks_uri, timeout=5) as resp:  # noqa: S310  # nosec B310 - scheme validated in __init__
             body = json.loads(resp.read())
         return body.get("keys", [])
 

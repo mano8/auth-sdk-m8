@@ -88,10 +88,10 @@ def settings_customise_sources(
     env = getenv("ENVIRONMENT", "").lower()
     secret_provider = getenv("SECRET_PROVIDER", "").lower()
 
-    if env in {"production", "staging"} and secret_provider == "vault":
+    if env in {"production", "staging"} and secret_provider == "vault":  # nosec B105 - provider name, not a password
         vault_addr = getenv("VAULT_ADDR")
         vault_token = getenv("VAULT_TOKEN")
-        token_file = "/run/secrets/vault_token"
+        token_file = "/run/secrets/vault_token"  # nosec B105 - Docker secrets mount path, not a hardcoded password
         if not vault_token and Path(token_file).is_file():
             vault_token = Path(token_file).read_text(encoding="utf-8").strip()
         if vault_addr and vault_token:
@@ -303,13 +303,13 @@ class CommonSettings(BaseSettings):
     @property
     def is_stateless(self) -> bool:
         """True when TOKEN_MODE is ``stateless`` — no Redis or DB session needed."""
-        return self.TOKEN_MODE == "stateless"
+        return self.TOKEN_MODE == "stateless"  # nosec B105 - token mode name, not a password
 
     @computed_field
     @property
     def is_stateful(self) -> bool:
         """True when TOKEN_MODE is ``stateful`` — full Redis blacklist + DB session."""
-        return self.TOKEN_MODE == "stateful"
+        return self.TOKEN_MODE == "stateful"  # nosec B105 - token mode name, not a password
 
     @computed_field
     @property
@@ -411,10 +411,10 @@ class CommonSettings(BaseSettings):
     @model_validator(mode="after")
     def _sync_token_algorithms(self) -> "CommonSettings":
         """Propagate TOKEN_ALGORITHM to per-type fields when not overridden."""
-        if self.TOKEN_ALGORITHM != "HS256":
-            if self.ACCESS_TOKEN_ALGORITHM == "HS256":
+        if self.TOKEN_ALGORITHM != "HS256":  # nosec B105 - JWT algorithm name, not a password
+            if self.ACCESS_TOKEN_ALGORITHM == "HS256":  # nosec B105
                 self.ACCESS_TOKEN_ALGORITHM = self.TOKEN_ALGORITHM
-            if self.REFRESH_TOKEN_ALGORITHM == "HS256":
+            if self.REFRESH_TOKEN_ALGORITHM == "HS256":  # nosec B105
                 self.REFRESH_TOKEN_ALGORITHM = self.TOKEN_ALGORITHM
         return self
 

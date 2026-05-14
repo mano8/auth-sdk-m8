@@ -128,18 +128,18 @@ class RefreshTokenPolicy:
             user_id, old_jti = _decode_refresh(token, self._secrets)
         except InvalidToken:
             if self._hooks:
-                self._hooks.on_failure(reason="invalid", token_type="refresh")
+                self._hooks.on_failure(reason="invalid", token_type="refresh")  # nosec B106 - event label, not a password
             raise
 
         if self._store is not None:
             if not await self._store.is_valid(old_jti):
                 if self._hooks:
-                    self._hooks.on_failure(reason="reused", token_type="refresh")
+                    self._hooks.on_failure(reason="reused", token_type="refresh")  # nosec B106
                 raise InvalidToken("Refresh token already used or revoked")
             await self._store.rotate(old_jti, new_jti, ttl_seconds)
 
         if self._hooks:
-            self._hooks.on_success(jti=new_jti, sub=str(user_id), token_type="refresh")
+            self._hooks.on_success(jti=new_jti, sub=str(user_id), token_type="refresh")  # nosec B106
 
         return user_id, old_jti
 
