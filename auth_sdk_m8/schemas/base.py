@@ -43,6 +43,7 @@ class Period(str, Enum):
     MINUTE = "minute"
     HOUR = "hour"
     DAY = "day"
+    MONTH = "month"
 
 
 # ── Response schemas ──────────────────────────────────────────────────────────
