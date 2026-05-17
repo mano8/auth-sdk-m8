@@ -365,3 +365,22 @@ def test_token_validation_config_strict_profile() -> None:
     assert config.require_aud is True
     assert "iat" in config.required_claims
     assert "nbf" in config.required_claims
+
+
+def test_resolve_secrets_raises_when_both_resolver_and_secrets_are_none() -> None:
+    from pydantic import SecretStr
+
+    resolver = _MapResolver(
+        {None: TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256")}
+    )
+    validator = TokenValidator(
+        secrets=None,
+        config=TokenValidationConfig(),
+        key_resolver=resolver,
+    )
+    # Simulate broken post-init state where both are cleared
+    validator._key_resolver = None
+    validator._default_secrets = None
+
+    with pytest.raises(RuntimeError, match="key_resolver is None"):
+        validator._resolve_secrets("dummy.token.value")

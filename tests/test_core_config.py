@@ -7,9 +7,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from auth_sdk_m8.core.config import (
+    CommonSettings,
     EnvProvider,
     SecretProvider,
     VaultProvider,
+    _build_vault_source,
     check_config_health,
     parse_cors,
     settings_customise_sources,
@@ -895,3 +897,95 @@ def test_consumer_stateless_with_db_host_warns() -> None:
     logger = DummyLogger()
     check_config_health(settings, logger)
     assert any("DB_HOST" in w for w in logger.warnings)
+
+
+# ── _build_vault_source ───────────────────────────────────────────────────────
+
+
+def test_build_vault_source_returns_callable() -> None:
+    mock_hvac = MagicMock()
+    mock_client = MagicMock()
+    mock_hvac.Client.return_value = mock_client
+    mock_client.secrets.kv.v2.read_secret_version.return_value = {
+        "data": {"data": {"ACCESS_SECRET_KEY": "built-val"}}
+    }
+
+    with patch.dict(sys.modules, {"hvac": mock_hvac}):
+        source = _build_vault_source("http://vault:8200", "mytoken")
+        result = source()
+
+    assert "ACCESS_SECRET_KEY" in result
+
+
+# ── CommonSettings.settings_customise_sources ─────────────────────────────────
+
+
+def test_common_settings_customise_sources_no_vault(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "local")
+    monkeypatch.delenv("SECRET_PROVIDER", raising=False)
+
+    sources = CommonSettings.settings_customise_sources(
+        CommonSettings,
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+    )
+
+    assert len(sources) == 4
+
+
+def test_common_settings_customise_sources_vault(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("SECRET_PROVIDER", "vault")
+    monkeypatch.setenv("VAULT_ADDR", "http://vault:8200")
+    monkeypatch.setenv("VAULT_TOKEN", "mytoken")
+
+    mock_hvac = MagicMock()
+    mock_hvac.Client.return_value = MagicMock()
+
+    with patch.dict(sys.modules, {"hvac": mock_hvac}):
+        sources = CommonSettings.settings_customise_sources(
+            CommonSettings,
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+        )
+
+    assert len(sources) == 5
+
+
+def test_common_settings_customise_sources_vault_token_from_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "staging")
+    monkeypatch.setenv("SECRET_PROVIDER", "vault")
+    monkeypatch.setenv("VAULT_ADDR", "http://vault:8200")
+    monkeypatch.delenv("VAULT_TOKEN", raising=False)
+
+    mock_hvac = MagicMock()
+    mock_hvac.Client.return_value = MagicMock()
+
+    with (
+        patch.dict(sys.modules, {"hvac": mock_hvac}),
+        patch("auth_sdk_m8.core.config.Path") as mock_path_cls,
+    ):
+        mock_path_instance = MagicMock()
+        mock_path_instance.is_file.return_value = True
+        mock_path_instance.read_text.return_value = "file-token"
+        mock_path_cls.return_value = mock_path_instance
+
+        sources = CommonSettings.settings_customise_sources(
+            CommonSettings,
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+        )
+
+    assert len(sources) == 5
