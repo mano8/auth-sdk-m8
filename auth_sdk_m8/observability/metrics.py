@@ -8,7 +8,10 @@ Metric groups (set via METRICS_GROUPS, comma-separated):
   health       — http_status_total by exact status code
   auth         — auth_login_attempts_total, auth_token_refresh_total,
                  auth_logout_total, auth_token_validation_failures_total,
-                 auth_oauth_attempts_total
+                 auth_oauth_attempts_total,
+                 auth_api_key_validations_total, auth_api_key_rate_limit_checks_total,
+                 auth_api_key_rate_limit_hits_total, auth_api_key_lifecycle_total,
+                 auth_api_key_flush_duration_seconds
                  (only meaningful in services that have auth routes)
 
 Requires: pip install auth-sdk-m8[observability]
@@ -26,6 +29,9 @@ from prometheus_client import (
     Histogram,
     generate_latest,
 )
+
+# Prometheus histogram buckets tuned for sub-second Redis/DB flush latency.
+_FLUSH_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0)
 
 REGISTRY = CollectorRegistry(auto_describe=False)
 
@@ -60,6 +66,12 @@ class _Metrics:
     logout_total: Optional[Counter] = None
     token_validation_failures_total: Optional[Counter] = None
     oauth_attempts_total: Optional[Counter] = None
+    # api keys (part of auth group)
+    api_key_validations_total: Optional[Counter] = None
+    api_key_rate_limit_checks_total: Optional[Counter] = None
+    api_key_rate_limit_hits_total: Optional[Counter] = None
+    api_key_lifecycle_total: Optional[Counter] = None
+    api_key_flush_duration_seconds: Optional[Histogram] = None
 
 
 _m: Optional[_Metrics] = None
@@ -157,6 +169,37 @@ def setup(enabled: bool, groups_str: str, api_prefix: str) -> None:
             f"{pfx}auth_oauth_attempts_total",
             "OAuth callback attempts (provider: google, result: success | failed)",
             ["provider", "result"],
+            registry=REGISTRY,
+        )
+        m.api_key_validations_total = Counter(
+            f"{pfx}auth_api_key_validations_total",
+            "API key validation results (result: success | invalid | revoked | expired)",
+            ["result"],
+            registry=REGISTRY,
+        )
+        m.api_key_rate_limit_checks_total = Counter(
+            f"{pfx}auth_api_key_rate_limit_checks_total",
+            "Rate limit enforcement checks (result: allowed | blocked); "
+            "invariant: allowed + blocked <= checks_total",
+            ["result"],
+            registry=REGISTRY,
+        )
+        m.api_key_rate_limit_hits_total = Counter(
+            f"{pfx}auth_api_key_rate_limit_hits_total",
+            "Rate limit window exceeded by period (period: minute | hour | day | month)",
+            ["period"],
+            registry=REGISTRY,
+        )
+        m.api_key_lifecycle_total = Counter(
+            f"{pfx}auth_api_key_lifecycle_total",
+            "API key lifecycle events (action: created | revoked)",
+            ["action"],
+            registry=REGISTRY,
+        )
+        m.api_key_flush_duration_seconds = Histogram(
+            f"{pfx}auth_api_key_flush_duration_seconds",
+            "Redis-to-DB last_used_at batch flush latency in seconds",
+            buckets=_FLUSH_BUCKETS,
             registry=REGISTRY,
         )
 
