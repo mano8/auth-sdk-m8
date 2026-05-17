@@ -277,3 +277,8 @@ def test_refresh_raises_when_cache_empty_and_fetch_fails() -> None:
     with patch("urllib.request.urlopen", side_effect=OSError("connection refused")):
         with pytest.raises(OSError):
             resolver._refresh()
+
+
+def test_jwks_key_resolver_rejects_non_http_scheme() -> None:
+    with pytest.raises(ValueError, match="http or https"):
+        JwksKeyResolver("ftp://auth/jwks.json")

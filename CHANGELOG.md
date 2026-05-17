@@ -5,6 +5,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [0.6.6] — 2026-05-17 · Test quality and coverage
+
+- **Fix `_vault_source` callable signature**: both the inline closure in `settings_customise_sources` and the `_build_vault_source` helper now accept an optional `_settings` argument, matching how pydantic-settings calls custom sources (passing the settings instance). This resolves a `TypeError` in tests and aligns the signature with the pydantic-settings contract.
+- **100% test coverage**: added targeted tests for previously uncovered branches:
+  - `_build_vault_source` return value invocation
+  - `CommonSettings.settings_customise_sources` without Vault, with Vault env token, and with Vault file token
+  - `JwksKeyResolver.__init__` rejection of non-http/https URI schemes
+  - `TokenValidator._resolve_secrets` defensive `RuntimeError` when both `_key_resolver` and `_default_secrets` are `None`
+
+---
+
+## [Unreleased] — Vault injection classmethod fix
+
+- **`CommonSettings.settings_customise_sources` classmethod**: pydantic-settings 2.x calls `settings_customise_sources` as a classmethod with 5 args `(cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings)` and calls each source with no arguments. The previous standalone function passed via `model_config` was silently ignored by pydantic-settings 2.x, so Vault injection never activated. Fixed by overriding `settings_customise_sources` as a proper `@classmethod` on `CommonSettings`; the Vault source callable now takes no arguments.
+- **`_build_vault_source` helper**: extracted to build the Vault callable source cleanly.
+- The deprecated standalone `settings_customise_sources` function is retained for backward compatibility but marked deprecated in its docstring.
+
+---
+
 ## [0.6.4] — 2026-05-14 · RS256/ES256 round-trip tests
 
 - Added `tests/test_asymmetric_tokens.py`: comprehensive RS256 and ES256 key generation,

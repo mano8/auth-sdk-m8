@@ -80,7 +80,13 @@ def settings_customise_sources(
     env_settings: Any,
     file_secret_settings: Any,
 ) -> Tuple[Any, ...]:
-    """Source priority: init kwargs > .env file > env vars > Vault (prod/staging)."""
+    """Source priority: init kwargs > .env file > env vars > Vault (prod/staging).
+
+    .. deprecated::
+        Pass via ``model_config`` does not work with pydantic-settings ≥ 2.x.
+        Vault injection is now handled by the ``settings_customise_sources``
+        classmethod on :class:`CommonSettings` — no action needed in subclasses.
+    """
     sources: list[Any] = [init_settings, file_secret_settings, env_settings]
     env = getenv("ENVIRONMENT", "").lower()
     secret_provider = getenv("SECRET_PROVIDER", "").lower()
@@ -94,7 +100,7 @@ def settings_customise_sources(
         if vault_addr and vault_token:
             provider = VaultProvider(vault_addr, vault_token)
 
-            def _vault_source(settings: BaseSettings) -> Dict[str, Any]:
+            def _vault_source(_settings: Any = None) -> Dict[str, Any]:
                 return {
                     key: val
                     for key in REQUIRE_UPDATE_FIELDS
@@ -104,6 +110,20 @@ def settings_customise_sources(
             sources.append(_vault_source)
 
     return tuple(sources)
+
+
+def _build_vault_source(vault_addr: str, vault_token: str) -> Any:
+    """Return a pydantic-settings callable source that reads secrets from Vault."""
+    provider = VaultProvider(vault_addr, vault_token)
+
+    def _vault_source(_settings: Any = None) -> Dict[str, Any]:
+        return {
+            key: val
+            for key in REQUIRE_UPDATE_FIELDS
+            if (val := provider.get(key)) is not None
+        }
+
+    return _vault_source
 
 
 def parse_cors(value: str) -> List[str]:
@@ -503,3 +523,31 @@ class CommonSettings(BaseSettings):
                     "Set a strong unique value."
                 )
         return self
+
+    @classmethod
+    def settings_customise_sources(  # type: ignore[override]
+        cls,
+        _settings_cls: "type[CommonSettings]",
+        init_settings: Any,
+        env_settings: Any,
+        dotenv_settings: Any,
+        file_secret_settings: Any,
+    ) -> "Tuple[Any, ...]":
+        """Source priority: init kwargs > .env file > env vars > Docker secrets > Vault."""
+        sources: list[Any] = [
+            init_settings,
+            dotenv_settings,
+            env_settings,
+            file_secret_settings,
+        ]
+        env = getenv("ENVIRONMENT", "").lower()
+        secret_provider = getenv("SECRET_PROVIDER", "").lower()
+        if env in {"production", "staging"} and secret_provider == "vault":  # nosec B105
+            vault_addr = getenv("VAULT_ADDR")
+            vault_token = getenv("VAULT_TOKEN")
+            token_file = "/run/secrets/vault_token"  # nosec B105
+            if not vault_token and Path(token_file).is_file():
+                vault_token = Path(token_file).read_text(encoding="utf-8").strip()
+            if vault_addr and vault_token:
+                sources.append(_build_vault_source(vault_addr, vault_token))
+        return tuple(sources)
