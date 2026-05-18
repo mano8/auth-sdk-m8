@@ -8,7 +8,7 @@ Metric groups (set via METRICS_GROUPS, comma-separated):
   health       — http_status_total by exact status code
   auth         — auth_login_attempts_total, auth_token_refresh_total,
                  auth_logout_total, auth_token_validation_failures_total,
-                 auth_oauth_attempts_total,
+                 auth_oauth_attempts_total, auth_revocation_failure_total,
                  auth_api_key_validations_total, auth_api_key_rate_limit_checks_total,
                  auth_api_key_rate_limit_hits_total, auth_api_key_lifecycle_total,
                  auth_api_key_flush_duration_seconds
@@ -66,6 +66,7 @@ class _Metrics:
     logout_total: Optional[Counter] = None
     token_validation_failures_total: Optional[Counter] = None
     oauth_attempts_total: Optional[Counter] = None
+    revocation_failure_total: Optional[Counter] = None
     # api keys (part of auth group)
     api_key_validations_total: Optional[Counter] = None
     api_key_rate_limit_checks_total: Optional[Counter] = None
@@ -169,6 +170,12 @@ def setup(enabled: bool, groups_str: str, api_prefix: str) -> None:
             f"{pfx}auth_oauth_attempts_total",
             "OAuth callback attempts (provider: google, result: success | failed)",
             ["provider", "result"],
+            registry=REGISTRY,
+        )
+        m.revocation_failure_total = Counter(
+            f"{pfx}auth_revocation_failure_total",
+            "Token revocation failures by operation (operation: access_blacklist | refresh_allowlist | db_session)",
+            ["operation"],
             registry=REGISTRY,
         )
         m.api_key_validations_total = Counter(
