@@ -431,6 +431,11 @@ class CommonSettings(BaseSettings):
                 self.ACCESS_TOKEN_ALGORITHM = self.TOKEN_ALGORITHM
             if self.REFRESH_TOKEN_ALGORITHM == "HS256":  # nosec B105
                 self.REFRESH_TOKEN_ALGORITHM = self.TOKEN_ALGORITHM
+        if self.REFRESH_TOKEN_ALGORITHM != "HS256":  # nosec B105
+            raise ValueError(
+                "REFRESH_TOKEN_ALGORITHM must be HS256. "
+                "Refresh tokens are internal and must use symmetric signing."
+            )
         return self
 
     @model_validator(mode="after")
