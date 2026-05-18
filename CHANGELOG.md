@@ -7,6 +7,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 
+### Added
+
+- **Auth degradation policy** (`core/config.py`): five new `CommonSettings` fields control how each Redis-dependent security control behaves when Redis is unavailable:
+  - `AUTH_STRICT_MODE: bool = False` — overrides all per-control modes to `fail_closed`
+  - `REFRESH_VALIDATION_FAILURE_MODE: "fail_open" | "fail_closed"` (default `fail_closed`)
+  - `SESSION_WRITE_FAILURE_MODE: "fail_open" | "fail_closed"` (default `fail_closed`)
+  - `RATE_LIMIT_FAILURE_MODE: "fail_open" | "fail_closed"` (default `fail_open`)
+  - `ACCESS_REVOCATION_FAILURE_MODE: "fail_open" | "fail_closed"` (default `fail_open`)
+  New `effective_failure_mode(control)` method resolves the active mode for a given control, with `AUTH_STRICT_MODE=true` overriding all controls to `fail_closed`.
+
+- **`auth_revocation_failure_total` counter** (`observability/metrics.py`): new Prometheus counter in the `auth` group tracking token revocation failures by operation (`access_blacklist | refresh_allowlist | db_session`).
+
+### Changed
+
+- **`token_refresh_total` label values** (`observability/metrics.py`): description now explicitly documents the `rate_limited` result label alongside `success` and `failure`.
+
 ### Security
 
 - **`_sync_token_algorithms` hardened** (`core/config.py`): added `ValueError` assertion after algorithm propagation — `REFRESH_TOKEN_ALGORITHM` must always remain `HS256`. Refresh tokens are internal-only and must use symmetric signing; previously `TOKEN_ALGORITHM=RS256` was silently propagated to `REFRESH_TOKEN_ALGORITHM` without validating the existence of refresh key material, creating a silent startup trap that produced a runtime error only when a refresh was first attempted.
