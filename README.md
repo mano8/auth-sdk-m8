@@ -1,16 +1,40 @@
 # auth-sdk-m8
 
-Shared authentication schemas, JWT validation, and FastAPI base components for **m8 microservices**.
-
-Extracted from `auth_user_service` and installed by any service that integrates with it via Docker Compose.
-Provides Pydantic schemas, JWT validation, `CommonSettings`, Redis event bus, and optional Prometheus metrics.
-
 ![CI/CD](https://github.com/mano8/auth-sdk-m8/actions/workflows/CI.yaml/badge.svg?branch=main)
 [![PyPI version](https://img.shields.io/pypi/v/auth-sdk-m8)](https://pypi.org/project/auth-sdk-m8/)
 [![Python](https://img.shields.io/pypi/pyversions/auth-sdk-m8)](https://pypi.org/project/auth-sdk-m8/)
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/auth-sdk-m8?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/auth-sdk-m8)
 [![codecov](https://codecov.io/gh/mano8/auth-sdk-m8/graph/badge.svg?token=TF6OGIHOGF)](https://codecov.io/gh/mano8/auth-sdk-m8)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/8b8e9726b0f8441ea480902ea8910812)](https://app.codacy.com/gh/mano8/auth-sdk-m8/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
+
+Shared authentication schemas, JWT validation, and FastAPI base components for any service that issues or validates JWT tokens.
+
+Companion SDK to [fa-auth-m8](https://github.com/mano8/fa-auth-m8) — install in any FastAPI service that needs to validate tokens from the fa-auth-m8 authentication service. Provides Pydantic schemas, JWT validation, `CommonSettings`, Redis event bus, and optional Prometheus metrics.
+
+---
+
+## Summary
+
+- [Installation](#installation)
+- [Deployment modes](#deployment-modes)
+  - [HS256 — symmetric](#hs256--symmetric-simple-single-service-or-monolith)
+  - [RS256 — issuer side](#rs256--asymmetric-issuer-side-auth_user_service)
+  - [RS256 — consumer JWKS](#rs256--asymmetric-consumer-side-jwks-recommended)
+  - [RS256 — consumer offline](#rs256--asymmetric-consumer-offline-static-public-key-file)
+  - [ES256 — ECDSA](#es256--ecdsa-drop-in-for-rs256)
+- [FastAPI integration](#fastapi-integration)
+- [Startup config validation](#startup-config-validation)
+- [Service role](#service-role-auth_service_role)
+- [Asymmetric key-strength enforcement](#asymmetric-key-strength-enforcement)
+- [Strict production mode](#strict-production-mode)
+- [Token modes](#token-modes)
+- [Issuer / audience enforcement](#issuer--audience-enforcement)
+- [Refresh token rotation](#refresh-token-rotation)
+- [Observability hooks](#observability-hooks)
+- [Prometheus metrics](#prometheus-metrics)
+- [Redis event bus](#redis-event-bus)
+- [Package layout](#package-layout)
+- [Architecture note](#architecture-note)
 
 ---
 
@@ -42,6 +66,12 @@ pip install "auth-sdk-m8[security,fastapi,config,db,mysql]"
 ---
 
 ## Deployment modes
+
+| Mode | When to use |
+| ---- | ----------- |
+| **HS256** | Single service or tight monolith — all services share the same secret |
+| **RS256 / ES256 — JWKS** | Multiple independent consumers — each fetches the public key dynamically; recommended for most multi-service setups |
+| **RS256 / ES256 — offline** | Air-gapped or embedded deployments where the JWKS endpoint is unreachable |
 
 ### HS256 — symmetric (simple, single-service or monolith)
 
@@ -175,6 +205,17 @@ Mount only the public key — never the private key — to consumer containers:
 volumes:
   - ./keys/public.pem:/opt/keys/public.pem:ro
 ```
+
+### ES256 — ECDSA (drop-in for RS256)
+
+ES256 works identically to RS256 in all three modes above. Replace `RS256` with `ES256` and generate a P-256 EC key pair:
+
+```bash
+openssl ecparam -genkey -name prime256v1 -noout -out keys/private.pem
+openssl ec -in keys/private.pem -pubout -out keys/public.pem
+```
+
+`CommonSettings` enforces P-256 (secp256r1) at startup — other curves are rejected. Use ES256 when smaller key sizes and faster signature verification matter.
 
 ---
 
@@ -523,13 +564,3 @@ sole token **issuer**; this SDK provides the tools to **read** and **rotate** th
 
 For multi-team or multi-service deployments use **RS256** with JWKS: consumers only need the
 JWKS URI, never the signing key.
-
----
-
-## Publishing a new version
-
-1. Bump `version` in `pyproject.toml` and `auth_sdk_m8/__init__.py`
-2. Add an entry to `CHANGELOG.md`
-3. Run `pytest` (must reach ≥ 90 % coverage) and `ruff check .`
-4. Commit, tag, and push: `git tag v0.x.y && git push origin v0.x.y`
-5. GitHub Actions publishes to PyPI automatically
