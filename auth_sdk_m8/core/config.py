@@ -408,6 +408,32 @@ class CommonSettings(BaseSettings):
     REDIS_USER: str = Field(..., pattern=ValidationConstants.KEY_REGEX.pattern)
     REDIS_PASSWORD: SecretStr
 
+    # ── Auth degradation policy ───────────────────────────────────────────────
+    # Controls service behaviour when Redis is unavailable for each security
+    # control.  fail_open: allow through.  fail_closed: return 503.
+    # AUTH_STRICT_MODE=true overrides all per-control modes to fail_closed.
+    AUTH_STRICT_MODE: bool = False
+    REFRESH_VALIDATION_FAILURE_MODE: Literal["fail_open", "fail_closed"] = "fail_closed"
+    SESSION_WRITE_FAILURE_MODE: Literal["fail_open", "fail_closed"] = "fail_closed"
+    RATE_LIMIT_FAILURE_MODE: Literal["fail_open", "fail_closed"] = "fail_open"
+    ACCESS_REVOCATION_FAILURE_MODE: Literal["fail_open", "fail_closed"] = "fail_open"
+
+    def effective_failure_mode(
+        self,
+        control: Literal[
+            "refresh_validation", "session_write", "rate_limit", "access_revocation"
+        ],
+    ) -> Literal["fail_open", "fail_closed"]:
+        """Return the effective failure mode for *control*, respecting AUTH_STRICT_MODE."""
+        if self.AUTH_STRICT_MODE:
+            return "fail_closed"
+        return {
+            "refresh_validation": self.REFRESH_VALIDATION_FAILURE_MODE,
+            "session_write": self.SESSION_WRITE_FAILURE_MODE,
+            "rate_limit": self.RATE_LIMIT_FAILURE_MODE,
+            "access_revocation": self.ACCESS_REVOCATION_FAILURE_MODE,
+        }[control]
+
     # ── Email (optional) ──────────────────────────────────────────────────────
     SMTP_HOST: Optional[str] = None
     SMTP_PORT: int = 587

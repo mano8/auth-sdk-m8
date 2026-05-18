@@ -5,6 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [Unreleased]
+
+### Security
+
+- **`_sync_token_algorithms` hardened** (`core/config.py`): added `ValueError` assertion after algorithm propagation — `REFRESH_TOKEN_ALGORITHM` must always remain `HS256`. Refresh tokens are internal-only and must use symmetric signing; previously `TOKEN_ALGORITHM=RS256` was silently propagated to `REFRESH_TOKEN_ALGORITHM` without validating the existence of refresh key material, creating a silent startup trap that produced a runtime error only when a refresh was first attempted.
+
+---
+
 ## [0.6.6] — 2026-05-17 · Test quality and coverage
 
 - **Fix `_vault_source` callable signature**: both the inline closure in `settings_customise_sources` and the `_build_vault_source` helper now accept an optional `_settings` argument, matching how pydantic-settings calls custom sources (passing the settings instance). This resolves a `TypeError` in tests and aligns the signature with the pydantic-settings contract.

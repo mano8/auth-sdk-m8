@@ -332,6 +332,40 @@ def test_flags_are_mutually_consistent_for_all_modes() -> None:
         )
 
 
+# ── effective_failure_mode ────────────────────────────────────────────────────
+
+
+def test_effective_failure_mode_defaults() -> None:
+    """Default policy: refresh+session writes fail_closed, rate limit+access fail_open."""
+    s = IsolatedSettings(**VALID_SETTINGS_KWARGS)
+    assert s.effective_failure_mode("refresh_validation") == "fail_closed"
+    assert s.effective_failure_mode("session_write") == "fail_closed"
+    assert s.effective_failure_mode("rate_limit") == "fail_open"
+    assert s.effective_failure_mode("access_revocation") == "fail_open"
+
+
+def test_effective_failure_mode_strict_overrides_all() -> None:
+    """AUTH_STRICT_MODE=True forces all controls to fail_closed."""
+    s = IsolatedSettings(**{**VALID_SETTINGS_KWARGS, "AUTH_STRICT_MODE": True})
+    for control in ("refresh_validation", "session_write", "rate_limit", "access_revocation"):
+        assert s.effective_failure_mode(control) == "fail_closed"  # type: ignore[arg-type]
+
+
+def test_effective_failure_mode_per_control_override() -> None:
+    """Individual control modes can be overridden independently."""
+    s = IsolatedSettings(
+        **{
+            **VALID_SETTINGS_KWARGS,
+            "RATE_LIMIT_FAILURE_MODE": "fail_closed",
+            "ACCESS_REVOCATION_FAILURE_MODE": "fail_closed",
+        }
+    )
+    assert s.effective_failure_mode("rate_limit") == "fail_closed"
+    assert s.effective_failure_mode("access_revocation") == "fail_closed"
+    assert s.effective_failure_mode("refresh_validation") == "fail_closed"
+    assert s.effective_failure_mode("session_write") == "fail_closed"
+
+
 # ── check_config_health ────────────────────────────────────────────────────────────
 class DummySettings:
     """Minimal settings object for testing."""
