@@ -151,7 +151,7 @@ def setup(enabled: bool, groups_str: str, api_prefix: str) -> None:
         )
         m.token_refresh_total = Counter(
             f"{pfx}auth_token_refresh_total",
-            "Token refresh attempts (result: success | invalid | revoked)",
+            "Token refresh attempts (result: success | invalid | revoked | rate_limited)",
             ["result"],
             registry=REGISTRY,
         )
