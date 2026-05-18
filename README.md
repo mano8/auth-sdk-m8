@@ -518,7 +518,7 @@ METRICS_GROUPS=all   # or: traffic,performance,reliability,health,auth
 | `performance` | `http_request_duration_seconds` histogram |
 | `reliability` | `http_errors_total` (4xx/5xx) |
 | `health` | `http_status_total` by exact status code |
-| `auth` | `token_login_total`, `token_refresh_total` (result: success\|failure\|rate_limited), `token_logout_total`, `token_validation_failure_total`, `oauth_attempt_total`, `auth_revocation_failure_total` (operation: access_blacklist\|refresh_allowlist\|db_session), `auth_degraded_decision_total` (control, mode, reason) |
+| `auth` | `token_login_total`, `token_refresh_total` (result: success\|failure\|rate_limited), `token_logout_total`, `token_validation_failure_total`, `oauth_attempt_total`, `auth_revocation_failure_total` (operation: access_blacklist\|refresh_allowlist\|db_session), `auth_degraded_decision_total` (control, mode, reason), `auth_redis_circuit_breaker_open` (gauge: 0=closed 1=open), `auth_degradation_mode_active` (gauge per control+mode) |
 
 ---
 

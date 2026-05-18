@@ -120,6 +120,8 @@ def test_setup_enabled_all_groups_populates_all_metrics() -> None:
     assert m.oauth_attempts_total is not None
     assert m.revocation_failure_total is not None
     assert m.degraded_decision_total is not None
+    assert m.redis_circuit_breaker_open is not None
+    assert m.degradation_mode_active is not None
 
 
 def test_setup_traffic_only_leaves_others_none() -> None:
@@ -170,6 +172,8 @@ def test_setup_auth_only_sets_all_auth_metrics() -> None:
     assert m.oauth_attempts_total is not None
     assert m.revocation_failure_total is not None
     assert m.degraded_decision_total is not None
+    assert m.redis_circuit_breaker_open is not None
+    assert m.degradation_mode_active is not None
     assert m.requests_total is None
     assert m.request_duration_seconds is None
 
@@ -200,6 +204,41 @@ def test_degraded_decision_counter_labels() -> None:
         _sv(
             "svc_auth_degraded_decision_total",
             {"control": "session_write", "mode": "fail_closed", "reason": "revocation_failed"},
+        )
+        == 1.0
+    )
+
+
+def test_circuit_breaker_gauge_set_and_read() -> None:
+    setup(enabled=True, groups_str="auth", api_prefix="/svc")
+    m = get()
+    assert m is not None
+    assert m.redis_circuit_breaker_open is not None
+    # Default starts at 0 (closed)
+    m.redis_circuit_breaker_open.set(1)
+    assert _sv("svc_auth_redis_circuit_breaker_open", {}) == 1.0
+    m.redis_circuit_breaker_open.set(0)
+    assert _sv("svc_auth_redis_circuit_breaker_open", {}) == 0.0
+
+
+def test_degradation_mode_active_gauge_labels() -> None:
+    setup(enabled=True, groups_str="auth", api_prefix="/svc")
+    m = get()
+    assert m is not None
+    assert m.degradation_mode_active is not None
+    m.degradation_mode_active.labels(control="rate_limit", mode="fail_open").set(1)
+    m.degradation_mode_active.labels(control="refresh_validation", mode="fail_closed").set(1)
+    assert (
+        _sv(
+            "svc_auth_degradation_mode_active",
+            {"control": "rate_limit", "mode": "fail_open"},
+        )
+        == 1.0
+    )
+    assert (
+        _sv(
+            "svc_auth_degradation_mode_active",
+            {"control": "refresh_validation", "mode": "fail_closed"},
         )
         == 1.0
     )

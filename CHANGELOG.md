@@ -21,6 +21,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 - **`auth_degraded_decision_total` counter** (`observability/metrics.py`): new Prometheus counter in the `auth` group emitted on every degraded-mode decision — i.e. each time a Redis-dependent security control is consulted while Redis is unavailable. Labels: `control` (`rate_limit | refresh_validation | session_write | access_revocation`), `mode` (`fail_open | fail_closed`), `reason` (`redis_unavailable | revocation_failed`). Enables alerting on degraded-mode frequency and mode distribution without waiting for HTTP 503 responses.
 
+- **`auth_redis_circuit_breaker_open` gauge** (`observability/metrics.py`): new Prometheus gauge in the `auth` group indicating Redis circuit breaker state — `1` when open (Redis unavailable, requests short-circuited), `0` when closed (Redis healthy). Updated on every successful or failed ping attempt in `get_redis_client()`. Enable `alert when auth_redis_circuit_breaker_open == 1`.
+
+- **`auth_degradation_mode_active` gauge** (`observability/metrics.py`): new Prometheus gauge in the `auth` group exposing the configured degradation mode per security control. Labels: `control` (`rate_limit | refresh_validation | session_write | access_revocation`), `mode` (`fail_open | fail_closed`). Value is always `1` for the active mode. Set once at service startup from settings. Allows querying configured posture: e.g. `count(auth_degradation_mode_active{mode="fail_closed"} == 1)` to see how many controls are hardened.
+
 ### Changed
 
 - **`token_refresh_total` label values** (`observability/metrics.py`): description now explicitly documents the `rate_limited` result label alongside `success` and `failure`.
