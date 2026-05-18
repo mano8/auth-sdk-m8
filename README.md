@@ -1,6 +1,6 @@
 # auth-sdk-m8
 
-Shared authentication schemas, JWT validation, and FastAPI base components for **m8 microservices**.
+Shared authentication schemas, JWT validation, and FastAPI base components for any service that issues or validates JWT tokens.
 
 Extracted from `auth_user_service` and installed by any service that integrates with it via Docker Compose.
 Provides Pydantic schemas, JWT validation, `CommonSettings`, Redis event bus, and optional Prometheus metrics.
