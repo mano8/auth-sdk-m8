@@ -347,7 +347,12 @@ def test_effective_failure_mode_defaults() -> None:
 def test_effective_failure_mode_strict_overrides_all() -> None:
     """AUTH_STRICT_MODE=True forces all controls to fail_closed."""
     s = IsolatedSettings(**{**VALID_SETTINGS_KWARGS, "AUTH_STRICT_MODE": True})
-    for control in ("refresh_validation", "session_write", "rate_limit", "access_revocation"):
+    for control in (
+        "refresh_validation",
+        "session_write",
+        "rate_limit",
+        "access_revocation",
+    ):
         assert s.effective_failure_mode(control) == "fail_closed"  # type: ignore[arg-type]
 
 
