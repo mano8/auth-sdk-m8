@@ -28,6 +28,7 @@ Companion SDK to [fa-auth-m8](https://github.com/mano8/fa-auth-m8) — install i
 - [Asymmetric key-strength enforcement](#asymmetric-key-strength-enforcement)
 - [Strict production mode](#strict-production-mode)
 - [Token modes](#token-modes)
+- [Auth degradation policy](#auth-degradation-policy)
 - [Issuer / audience enforcement](#issuer--audience-enforcement)
 - [Refresh token rotation](#refresh-token-rotation)
 - [Observability hooks](#observability-hooks)
@@ -366,6 +367,37 @@ Set `TOKEN_MODE` to control session strategy. Both auth service and consumers mu
 
 ---
 
+## Auth degradation policy
+
+When Redis is unavailable, each security control can independently `fail_open` (allow the request through) or `fail_closed` (return HTTP 503). Set these in `CommonSettings` or your `.env`:
+
+| Setting | Default | Controls |
+| --- | --- | --- |
+| `AUTH_STRICT_MODE` | `false` | When `true`, overrides all per-control modes to `fail_closed` |
+| `REFRESH_VALIDATION_FAILURE_MODE` | `fail_closed` | Refresh token allowlist check |
+| `SESSION_WRITE_FAILURE_MODE` | `fail_closed` | Session write on login / logout revocation |
+| `RATE_LIMIT_FAILURE_MODE` | `fail_open` | Refresh rate limiter |
+| `ACCESS_REVOCATION_FAILURE_MODE` | `fail_open` | Access token JTI blacklist check |
+
+```ini
+# Harden everything — any Redis outage blocks the request
+AUTH_STRICT_MODE=true
+
+# Or tune per-control (AUTH_STRICT_MODE must be false/unset)
+RATE_LIMIT_FAILURE_MODE=fail_closed
+ACCESS_REVOCATION_FAILURE_MODE=fail_closed
+```
+
+Resolve the effective mode programmatically:
+
+```python
+mode = settings.effective_failure_mode("rate_limit")  # "fail_open" | "fail_closed"
+```
+
+`effective_failure_mode` accepts: `"refresh_validation"`, `"session_write"`, `"rate_limit"`, `"access_revocation"`.
+
+---
+
 ## Issuer / audience enforcement
 
 Set these in both the auth service and consumers to prevent token reuse across services:
@@ -486,7 +518,7 @@ METRICS_GROUPS=all   # or: traffic,performance,reliability,health,auth
 | `performance` | `http_request_duration_seconds` histogram |
 | `reliability` | `http_errors_total` (4xx/5xx) |
 | `health` | `http_status_total` by exact status code |
-| `auth` | login attempts, token refresh, logout, validation failures, OAuth attempts |
+| `auth` | `token_login_total`, `token_refresh_total` (result: success\|failure\|rate_limited), `token_logout_total`, `token_validation_failure_total`, `oauth_attempt_total`, `auth_revocation_failure_total` (operation: access_blacklist\|refresh_allowlist\|db_session) |
 
 ---
 
