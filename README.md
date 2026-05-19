@@ -367,6 +367,26 @@ Set `TOKEN_MODE` to control session strategy. Both auth service and consumers mu
 
 ---
 
+## Refresh key rotation
+
+`REFRESH_SECRET_KEY_OLD` provides a zero-downtime rotation window for the refresh token signing key. When set, any refresh token that fails validation against the current `REFRESH_SECRET_KEY` is automatically retried against the old key. A `WARNING` is logged each time the old key is used so you can track when all legacy tokens have expired.
+
+**Rotation procedure:**
+
+1. Generate a new key and set it as `REFRESH_SECRET_KEY`.
+2. Move the previous key to `REFRESH_SECRET_KEY_OLD`.
+3. Deploy — old-key tokens validate via fallback; new tokens are signed with the new key.
+4. Once all refresh tokens issued before the rotation have expired (after `REFRESH_TOKEN_EXPIRE_MINUTES`), remove `REFRESH_SECRET_KEY_OLD` and redeploy.
+
+> **Note:** Expired tokens are never retried against the old key — expiry is independent of the signing key.
+
+```ini
+REFRESH_SECRET_KEY=new-strong-secret
+REFRESH_SECRET_KEY_OLD=previous-strong-secret
+```
+
+---
+
 ## Redis TLS
 
 Set `REDIS_SSL=true` to enable TLS on the `ConnectionPool` when Redis is reached over a network boundary in staging/production. Defaults to `false` for plain-TCP local/dev stacks.

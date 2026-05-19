@@ -187,6 +187,39 @@ def test_decode_refresh_token_bad_uuid_sub() -> None:
             ComSecurityHelper.decode_refresh_token("token", secrets)
 
 
+# ── decode_refresh_token — old_secrets fallback ──────────────────────────────
+
+
+def test_decode_refresh_token_fallback_accepts_old_key_token() -> None:
+    token = make_refresh_token(secret=WRONG_KEY)
+    current = TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256")
+    old = TokenSecret(secret_key=SecretStr(WRONG_KEY), algorithm="HS256")
+    user_id, jti = ComSecurityHelper.decode_refresh_token(
+        token, current, return_jti=True, old_secrets=old
+    )
+    assert isinstance(user_id, uuid.UUID)
+    assert jti == "test-jti-0000"
+
+
+def test_decode_refresh_token_fallback_both_keys_fail() -> None:
+    token = make_refresh_token(secret=WRONG_KEY)
+    current = TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256")
+    also_wrong = TokenSecret(secret_key=SecretStr(VALID_KEY + "x"), algorithm="HS256")
+    with pytest.raises(InvalidToken, match="Invalid refresh token"):
+        ComSecurityHelper.decode_refresh_token(token, current, old_secrets=also_wrong)
+
+
+def test_decode_refresh_token_fallback_old_key_expired() -> None:
+    expired = make_refresh_token(
+        secret=WRONG_KEY,
+        exp=int((datetime.now(timezone.utc) - timedelta(hours=1)).timestamp()),
+    )
+    current = TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256")
+    old = TokenSecret(secret_key=SecretStr(WRONG_KEY), algorithm="HS256")
+    with pytest.raises(InvalidToken, match="expired"):
+        ComSecurityHelper.decode_refresh_token(expired, current, old_secrets=old)
+
+
 # ── cookie helpers ────────────────────────────────────────────────────────────
 
 
