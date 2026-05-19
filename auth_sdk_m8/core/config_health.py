@@ -149,6 +149,31 @@ def _check_strict_mode(settings: CommonSettings, environment: str) -> list[str]:
     return fatal
 
 
+_RATE_LIMIT_WARNING_RPM: dict[str, float] = {
+    "login": 5.0,
+    "refresh": 20.0,
+}
+
+
+def _check_rate_limit_config(settings: CommonSettings) -> list[str]:
+    warnings: list[str] = []
+    for control, threshold in _RATE_LIMIT_WARNING_RPM.items():
+        if control == "refresh" and settings.is_stateless:
+            continue  # stateless mode — no refresh tokens issued
+        prefix = control.upper()
+        requests: int = getattr(settings, f"{prefix}_RATE_LIMIT_REQUESTS", 5)
+        window: int = getattr(settings, f"{prefix}_RATE_LIMIT_WINDOW_MINUTES", 15)
+        rate: float = requests / float(window)
+        if rate > threshold:
+            warnings.append(
+                f"CONFIG: {prefix}_RATE_LIMIT_REQUESTS={requests} / "
+                f"{prefix}_RATE_LIMIT_WINDOW_MINUTES={window} "
+                f"→ {rate:.1f} req/min — rate limit is highly permissive "
+                "and may weaken abuse protection."
+            )
+    return warnings
+
+
 def check_config_health(
     settings: CommonSettings,
     logger: logging.Logger,
@@ -189,8 +214,13 @@ def check_config_health(
     f3 = _check_redis_config(settings)
     f4, w4 = _check_production_env(settings, environment, strict)
     f5 = _check_strict_mode(settings, environment)
+    w6 = _check_rate_limit_config(settings)
 
-    warnings = w1 + w2 + w4
+    warnings: list[str] = []
+    warnings.extend(w1)
+    warnings.extend(w2)
+    warnings.extend(w4)
+    warnings.extend(w6)
     fatal_errors = f1 + f2 + f3 + f4 + f5
 
     for warning in warnings:

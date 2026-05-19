@@ -29,6 +29,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 - **`REFRESH_SECRET_KEY_OLD: Optional[SecretStr] = None`** (`core/config.py`): new `CommonSettings` field enabling zero-downtime refresh key rotation. When set, `SecurityHelper.decode_refresh_token` and `RefreshTokenPolicy` retry validation against the old key after the current key fails with a signature error. Expired tokens are never retried. A `WARNING` is logged on every old-key acceptance so operators can track when legacy tokens have fully expired and the old key can be removed. `RefreshTokenPolicy` accepts `old_secrets` as a constructor parameter to wire the same fallback into the stateful rotation path.
 
+- **Configurable rate limit settings** (`core/config.py`): four new `CommonSettings` fields with Pydantic bounds validation (`ge=1`) expose the previously hardcoded `LoginRateLimiter` and `RefreshRateLimiter` limits as operator-controlled configuration:
+  - `LOGIN_RATE_LIMIT_REQUESTS: int = Field(5, ge=1, le=1000)`
+  - `LOGIN_RATE_LIMIT_WINDOW_MINUTES: int = Field(15, ge=1, le=1440)`
+  - `REFRESH_RATE_LIMIT_REQUESTS: int = Field(10, ge=1, le=1000)`
+  - `REFRESH_RATE_LIMIT_WINDOW_MINUTES: int = Field(5, ge=1, le=1440)`
+
+- **`_check_rate_limit_config()` startup health check** (`core/config_health.py`): warns at startup when the configured effective rate (requests ÷ window\_minutes) exceeds per-control thresholds — login > 5 req/min, refresh > 20 req/min — indicating a highly permissive configuration that may weaken abuse protection. Refresh check is skipped in stateless mode (no refresh tokens). Integrated into `check_config_health()` via the `.extend()` assembly pattern.
+
 - **`REDIS_SSL: bool = False`** (`core/config.py`): new `CommonSettings` field controlling whether the Redis `ConnectionPool` uses TLS. Defaults to `False` (plain TCP) for backward compatibility with local/dev stacks. Set `REDIS_SSL=true` in production when Redis is reached over a network boundary. Exposed in all `auth.env.example` files as a commented default.
 
 ### Changed
