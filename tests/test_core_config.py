@@ -837,9 +837,14 @@ def test_assert_key_strength_es256_wrong_curve() -> None:
 
 
 def test_sync_token_algorithms_propagates_non_hs256() -> None:
-    # TOKEN_ALGORITHM=RS256 triggers lines 415-418 even if creation fails later
     kwargs = {**VALID_SETTINGS_KWARGS, "TOKEN_ALGORITHM": "RS256"}
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError, match="REFRESH_TOKEN_ALGORITHM must be HS256"):
+        IsolatedSettings(**kwargs)
+
+
+def test_sync_token_algorithms_rejects_direct_asymmetric_refresh() -> None:
+    kwargs = {**VALID_SETTINGS_KWARGS, "REFRESH_TOKEN_ALGORITHM": "RS256"}
+    with pytest.raises(ValueError, match="REFRESH_TOKEN_ALGORITHM must be HS256"):
         IsolatedSettings(**kwargs)
 
 
