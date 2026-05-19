@@ -428,6 +428,29 @@ mode = settings.effective_failure_mode("rate_limit")  # "fail_open" | "fail_clos
 
 ---
 
+## Rate limiting
+
+`LoginRateLimiter` and `RefreshRateLimiter` limits are configurable via `CommonSettings`. Defaults represent the recommended security posture; a startup warning is logged when the effective rate exceeds the per-control threshold.
+
+| Setting | Default | Bounds | Threshold warning |
+| --- | --- | --- | --- |
+| `LOGIN_RATE_LIMIT_REQUESTS` | `5` | 1–1000 | > 5 req/min combined |
+| `LOGIN_RATE_LIMIT_WINDOW_MINUTES` | `15` | 1–1440 | — |
+| `REFRESH_RATE_LIMIT_REQUESTS` | `10` | 1–1000 | > 20 req/min combined |
+| `REFRESH_RATE_LIMIT_WINDOW_MINUTES` | `5` | 1–1440 | — |
+
+```ini
+# Tighten for high-value deployments
+LOGIN_RATE_LIMIT_REQUESTS=3
+LOGIN_RATE_LIMIT_WINDOW_MINUTES=30
+REFRESH_RATE_LIMIT_REQUESTS=5
+REFRESH_RATE_LIMIT_WINDOW_MINUTES=10
+```
+
+The refresh vars are unused in `TOKEN_MODE=stateless` (no refresh tokens are issued). `_check_rate_limit_config()` in `config_health.py` skips the refresh check automatically in that mode.
+
+---
+
 ## Issuer / audience enforcement
 
 Set these in both the auth service and consumers to prevent token reuse across services:

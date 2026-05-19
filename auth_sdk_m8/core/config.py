@@ -410,6 +410,12 @@ class CommonSettings(BaseSettings):
     REDIS_PASSWORD: SecretStr
     REDIS_SSL: bool = False
 
+    # ── Rate limiting ─────────────────────────────────────────────────────────
+    LOGIN_RATE_LIMIT_REQUESTS: int = Field(5, ge=1, le=1000)
+    LOGIN_RATE_LIMIT_WINDOW_MINUTES: int = Field(15, ge=1, le=1440)
+    REFRESH_RATE_LIMIT_REQUESTS: int = Field(10, ge=1, le=1000)
+    REFRESH_RATE_LIMIT_WINDOW_MINUTES: int = Field(5, ge=1, le=1440)
+
     # ── Auth degradation policy ───────────────────────────────────────────────
     # Controls service behaviour when Redis is unavailable for each security
     # control.  fail_open: allow through.  fail_closed: return 503.
