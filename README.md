@@ -367,6 +367,16 @@ Set `TOKEN_MODE` to control session strategy. Both auth service and consumers mu
 
 ---
 
+## Redis TLS
+
+Set `REDIS_SSL=true` to enable TLS on the `ConnectionPool` when Redis is reached over a network boundary in staging/production. Defaults to `false` for plain-TCP local/dev stacks.
+
+```ini
+REDIS_SSL=true
+```
+
+---
+
 ## Auth degradation policy
 
 When Redis is unavailable, each security control can independently `fail_open` (allow the request through) or `fail_closed` (return HTTP 503). Set these in `CommonSettings` or your `.env`:

@@ -407,6 +407,7 @@ class CommonSettings(BaseSettings):
     REDIS_PORT: int
     REDIS_USER: str = Field(..., pattern=ValidationConstants.KEY_REGEX.pattern)
     REDIS_PASSWORD: SecretStr
+    REDIS_SSL: bool = False
 
     # ── Auth degradation policy ───────────────────────────────────────────────
     # Controls service behaviour when Redis is unavailable for each security

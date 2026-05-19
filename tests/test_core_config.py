@@ -371,6 +371,19 @@ def test_effective_failure_mode_per_control_override() -> None:
     assert s.effective_failure_mode("session_write") == "fail_closed"
 
 
+# ── REDIS_SSL ──────────────────────────────────────────────────────────────────
+
+
+def test_redis_ssl_defaults_to_false() -> None:
+    s = IsolatedSettings(**VALID_SETTINGS_KWARGS)
+    assert s.REDIS_SSL is False
+
+
+def test_redis_ssl_can_be_enabled() -> None:
+    s = IsolatedSettings(**{**VALID_SETTINGS_KWARGS, "REDIS_SSL": True})
+    assert s.REDIS_SSL is True
+
+
 # ── check_config_health ────────────────────────────────────────────────────────────
 class DummySettings:
     """Minimal settings object for testing."""
