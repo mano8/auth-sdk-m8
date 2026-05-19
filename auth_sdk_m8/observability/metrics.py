@@ -8,7 +8,11 @@ Metric groups (set via METRICS_GROUPS, comma-separated):
   health       — http_status_total by exact status code
   auth         — auth_login_attempts_total, auth_token_refresh_total,
                  auth_logout_total, auth_token_validation_failures_total,
-                 auth_oauth_attempts_total,
+                 auth_oauth_attempts_total, auth_revocation_failure_total,
+                 auth_degraded_decision_total,
+                 auth_redis_circuit_breaker_open,
+                 auth_degradation_mode_active,
+                 auth_session_integrity_denial_total,
                  auth_api_key_validations_total, auth_api_key_rate_limit_checks_total,
                  auth_api_key_rate_limit_hits_total, auth_api_key_lifecycle_total,
                  auth_api_key_flush_duration_seconds
@@ -26,6 +30,7 @@ from prometheus_client import (
     CONTENT_TYPE_LATEST,
     CollectorRegistry,
     Counter,
+    Gauge,
     Histogram,
     generate_latest,
 )
@@ -66,6 +71,11 @@ class _Metrics:
     logout_total: Optional[Counter] = None
     token_validation_failures_total: Optional[Counter] = None
     oauth_attempts_total: Optional[Counter] = None
+    revocation_failure_total: Optional[Counter] = None
+    degraded_decision_total: Optional[Counter] = None
+    redis_circuit_breaker_open: Optional[Gauge] = None
+    degradation_mode_active: Optional[Gauge] = None
+    session_integrity_denial_total: Optional[Counter] = None
     # api keys (part of auth group)
     api_key_validations_total: Optional[Counter] = None
     api_key_rate_limit_checks_total: Optional[Counter] = None
@@ -150,7 +160,7 @@ def setup(enabled: bool, groups_str: str, api_prefix: str) -> None:
         )
         m.token_refresh_total = Counter(
             f"{pfx}auth_token_refresh_total",
-            "Token refresh attempts (result: success | invalid | revoked)",
+            "Token refresh attempts (result: success | invalid | revoked | rate_limited)",
             ["result"],
             registry=REGISTRY,
         )
@@ -169,6 +179,41 @@ def setup(enabled: bool, groups_str: str, api_prefix: str) -> None:
             f"{pfx}auth_oauth_attempts_total",
             "OAuth callback attempts (provider: google, result: success | failed)",
             ["provider", "result"],
+            registry=REGISTRY,
+        )
+        m.revocation_failure_total = Counter(
+            f"{pfx}auth_revocation_failure_total",
+            "Token revocation failures by operation (operation: access_blacklist | refresh_allowlist | db_session)",
+            ["operation"],
+            registry=REGISTRY,
+        )
+        m.degraded_decision_total = Counter(
+            f"{pfx}auth_degraded_decision_total",
+            "Degraded-mode decisions when a Redis-dependent control is unavailable "
+            "(control: rate_limit|refresh_validation|session_write|access_revocation, "
+            "mode: fail_open|fail_closed, reason: redis_unavailable|revocation_failed)",
+            ["control", "mode", "reason"],
+            registry=REGISTRY,
+        )
+        m.redis_circuit_breaker_open = Gauge(
+            f"{pfx}auth_redis_circuit_breaker_open",
+            "Redis circuit breaker state: 1 = open (Redis unavailable, requests short-circuited), "
+            "0 = closed (Redis healthy)",
+            registry=REGISTRY,
+        )
+        m.degradation_mode_active = Gauge(
+            f"{pfx}auth_degradation_mode_active",
+            "Configured degradation mode per security control (value 1 for the active mode). "
+            "Labels: control (rate_limit|refresh_validation|session_write|access_revocation), "
+            "mode (fail_open|fail_closed)",
+            ["control", "mode"],
+            registry=REGISTRY,
+        )
+        m.session_integrity_denial_total = Counter(
+            f"{pfx}auth_session_integrity_denial_total",
+            "Token reuse attacks that triggered full session chain invalidation "
+            "(trigger: reuse_detected)",
+            ["trigger"],
             registry=REGISTRY,
         )
         m.api_key_validations_total = Counter(

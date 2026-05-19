@@ -5,6 +5,40 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Auth degradation policy** (`core/config.py`): five new `CommonSettings` fields control how each Redis-dependent security control behaves when Redis is unavailable:
+  - `AUTH_STRICT_MODE: bool = False` — overrides all per-control modes to `fail_closed`
+  - `REFRESH_VALIDATION_FAILURE_MODE: "fail_open" | "fail_closed"` (default `fail_closed`)
+  - `SESSION_WRITE_FAILURE_MODE: "fail_open" | "fail_closed"` (default `fail_closed`)
+  - `RATE_LIMIT_FAILURE_MODE: "fail_open" | "fail_closed"` (default `fail_open`)
+  - `ACCESS_REVOCATION_FAILURE_MODE: "fail_open" | "fail_closed"` (default `fail_open`)
+  New `effective_failure_mode(control)` method resolves the active mode for a given control, with `AUTH_STRICT_MODE=true` overriding all controls to `fail_closed`.
+
+- **`auth_revocation_failure_total` counter** (`observability/metrics.py`): new Prometheus counter in the `auth` group tracking token revocation failures by operation (`access_blacklist | refresh_allowlist | db_session`).
+
+- **`auth_degraded_decision_total` counter** (`observability/metrics.py`): new Prometheus counter in the `auth` group emitted on every degraded-mode decision — i.e. each time a Redis-dependent security control is consulted while Redis is unavailable. Labels: `control` (`rate_limit | refresh_validation | session_write | access_revocation`), `mode` (`fail_open | fail_closed`), `reason` (`redis_unavailable | revocation_failed`). Enables alerting on degraded-mode frequency and mode distribution without waiting for HTTP 503 responses.
+
+- **`auth_redis_circuit_breaker_open` gauge** (`observability/metrics.py`): new Prometheus gauge in the `auth` group indicating Redis circuit breaker state — `1` when open (Redis unavailable, requests short-circuited), `0` when closed (Redis healthy). Updated on every successful or failed ping attempt in `get_redis_client()`. Enable `alert when auth_redis_circuit_breaker_open == 1`.
+
+- **`auth_degradation_mode_active` gauge** (`observability/metrics.py`): new Prometheus gauge in the `auth` group exposing the configured degradation mode per security control. Labels: `control` (`rate_limit | refresh_validation | session_write | access_revocation`), `mode` (`fail_open | fail_closed`). Value is always `1` for the active mode. Set once at service startup from settings. Allows querying configured posture: e.g. `count(auth_degradation_mode_active{mode="fail_closed"} == 1)` to see how many controls are hardened.
+
+- **`auth_session_integrity_denial_total` counter** (`observability/metrics.py`): new Prometheus counter in the `auth` group tracking forced-churn events — token reuse attacks where the Lua rotation script detects a consumed JTI, triggering full session chain invalidation. Label: `trigger` (`reuse_detected`). Enables alerting on any reuse-attack detection with zero false-positive risk.
+
+- **`REDIS_SSL: bool = False`** (`core/config.py`): new `CommonSettings` field controlling whether the Redis `ConnectionPool` uses TLS. Defaults to `False` (plain TCP) for backward compatibility with local/dev stacks. Set `REDIS_SSL=true` in production when Redis is reached over a network boundary. Exposed in all `auth.env.example` files as a commented default.
+
+### Changed
+
+- **`token_refresh_total` label values** (`observability/metrics.py`): description now explicitly documents the `rate_limited` result label alongside `success` and `failure`.
+
+### Security
+
+- **`_sync_token_algorithms` hardened** (`core/config.py`): added `ValueError` assertion after algorithm propagation — `REFRESH_TOKEN_ALGORITHM` must always remain `HS256`. Refresh tokens are internal-only and must use symmetric signing; previously `TOKEN_ALGORITHM=RS256` was silently propagated to `REFRESH_TOKEN_ALGORITHM` without validating the existence of refresh key material, creating a silent startup trap that produced a runtime error only when a refresh was first attempted.
+
+---
+
 ## [0.6.6] — 2026-05-17 · Test quality and coverage
 
 - **Fix `_vault_source` callable signature**: both the inline closure in `settings_customise_sources` and the `_build_vault_source` helper now accept an optional `_settings` argument, matching how pydantic-settings calls custom sources (passing the settings instance). This resolves a `TypeError` in tests and aligns the signature with the pydantic-settings contract.

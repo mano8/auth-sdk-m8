@@ -332,6 +332,58 @@ def test_flags_are_mutually_consistent_for_all_modes() -> None:
         )
 
 
+# ── effective_failure_mode ────────────────────────────────────────────────────
+
+
+def test_effective_failure_mode_defaults() -> None:
+    """Default policy: refresh+session writes fail_closed, rate limit+access fail_open."""
+    s = IsolatedSettings(**VALID_SETTINGS_KWARGS)
+    assert s.effective_failure_mode("refresh_validation") == "fail_closed"
+    assert s.effective_failure_mode("session_write") == "fail_closed"
+    assert s.effective_failure_mode("rate_limit") == "fail_open"
+    assert s.effective_failure_mode("access_revocation") == "fail_open"
+
+
+def test_effective_failure_mode_strict_overrides_all() -> None:
+    """AUTH_STRICT_MODE=True forces all controls to fail_closed."""
+    s = IsolatedSettings(**{**VALID_SETTINGS_KWARGS, "AUTH_STRICT_MODE": True})
+    for control in (
+        "refresh_validation",
+        "session_write",
+        "rate_limit",
+        "access_revocation",
+    ):
+        assert s.effective_failure_mode(control) == "fail_closed"  # type: ignore[arg-type]
+
+
+def test_effective_failure_mode_per_control_override() -> None:
+    """Individual control modes can be overridden independently."""
+    s = IsolatedSettings(
+        **{
+            **VALID_SETTINGS_KWARGS,
+            "RATE_LIMIT_FAILURE_MODE": "fail_closed",
+            "ACCESS_REVOCATION_FAILURE_MODE": "fail_closed",
+        }
+    )
+    assert s.effective_failure_mode("rate_limit") == "fail_closed"
+    assert s.effective_failure_mode("access_revocation") == "fail_closed"
+    assert s.effective_failure_mode("refresh_validation") == "fail_closed"
+    assert s.effective_failure_mode("session_write") == "fail_closed"
+
+
+# ── REDIS_SSL ──────────────────────────────────────────────────────────────────
+
+
+def test_redis_ssl_defaults_to_false() -> None:
+    s = IsolatedSettings(**VALID_SETTINGS_KWARGS)
+    assert s.REDIS_SSL is False
+
+
+def test_redis_ssl_can_be_enabled() -> None:
+    s = IsolatedSettings(**{**VALID_SETTINGS_KWARGS, "REDIS_SSL": True})
+    assert s.REDIS_SSL is True
+
+
 # ── check_config_health ────────────────────────────────────────────────────────────
 class DummySettings:
     """Minimal settings object for testing."""
@@ -785,9 +837,14 @@ def test_assert_key_strength_es256_wrong_curve() -> None:
 
 
 def test_sync_token_algorithms_propagates_non_hs256() -> None:
-    # TOKEN_ALGORITHM=RS256 triggers lines 415-418 even if creation fails later
     kwargs = {**VALID_SETTINGS_KWARGS, "TOKEN_ALGORITHM": "RS256"}
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError, match="REFRESH_TOKEN_ALGORITHM must be HS256"):
+        IsolatedSettings(**kwargs)
+
+
+def test_sync_token_algorithms_rejects_direct_asymmetric_refresh() -> None:
+    kwargs = {**VALID_SETTINGS_KWARGS, "REFRESH_TOKEN_ALGORITHM": "RS256"}
+    with pytest.raises(ValueError, match="REFRESH_TOKEN_ALGORITHM must be HS256"):
         IsolatedSettings(**kwargs)
 
 
