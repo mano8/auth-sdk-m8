@@ -108,6 +108,65 @@ async def test_revoke_delegates_to_store() -> None:
     store.revoke.assert_awaited_once_with("test-jti-0000")
 
 
+# ── old_secrets fallback ──────────────────────────────────────────────────────
+
+
+OLD_KEY = "Zyxwvu-9876_ABC-zyxwvu-tsrqpo-nmlkji-hgfedc"
+
+
+def _make_policy_with_old(store=None) -> RefreshTokenPolicy:
+    return RefreshTokenPolicy(
+        secrets=TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256"),
+        old_secrets=TokenSecret(secret_key=SecretStr(OLD_KEY), algorithm="HS256"),
+        store=store,
+    )
+
+
+async def test_validate_and_rotate_accepts_old_key_token() -> None:
+    token = make_refresh_token(secret=OLD_KEY)
+    policy = _make_policy_with_old()
+    user_id, old_jti = await policy.validate_and_rotate(token, new_jti="new-jti")
+    assert isinstance(user_id, uuid.UUID)
+    assert old_jti == "test-jti-0000"
+
+
+async def test_validate_and_rotate_old_key_with_store() -> None:
+    token = make_refresh_token(secret=OLD_KEY)
+    store = _MockStore(valid=True)
+    policy = _make_policy_with_old(store=store)
+    await policy.validate_and_rotate(token, new_jti="new-jti")
+    store.is_valid.assert_awaited_once_with("test-jti-0000")
+    store.rotate.assert_awaited_once()
+
+
+async def test_validate_and_rotate_fallback_both_keys_fail() -> None:
+    token = make_refresh_token(secret=OLD_KEY)
+    policy = _make_policy()  # no old_secrets
+    with pytest.raises(InvalidToken):
+        await policy.validate_and_rotate(token, new_jti="new-jti")
+
+
+async def test_validate_and_rotate_fallback_expired_old_key() -> None:
+    from datetime import datetime, timedelta, timezone
+
+    expired = make_refresh_token(
+        secret=OLD_KEY,
+        exp=int((datetime.now(timezone.utc) - timedelta(hours=1)).timestamp()),
+    )
+    policy = _make_policy_with_old()
+    with pytest.raises(InvalidToken, match="expired"):
+        await policy.validate_and_rotate(expired, new_jti="new-jti")
+
+
+async def test_validate_and_rotate_fallback_third_key_token_fails() -> None:
+    """Token signed with a third unknown key — both current and old reject it."""
+    third_key = "Qwerty1-2345_ZZZ-qwerty1-234567-890abc-defghi"
+    token = make_refresh_token(secret=third_key)
+    policy = _make_policy_with_old()
+    with pytest.raises(InvalidToken, match="Invalid refresh token"):
+        await policy.validate_and_rotate(token, new_jti="new-jti")
+
+
 async def test_revoke_without_store_is_noop() -> None:
     policy = _make_policy()
 

@@ -1,6 +1,8 @@
 """Stateful refresh-token policy with rotation and reuse detection."""
 
+import logging
 import uuid
+from typing import Optional
 
 import jwt
 from jwt import ExpiredSignatureError, PyJWTError
@@ -12,12 +14,19 @@ from auth_sdk_m8.security.refresh_token_store import RefreshTokenStore
 
 _ALLOWED_ALGORITHMS: frozenset[str] = frozenset({"HS256", "RS256", "ES256"})
 
+logger = logging.getLogger(__name__)
+
 
 def _decode_refresh(
     token: str,
     secrets: TokenSecret,
+    old_secrets: Optional[TokenSecret] = None,
 ) -> tuple[uuid.UUID, str]:
     """Decode and validate a refresh token, returning (user_id, jti).
+
+    When *old_secrets* is provided and the current key fails with a signature
+    error, the token is retried against the old key to support graceful key
+    rotation. Expired tokens are never retried.
 
     Kept private — callers should use ``RefreshTokenPolicy``.
     """
@@ -33,8 +42,24 @@ def _decode_refresh(
         )
     except ExpiredSignatureError as ex:
         raise InvalidToken("Refresh token expired") from ex
-    except PyJWTError as ex:
-        raise InvalidToken("Invalid refresh token") from ex
+    except PyJWTError:
+        if old_secrets is None:
+            raise InvalidToken("Invalid refresh token")
+        try:
+            payload = jwt.decode(
+                token,
+                old_secrets.secret_key.get_secret_value(),
+                algorithms=[old_secrets.algorithm],
+                options={"require": ["exp", "sub", "jti", "type"]},
+            )
+            logger.warning(
+                "Refresh token accepted with old key — "
+                "remove REFRESH_SECRET_KEY_OLD once all old-key tokens have expired"
+            )
+        except ExpiredSignatureError as ex:
+            raise InvalidToken("Refresh token expired") from ex
+        except PyJWTError as ex:
+            raise InvalidToken("Invalid refresh token") from ex
 
     if payload.get("type") != "refresh":
         raise InvalidToken("Not a refresh token")
@@ -94,8 +119,10 @@ class RefreshTokenPolicy:
         secrets: TokenSecret,
         store: RefreshTokenStore | None = None,
         hooks: ValidationHooks | None = None,
+        old_secrets: TokenSecret | None = None,
     ) -> None:
         self._secrets = secrets
+        self._old_secrets = old_secrets
         self._store = store
         self._hooks = hooks
 
@@ -120,7 +147,7 @@ class RefreshTokenPolicy:
             InvalidToken: Token invalid, expired, reused, or revoked.
         """
         try:
-            user_id, old_jti = _decode_refresh(token, self._secrets)
+            user_id, old_jti = _decode_refresh(token, self._secrets, self._old_secrets)
         except InvalidToken:
             if self._hooks:
                 self._hooks.on_failure(reason="invalid", token_type="refresh")  # nosec B106 - event label, not a password

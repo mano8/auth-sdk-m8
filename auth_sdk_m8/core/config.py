@@ -302,6 +302,7 @@ class CommonSettings(BaseSettings):
         return self._access_public_key
 
     REFRESH_SECRET_KEY: SecretStr  # Always HS256 (internal)
+    REFRESH_SECRET_KEY_OLD: Optional[SecretStr] = None  # Set during key rotation
     # Deprecated: set ACCESS_TOKEN_ALGORITHM / REFRESH_TOKEN_ALGORITHM instead.
     # Kept as a fallback: if the per-type fields are not explicitly set they
     # inherit this value via _sync_token_algorithms.

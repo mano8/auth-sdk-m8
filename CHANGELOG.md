@@ -27,6 +27,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 - **`auth_session_integrity_denial_total` counter** (`observability/metrics.py`): new Prometheus counter in the `auth` group tracking forced-churn events — token reuse attacks where the Lua rotation script detects a consumed JTI, triggering full session chain invalidation. Label: `trigger` (`reuse_detected`). Enables alerting on any reuse-attack detection with zero false-positive risk.
 
+- **`REFRESH_SECRET_KEY_OLD: Optional[SecretStr] = None`** (`core/config.py`): new `CommonSettings` field enabling zero-downtime refresh key rotation. When set, `SecurityHelper.decode_refresh_token` and `RefreshTokenPolicy` retry validation against the old key after the current key fails with a signature error. Expired tokens are never retried. A `WARNING` is logged on every old-key acceptance so operators can track when legacy tokens have fully expired and the old key can be removed. `RefreshTokenPolicy` accepts `old_secrets` as a constructor parameter to wire the same fallback into the stateful rotation path.
+
 - **`REDIS_SSL: bool = False`** (`core/config.py`): new `CommonSettings` field controlling whether the Redis `ConnectionPool` uses TLS. Defaults to `False` (plain TCP) for backward compatibility with local/dev stacks. Set `REDIS_SSL=true` in production when Redis is reached over a network boundary. Exposed in all `auth.env.example` files as a commented default.
 
 ### Changed

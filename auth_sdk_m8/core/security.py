@@ -7,11 +7,12 @@ FastAPI cookie helpers additionally require:  pip install "auth-sdk-m8[fastapi]"
 import base64
 import hashlib
 import json
+import logging
 import uuid
 import warnings
 from datetime import datetime, timezone
 from os import urandom
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 
 import jwt
 from jwt import ExpiredSignatureError, PyJWTError
@@ -22,6 +23,8 @@ from auth_sdk_m8.schemas.auth import TokenDecodeProps, TokenSecret, TokenUserDat
 # Import from submodules directly to avoid circular imports with security/__init__.py
 from auth_sdk_m8.security.token_validator import TokenValidator
 from auth_sdk_m8.security.validation import TokenValidationConfig
+
+logger = logging.getLogger(__name__)
 
 LEGACY_ACCESS_TOKEN_VALIDATION_CONFIG = TokenValidationConfig(
     required_claims=["exp"],
@@ -73,14 +76,19 @@ class ComSecurityHelper:
         token: str,
         secrets: TokenSecret,
         return_jti: bool = False,
+        old_secrets: Optional[TokenSecret] = None,
     ) -> Union[uuid.UUID, Tuple[uuid.UUID, str]]:
         """Decode and validate a JWT refresh token.
 
         Args:
             token: Encoded refresh token string.
-            secrets: Signing key and algorithm.
+            secrets: Current signing key and algorithm.
             return_jti: When True, returns ``(user_id, jti)`` instead of just
                 ``user_id``.
+            old_secrets: Previous signing key used during key rotation. When
+                provided and the current key fails with a signature error (not
+                expiry), the token is retried against this key. Expired tokens
+                are never retried — expiry is independent of the signing key.
 
         Returns:
             ``user_id`` UUID, or ``(user_id, jti)`` when *return_jti* is True.
@@ -100,8 +108,24 @@ class ComSecurityHelper:
             )
         except ExpiredSignatureError as ex:
             raise InvalidToken("Refresh token expired") from ex
-        except PyJWTError as ex:
-            raise InvalidToken("Invalid refresh token") from ex
+        except PyJWTError:
+            if old_secrets is None:
+                raise InvalidToken("Invalid refresh token")
+            try:
+                payload = jwt.decode(
+                    token,
+                    old_secrets.secret_key.get_secret_value(),
+                    algorithms=[old_secrets.algorithm],
+                    options={"require": ["exp", "sub", "jti", "type"]},
+                )
+                logger.warning(
+                    "Refresh token accepted with REFRESH_SECRET_KEY_OLD — "
+                    "remove old key once all old-key tokens have expired"
+                )
+            except ExpiredSignatureError as ex:
+                raise InvalidToken("Refresh token expired") from ex
+            except PyJWTError as ex:
+                raise InvalidToken("Invalid refresh token") from ex
 
         if payload.get("type") != "refresh":
             raise InvalidToken("Not a refresh token")
