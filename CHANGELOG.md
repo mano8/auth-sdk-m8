@@ -7,7 +7,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 
+---
+
+## [0.6.12] — 2026-05-20 · Python 3.13/3.14 compatibility, Redis mTLS, rate-limit health checks
+
 ### Added
+
+- **Python 3.13 and 3.14 support**: verified locally (379 tests, 100% coverage on Python 3.14.4);
+  added classifiers; `ruff` `target-version` updated to `py314`.
+
+- **CI hardening**:
+  - Extended test matrix from `["3.11", "3.12"]` to `["3.11", "3.12", "3.13", "3.14"]`
+  - Added `security` job running `bandit` at grade-A threshold with artifact upload
+  - Added `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true` — eliminates Node 20 warnings ahead of the June 2026 forced migration
+  - Lint and security jobs now run on Python 3.14 to match the widest tested version
+  - Coverage uploads to Codecov/Codacy guarded with `github.actor != 'dependabot[bot]'`
+    to prevent false failures (Dependabot PRs cannot access repository secrets)
+
+- **Dependabot**: added `.github/dependabot.yml` with monthly updates for `github-actions` and `pip`
 
 - **Auth degradation policy** (`core/config.py`): five new `CommonSettings` fields control how each Redis-dependent security control behaves when Redis is unavailable:
   - `AUTH_STRICT_MODE: bool = False` — overrides all per-control modes to `fail_closed`
@@ -39,6 +56,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 - **`REDIS_SSL: bool = False`** (`core/config.py`): new `CommonSettings` field controlling whether the Redis `ConnectionPool` uses TLS. Defaults to `False` (plain TCP) for backward compatibility with local/dev stacks. Set `REDIS_SSL=true` in production when Redis is reached over a network boundary. Exposed in all `auth.env.example` files as a commented default.
 
+- **`REDIS_SSL_CA`, `REDIS_SSL_CERT`, `REDIS_SSL_KEY`** (`core/config.py`): three new optional `CommonSettings` fields for Redis TLS/mTLS configuration:
+  - `REDIS_SSL_CA: str | None` — path to the CA certificate used to verify the Redis server cert. **Required when `REDIS_SSL=true`**; validated at startup via `_validate_redis_ssl`.
+  - `REDIS_SSL_CERT: str | None` — path to the client certificate for mTLS. Must be set together with `REDIS_SSL_KEY`.
+  - `REDIS_SSL_KEY: str | None` — path to the client private key for mTLS. Must be set together with `REDIS_SSL_CERT`.
+  All three fields are validated at startup: file existence is checked when the field is set; `REDIS_SSL_CA` is required when `REDIS_SSL=true`; `REDIS_SSL_CERT` and `REDIS_SSL_KEY` must both be set or both unset (XOR constraint).
+
 ### Changed
 
 - **`token_refresh_total` label values** (`observability/metrics.py`): description now explicitly documents the `rate_limited` result label alongside `success` and `failure`.
@@ -46,6 +69,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 ### Security
 
 - **`_sync_token_algorithms` hardened** (`core/config.py`): added `ValueError` assertion after algorithm propagation — `REFRESH_TOKEN_ALGORITHM` must always remain `HS256`. Refresh tokens are internal-only and must use symmetric signing; previously `TOKEN_ALGORITHM=RS256` was silently propagated to `REFRESH_TOKEN_ALGORITHM` without validating the existence of refresh key material, creating a silent startup trap that produced a runtime error only when a refresh was first attempted.
+
+### Fixed
+
+- **Self-referential `dev` extra removed** (`pyproject.toml`): `auth-sdk-m8[all]` in the `dev`
+  extras caused pip to resolve `CommonSettings` from PyPI (0.6.11) instead of the local editable
+  install on fresh CI environments, making `REDIS_SSL_CA/CERT/KEY` appear as unknown fields.
+  The CI now installs with `pip install -e ".[all,dev]"`.
+
+### Tests
+
+- **Redis SSL validation** (`tests/test_core_config.py`): 10 new tests covering `REDIS_SSL_CA`
+  required when SSL enabled, file-not-found errors for CA/cert/key, XOR rule (cert and key must
+  both be set or both unset), TLS-only mode, mTLS mode, and default-None when SSL disabled.
+- **Rate-limit health checks** (`tests/test_core_config.py`): 5 new tests covering default values
+  (no warning), permissive login/refresh rates (warns), stateless mode (skips refresh check),
+  and exact-threshold boundary (`>` not `>=`).
 
 ---
 

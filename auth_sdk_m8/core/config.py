@@ -409,6 +409,9 @@ class CommonSettings(BaseSettings):
     REDIS_USER: str = Field(..., pattern=ValidationConstants.KEY_REGEX.pattern)
     REDIS_PASSWORD: SecretStr
     REDIS_SSL: bool = False
+    REDIS_SSL_CA: Optional[str] = None
+    REDIS_SSL_CERT: Optional[str] = None
+    REDIS_SSL_KEY: Optional[str] = None
 
     # ── Rate limiting ─────────────────────────────────────────────────────────
     LOGIN_RATE_LIMIT_REQUESTS: int = Field(5, ge=1, le=1000)
@@ -485,6 +488,24 @@ class CommonSettings(BaseSettings):
             if not path.is_file():
                 raise ValueError(f"ACCESS_PUBLIC_KEY_FILE not found: {path}")
             self._access_public_key = path.read_text().strip()
+        return self
+
+    @model_validator(mode="after")
+    def _validate_redis_ssl(self) -> "CommonSettings":
+        """Enforce Redis TLS configuration consistency."""
+        if self.REDIS_SSL and not self.REDIS_SSL_CA:
+            raise ValueError("REDIS_SSL_CA is required when REDIS_SSL=true")
+        for value, name in [
+            (self.REDIS_SSL_CA, "REDIS_SSL_CA"),
+            (self.REDIS_SSL_CERT, "REDIS_SSL_CERT"),
+            (self.REDIS_SSL_KEY, "REDIS_SSL_KEY"),
+        ]:
+            if value and not Path(value).is_file():
+                raise ValueError(f"{name} file not found: {value}")
+        if bool(self.REDIS_SSL_CERT) ^ bool(self.REDIS_SSL_KEY):
+            raise ValueError(
+                "REDIS_SSL_CERT and REDIS_SSL_KEY must both be set or both unset"
+            )
         return self
 
     @model_validator(mode="after")

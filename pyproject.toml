@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "auth-sdk-m8"
-version = "0.6.11"
+version = "0.6.12"
 description = "Shared authentication schemas, JWT utilities and FastAPI base components for m8 microservices."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -17,6 +17,8 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Framework :: FastAPI",
     "Topic :: Software Development :: Libraries",
 ]
@@ -82,7 +84,6 @@ dev = [
     "pytest-asyncio>=0.23",
     "pytest-cov>=5.0",
     "ruff>=0.9",
-    "auth-sdk-m8[all]",
 ]
 
 [project.urls]
@@ -96,7 +97,7 @@ packages = ["auth_sdk_m8"]
 # ─── Ruff ────────────────────────────────────────────────────────────────────
 [tool.ruff]
 line-length = 88
-target-version = "py311"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "C90", "D"]
