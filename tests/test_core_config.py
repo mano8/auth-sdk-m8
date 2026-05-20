@@ -379,9 +379,146 @@ def test_redis_ssl_defaults_to_false() -> None:
     assert s.REDIS_SSL is False
 
 
-def test_redis_ssl_can_be_enabled() -> None:
-    s = IsolatedSettings(**{**VALID_SETTINGS_KWARGS, "REDIS_SSL": True})
+def test_redis_ssl_can_be_enabled(tmp_path) -> None:
+    ca = tmp_path / "ca.crt"
+    ca.write_text("CA")
+    s = IsolatedSettings(
+        **{**VALID_SETTINGS_KWARGS, "REDIS_SSL": True, "REDIS_SSL_CA": str(ca)}
+    )
     assert s.REDIS_SSL is True
+
+
+# ── _validate_redis_ssl ────────────────────────────────────────────────────────
+
+
+def test_redis_ssl_ca_required_when_ssl_enabled() -> None:
+    """REDIS_SSL=true without REDIS_SSL_CA must raise."""
+    with pytest.raises(Exception, match="REDIS_SSL_CA is required"):
+        IsolatedSettings(**{**VALID_SETTINGS_KWARGS, "REDIS_SSL": True})
+
+
+def test_redis_ssl_ca_file_not_found_raises(tmp_path) -> None:
+    """REDIS_SSL_CA pointing to a missing file must raise."""
+    with pytest.raises(Exception, match="REDIS_SSL_CA file not found"):
+        IsolatedSettings(
+            **{
+                **VALID_SETTINGS_KWARGS,
+                "REDIS_SSL_CA": str(tmp_path / "missing_ca.crt"),
+            }
+        )
+
+
+def test_redis_ssl_cert_file_not_found_raises(tmp_path) -> None:
+    """REDIS_SSL_CERT pointing to a missing file must raise."""
+    ca = tmp_path / "ca.crt"
+    ca.write_text("CA")
+    with pytest.raises(Exception, match="REDIS_SSL_CERT file not found"):
+        IsolatedSettings(
+            **{
+                **VALID_SETTINGS_KWARGS,
+                "REDIS_SSL": True,
+                "REDIS_SSL_CA": str(ca),
+                "REDIS_SSL_CERT": str(tmp_path / "missing.crt"),
+            }
+        )
+
+
+def test_redis_ssl_key_file_not_found_raises(tmp_path) -> None:
+    """REDIS_SSL_KEY pointing to a missing file must raise."""
+    ca = tmp_path / "ca.crt"
+    cert = tmp_path / "client.crt"
+    ca.write_text("CA")
+    cert.write_text("CERT")
+    with pytest.raises(Exception, match="REDIS_SSL_KEY file not found"):
+        IsolatedSettings(
+            **{
+                **VALID_SETTINGS_KWARGS,
+                "REDIS_SSL": True,
+                "REDIS_SSL_CA": str(ca),
+                "REDIS_SSL_CERT": str(cert),
+                "REDIS_SSL_KEY": str(tmp_path / "missing.key"),
+            }
+        )
+
+
+def test_redis_ssl_cert_without_key_raises(tmp_path) -> None:
+    """REDIS_SSL_CERT without REDIS_SSL_KEY must raise (XOR rule)."""
+    ca = tmp_path / "ca.crt"
+    cert = tmp_path / "client.crt"
+    ca.write_text("CA")
+    cert.write_text("CERT")
+    with pytest.raises(Exception, match="must both be set or both unset"):
+        IsolatedSettings(
+            **{
+                **VALID_SETTINGS_KWARGS,
+                "REDIS_SSL": True,
+                "REDIS_SSL_CA": str(ca),
+                "REDIS_SSL_CERT": str(cert),
+            }
+        )
+
+
+def test_redis_ssl_key_without_cert_raises(tmp_path) -> None:
+    """REDIS_SSL_KEY without REDIS_SSL_CERT must raise (XOR rule)."""
+    ca = tmp_path / "ca.crt"
+    key = tmp_path / "client.key"
+    ca.write_text("CA")
+    key.write_text("KEY")
+    with pytest.raises(Exception, match="must both be set or both unset"):
+        IsolatedSettings(
+            **{
+                **VALID_SETTINGS_KWARGS,
+                "REDIS_SSL": True,
+                "REDIS_SSL_CA": str(ca),
+                "REDIS_SSL_KEY": str(key),
+            }
+        )
+
+
+def test_redis_ssl_tls_only_passes(tmp_path) -> None:
+    """REDIS_SSL=true with only CA (no client cert) is valid."""
+    ca = tmp_path / "ca.crt"
+    ca.write_text("CA")
+    s = IsolatedSettings(
+        **{
+            **VALID_SETTINGS_KWARGS,
+            "REDIS_SSL": True,
+            "REDIS_SSL_CA": str(ca),
+        }
+    )
+    assert s.REDIS_SSL is True
+    assert s.REDIS_SSL_CERT is None
+    assert s.REDIS_SSL_KEY is None
+
+
+def test_redis_ssl_mtls_passes(tmp_path) -> None:
+    """REDIS_SSL=true with CA + client cert + key (mTLS) is valid."""
+    ca = tmp_path / "ca.crt"
+    cert = tmp_path / "client.crt"
+    key = tmp_path / "client.key"
+    ca.write_text("CA")
+    cert.write_text("CERT")
+    key.write_text("KEY")
+    s = IsolatedSettings(
+        **{
+            **VALID_SETTINGS_KWARGS,
+            "REDIS_SSL": True,
+            "REDIS_SSL_CA": str(ca),
+            "REDIS_SSL_CERT": str(cert),
+            "REDIS_SSL_KEY": str(key),
+        }
+    )
+    assert s.REDIS_SSL_CA == str(ca)
+    assert s.REDIS_SSL_CERT == str(cert)
+    assert s.REDIS_SSL_KEY == str(key)
+
+
+def test_redis_ssl_false_fields_default_none() -> None:
+    """With REDIS_SSL=false (default), all SSL path fields default to None."""
+    s = IsolatedSettings(**VALID_SETTINGS_KWARGS)
+    assert s.REDIS_SSL_CA is None
+    assert s.REDIS_SSL_CERT is None
+    assert s.REDIS_SSL_KEY is None
 
 
 # ── check_config_health ────────────────────────────────────────────────────────────
@@ -954,6 +1091,84 @@ def test_consumer_stateless_with_db_host_warns() -> None:
     logger = DummyLogger()
     check_config_health(settings, logger)
     assert any("DB_HOST" in w for w in logger.warnings)
+
+
+# ── _check_rate_limit_config ─────────────────────────────────────────────────
+
+
+def _rl_settings(**kwargs) -> DummySettings:
+    """Base settings with safe defaults for rate-limit health-check tests."""
+    base = {
+        "ACCESS_TOKEN_ALGORITHM": "HS256",
+        "TOKEN_MODE": "stateful",
+        "REDIS_HOST": "localhost",
+        "REDIS_PASSWORD": "pass",
+        "JWKS_CACHE_TTL_SECONDS": 300,
+    }
+    base.update(kwargs)
+    return DummySettings(**base)
+
+
+def test_rate_limit_default_values_no_warning() -> None:
+    """Defaults (login 5/15 min, refresh 10/5 min) must not trigger a warning."""
+    settings = _rl_settings(
+        LOGIN_RATE_LIMIT_REQUESTS=5,
+        LOGIN_RATE_LIMIT_WINDOW_MINUTES=15,
+        REFRESH_RATE_LIMIT_REQUESTS=10,
+        REFRESH_RATE_LIMIT_WINDOW_MINUTES=5,
+    )
+    logger = DummyLogger()
+    check_config_health(settings, logger)
+    assert not any("RATE_LIMIT" in w for w in logger.warnings)
+
+
+def test_rate_limit_permissive_login_warns() -> None:
+    """LOGIN effective rate > 5 req/min must produce a warning."""
+    settings = _rl_settings(
+        LOGIN_RATE_LIMIT_REQUESTS=100,
+        LOGIN_RATE_LIMIT_WINDOW_MINUTES=1,
+    )
+    logger = DummyLogger()
+    check_config_health(settings, logger)
+    assert any("LOGIN_RATE_LIMIT_REQUESTS" in w for w in logger.warnings)
+    assert any("highly permissive" in w for w in logger.warnings)
+
+
+def test_rate_limit_permissive_refresh_warns() -> None:
+    """REFRESH effective rate > 20 req/min must produce a warning."""
+    settings = _rl_settings(
+        REFRESH_RATE_LIMIT_REQUESTS=100,
+        REFRESH_RATE_LIMIT_WINDOW_MINUTES=1,
+    )
+    logger = DummyLogger()
+    check_config_health(settings, logger)
+    assert any("REFRESH_RATE_LIMIT_REQUESTS" in w for w in logger.warnings)
+
+
+def test_rate_limit_stateless_skips_refresh_check() -> None:
+    """In stateless mode, permissive refresh settings must not warn (no refresh tokens)."""
+    settings = _rl_settings(
+        TOKEN_MODE="stateless",
+        REFRESH_RATE_LIMIT_REQUESTS=1000,
+        REFRESH_RATE_LIMIT_WINDOW_MINUTES=1,
+    )
+    logger = DummyLogger()
+    check_config_health(settings, logger)
+    assert not any("REFRESH_RATE_LIMIT" in w for w in logger.warnings)
+
+
+def test_rate_limit_exactly_at_threshold_no_warning() -> None:
+    """Effective rate == threshold must not trigger a warning (> not >=)."""
+    # Login: 5 req/min exactly
+    settings = _rl_settings(
+        LOGIN_RATE_LIMIT_REQUESTS=5,
+        LOGIN_RATE_LIMIT_WINDOW_MINUTES=1,
+        REFRESH_RATE_LIMIT_REQUESTS=20,
+        REFRESH_RATE_LIMIT_WINDOW_MINUTES=1,
+    )
+    logger = DummyLogger()
+    check_config_health(settings, logger)
+    assert not any("RATE_LIMIT" in w for w in logger.warnings)
 
 
 # ── _build_vault_source ───────────────────────────────────────────────────────
