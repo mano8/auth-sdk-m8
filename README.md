@@ -7,7 +7,7 @@
 [![codecov](https://codecov.io/gh/mano8/auth-sdk-m8/graph/badge.svg?token=TF6OGIHOGF)](https://codecov.io/gh/mano8/auth-sdk-m8)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/8b8e9726b0f8441ea480902ea8910812)](https://app.codacy.com/gh/mano8/auth-sdk-m8/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 
-Shared authentication schemas, JWT validation, and FastAPI base components for any service that issues or validates JWT tokens.
+Shared authentication schemas, JWT validation, and FastAPI base components for any service that issues or validates JWT tokens. Supports Python 3.11 – 3.14.
 
 Companion SDK to [fa-auth-m8](https://github.com/mano8/fa-auth-m8) — install in any FastAPI service that needs to validate tokens from the fa-auth-m8 authentication service. Provides Pydantic schemas, JWT validation, `CommonSettings`, Redis event bus, and optional Prometheus metrics.
 
@@ -391,8 +391,25 @@ REFRESH_SECRET_KEY_OLD=previous-strong-secret
 
 Set `REDIS_SSL=true` to enable TLS on the `ConnectionPool` when Redis is reached over a network boundary in staging/production. Defaults to `false` for plain-TCP local/dev stacks.
 
+| Setting | Required | Description |
+| --- | --- | --- |
+| `REDIS_SSL` | no | `true` to enable TLS (default `false`) |
+| `REDIS_SSL_CA` | when `REDIS_SSL=true` | Path to CA certificate — required to verify the Redis server cert |
+| `REDIS_SSL_CERT` | no | Path to client certificate for mTLS — must be set together with `REDIS_SSL_KEY` |
+| `REDIS_SSL_KEY` | no | Path to client private key for mTLS — must be set together with `REDIS_SSL_CERT` |
+
+`REDIS_SSL_CERT` and `REDIS_SSL_KEY` follow an XOR rule: both must be set or both unset. All path fields are validated at startup — a missing file aborts startup immediately.
+
 ```ini
+# TLS only (server cert verification)
 REDIS_SSL=true
+REDIS_SSL_CA=/opt/certs/ca.crt
+
+# mTLS (mutual TLS — client cert + key)
+REDIS_SSL=true
+REDIS_SSL_CA=/opt/certs/ca.crt
+REDIS_SSL_CERT=/opt/certs/client.crt
+REDIS_SSL_KEY=/opt/certs/client.key
 ```
 
 ---
