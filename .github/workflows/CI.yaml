@@ -22,7 +22,7 @@ jobs:
           cache: "pip"
 
       - name: Install dev dependencies
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[all,dev]"
 
       - name: Check formatting
         run: ruff format --check .
@@ -70,7 +70,7 @@ jobs:
           cache: "pip"
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[all,dev]"
 
       - name: Run tests
         run: pytest --cov-report=xml
