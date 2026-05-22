@@ -15,7 +15,8 @@ Metric groups (set via METRICS_GROUPS, comma-separated):
                  auth_session_integrity_denial_total,
                  auth_api_key_validations_total, auth_api_key_rate_limit_checks_total,
                  auth_api_key_rate_limit_hits_total, auth_api_key_lifecycle_total,
-                 auth_api_key_flush_duration_seconds
+                 auth_api_key_flush_duration_seconds,
+                 auth_code_exchange_total
                  (only meaningful in services that have auth routes)
 
 Requires: pip install auth-sdk-m8[observability]
@@ -76,6 +77,8 @@ class _Metrics:
     redis_circuit_breaker_open: Optional[Gauge] = None
     degradation_mode_active: Optional[Gauge] = None
     session_integrity_denial_total: Optional[Counter] = None
+    # OAuth native-app code exchange (part of auth group)
+    auth_code_exchange_total: Optional[Counter] = None
     # api keys (part of auth group)
     api_key_validations_total: Optional[Counter] = None
     api_key_rate_limit_checks_total: Optional[Counter] = None
@@ -179,6 +182,13 @@ def setup(enabled: bool, groups_str: str, api_prefix: str) -> None:
             f"{pfx}auth_oauth_attempts_total",
             "OAuth callback attempts (provider: google, result: success | failed)",
             ["provider", "result"],
+            registry=REGISTRY,
+        )
+        m.auth_code_exchange_total = Counter(
+            f"{pfx}auth_code_exchange_total",
+            "OAuth native-app auth code exchange results "
+            "(result: success | expired_or_invalid | pkce_failed | redis_unavailable)",
+            ["result"],
             registry=REGISTRY,
         )
         m.revocation_failure_total = Counter(

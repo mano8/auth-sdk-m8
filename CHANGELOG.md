@@ -9,6 +9,42 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [0.6.13] — 2026-05-22 · Chrome extension OAuth support
+
+### Added (0.6.13)
+
+- **`OAUTH_ALLOWED_REDIRECT_SCHEMES`** (`core/config.py`): list of URI schemes
+  accepted as `redirect_target` at `/google-api/login-url/`.  Defaults to
+  `["chrome-extension://"]`.  `http://` and `https://` are hard-rejected by
+  the route handler regardless of this setting.
+
+- **`OAUTH_ALLOWED_REDIRECT_PREFIXES`** (`core/config.py`): optional list of
+  full URI prefixes that restrict `redirect_target` to specific extension IDs
+  (empty by default — open public-client model).  URI-aware matching prevents
+  crafted-netloc bypasses.
+
+- **`CORS_ALLOWED_ORIGIN_SCHEMES`** (`core/config.py`): list of URI schemes
+  allowed as `Origin` for CORS purposes.  Used by `auth_user_service` to build
+  a `CORSMiddleware`-compatible `allow_origin_regex` that accepts
+  `chrome-extension://{32-char-id}` origins.  Defaults to empty (no extension
+  CORS).
+
+- **`auth_code_exchange_total` counter** (`observability/metrics.py`): new
+  Prometheus counter in the `auth` group tracking OAuth native-app code
+  exchange results.  Labels: `result` (`success | expired_or_invalid |
+  pkce_failed | redis_unavailable`).
+
+### Removed (0.6.13)
+
+- **`EXTENSION_ID`** (`core/config.py`): deleted.  `fa-auth-m8` is a generic
+  auth provider and must work with any client without per-client backend
+  configuration.  Extension identity is not verified by the backend; the
+  `redirect_target` is a delivery channel, not an identity binding mechanism.
+  Operators who need to restrict to known extension IDs can configure
+  `OAUTH_ALLOWED_REDIRECT_PREFIXES`.
+
+---
+
 ## [0.6.12] — 2026-05-20 · Python 3.13/3.14 compatibility, Redis mTLS, rate-limit health checks
 
 ### Added
