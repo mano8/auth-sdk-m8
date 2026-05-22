@@ -9,6 +9,58 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [0.6.13] — 2026-05-22 · Chrome extension OAuth support
+
+### Added (0.6.13)
+
+- **`OAUTH_ALLOWED_REDIRECT_SCHEMES`** (`core/config.py`): list of URI schemes
+  accepted as `redirect_target` at `/google-api/login-url/`.  Defaults to
+  `["chrome-extension://"]`.  `http://` and `https://` are hard-rejected by
+  the route handler regardless of this setting.
+
+- **`OAUTH_ALLOWED_REDIRECT_PREFIXES`** (`core/config.py`): optional list of
+  full URI prefixes that restrict `redirect_target` to specific extension IDs
+  (empty by default — open public-client model).  URI-aware matching prevents
+  crafted-netloc bypasses.
+
+- **`CORS_ALLOWED_ORIGIN_SCHEMES`** (`core/config.py`): list of URI schemes
+  allowed as `Origin` for CORS purposes.  Used by `auth_user_service` to build
+  a `CORSMiddleware`-compatible `allow_origin_regex` that accepts
+  `chrome-extension://{32-char-id}` origins.  Defaults to empty (no extension
+  CORS).
+
+- **`auth_code_exchange_total` counter** (`observability/metrics.py`): new
+  Prometheus counter in the `auth` group tracking OAuth native-app code
+  exchange results.  Labels: `result` (`success | expired_or_invalid |
+  pkce_failed | redis_unavailable`).
+
+### Tests (0.6.13)
+
+- **100% branch coverage** — 388 tests, 1245 statements, 314 branches, 0
+  missing.
+
+- **`tests/test_core_config.py`** — 9 new tests covering previously-missed
+  branches in `core/config.py` and `core/config_health.py`:
+  `_assert_key_strength` HS256 no-op and valid ES256 P-256 paths; string
+  env-value parsing for the three new list validators
+  (`parse_redirect_schemes`, `parse_redirect_prefixes`,
+  `parse_cors_origin_schemes`); `_sync_token_algorithms` when both
+  `ACCESS_TOKEN_ALGORITHM` and `REFRESH_TOKEN_ALGORITHM` are pre-set to
+  non-HS256; `_validate_key_strength` JWKS-consumer no-local-key path;
+  `settings_customise_sources` vault mode without `VAULT_ADDR`; consumer +
+  stateless with no `DB_HOST` set.
+
+### Removed (0.6.13)
+
+- **`EXTENSION_ID`** (`core/config.py`): deleted.  `fa-auth-m8` is a generic
+  auth provider and must work with any client without per-client backend
+  configuration.  Extension identity is not verified by the backend; the
+  `redirect_target` is a delivery channel, not an identity binding mechanism.
+  Operators who need to restrict to known extension IDs can configure
+  `OAUTH_ALLOWED_REDIRECT_PREFIXES`.
+
+---
+
 ## [0.6.12] — 2026-05-20 · Python 3.13/3.14 compatibility, Redis mTLS, rate-limit health checks
 
 ### Added

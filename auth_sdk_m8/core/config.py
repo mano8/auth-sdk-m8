@@ -253,8 +253,48 @@ class CommonSettings(BaseSettings):
     # ── CORS / Frontend ───────────────────────────────────────────────────────
     BACKEND_HOST: HttpUrl
     FRONTEND_HOST: HttpUrl
-    EXTENSION_ID: str = ""
     BACKEND_CORS_ORIGINS: str
+
+    # ── OAuth native-client redirect policy ───────────────────────────────────
+    # URI schemes accepted as redirect_target at /google-api/login-url/.
+    # Default: chrome-extension:// only. Comma-separated for multiple clients.
+    # http:// and https:// are hard-rejected regardless of this setting.
+    OAUTH_ALLOWED_REDIRECT_SCHEMES: List[str] = ["chrome-extension://"]
+
+    @field_validator("OAUTH_ALLOWED_REDIRECT_SCHEMES", mode="before")
+    @classmethod
+    def parse_redirect_schemes(cls, v: object) -> List[str]:
+        """Parse comma-separated redirect schemes from env."""
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return list(v) if v else ["chrome-extension://"]
+
+    # Optional: restrict to known extension IDs (empty = open public-client model).
+    # Set to chrome-extension://abc123.../ to pin specific extensions.
+    # See README: redirect URI is a delivery channel, not an identity binding mechanism.
+    OAUTH_ALLOWED_REDIRECT_PREFIXES: List[str] = []
+
+    @field_validator("OAUTH_ALLOWED_REDIRECT_PREFIXES", mode="before")
+    @classmethod
+    def parse_redirect_prefixes(cls, v: object) -> List[str]:
+        """Parse comma-separated redirect prefix allowlist from env."""
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return list(v) if v else []
+
+    # CORS scheme allowlist — required for extension fetch() calls.
+    # Extension sends Origin: chrome-extension://{id}. Standard CORSMiddleware
+    # only matches exact origins — this enables scheme-level matching via regex.
+    # Only chrome-extension:// is supported; custom schemes require custom impl.
+    CORS_ALLOWED_ORIGIN_SCHEMES: List[str] = []
+
+    @field_validator("CORS_ALLOWED_ORIGIN_SCHEMES", mode="before")
+    @classmethod
+    def parse_cors_origin_schemes(cls, v: object) -> List[str]:
+        """Parse comma-separated CORS origin scheme allowlist from env."""
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return list(v) if v else []
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod

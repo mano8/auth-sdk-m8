@@ -970,6 +970,29 @@ def test_assert_key_strength_es256_wrong_curve() -> None:
         _assert_key_strength(wrong_pem, "ES256", is_private=False)
 
 
+def test_assert_key_strength_hs256_is_noop() -> None:
+    """algo not in {RS256, ES256} → function exits without any check (193->exit)."""
+    from auth_sdk_m8.core.config import _assert_key_strength
+
+    _assert_key_strength(RSA_PUBLIC_PEM.strip(), "HS256", is_private=False)
+
+
+def test_assert_key_strength_es256_valid_p256_key() -> None:
+    """Valid P-256 EC key → isinstance check is False, function exits cleanly (200->exit)."""
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    from auth_sdk_m8.core.config import _assert_key_strength
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    pem = (
+        key.public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        .decode()
+    )
+    _assert_key_strength(pem, "ES256", is_private=False)
+
+
 # ── _sync_token_algorithms ────────────────────────────────────────────────────
 
 
@@ -981,6 +1004,18 @@ def test_sync_token_algorithms_propagates_non_hs256() -> None:
 
 def test_sync_token_algorithms_rejects_direct_asymmetric_refresh() -> None:
     kwargs = {**VALID_SETTINGS_KWARGS, "REFRESH_TOKEN_ALGORITHM": "RS256"}
+    with pytest.raises(ValueError, match="REFRESH_TOKEN_ALGORITHM must be HS256"):
+        IsolatedSettings(**kwargs)
+
+
+def test_sync_token_algorithms_both_already_non_hs256() -> None:
+    """ACCESS and REFRESH both pre-set to non-HS256 → sync skips both lines (507->509, 509->511)."""
+    kwargs = {
+        **VALID_SETTINGS_KWARGS,
+        "TOKEN_ALGORITHM": "RS256",
+        "ACCESS_TOKEN_ALGORITHM": "RS256",
+        "REFRESH_TOKEN_ALGORITHM": "RS256",
+    }
     with pytest.raises(ValueError, match="REFRESH_TOKEN_ALGORITHM must be HS256"):
         IsolatedSettings(**kwargs)
 
@@ -1016,6 +1051,19 @@ def test_validate_key_strength_public_key_only(tmp_path) -> None:
     }
     s = IsolatedSettings(**kwargs)
     assert s.ACCESS_PUBLIC_KEY is not None
+
+
+def test_validate_key_strength_jwks_uri_only_no_local_key() -> None:
+    """RS256 consumer with JWKS_URI only (no local keys) → elif branch is False (581->584)."""
+    kwargs = {
+        **VALID_SETTINGS_KWARGS,
+        "ACCESS_TOKEN_ALGORITHM": "RS256",
+        "ACCESS_SECRET_KEY": None,
+        "JWKS_URI": "https://auth.example.com/.well-known/jwks.json",
+    }
+    s = IsolatedSettings(**kwargs)
+    assert s.ACCESS_TOKEN_ALGORITHM == "RS256"
+    assert s.ACCESS_PUBLIC_KEY is None
 
 
 # ── enforce_secure_and_required_values ────────────────────────────────────────
@@ -1261,3 +1309,64 @@ def test_common_settings_customise_sources_vault_token_from_file(
         )
 
     assert len(sources) == 5
+
+
+def test_common_settings_customise_sources_vault_no_addr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Vault mode but VAULT_ADDR absent → vault source not appended (651->653)."""
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("SECRET_PROVIDER", "vault")
+    monkeypatch.delenv("VAULT_ADDR", raising=False)
+    monkeypatch.delenv("VAULT_TOKEN", raising=False)
+
+    sources = CommonSettings.settings_customise_sources(
+        CommonSettings,
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+    )
+
+    assert len(sources) == 4
+
+
+# ── new OAuth / CORS validator string-parsing branches ───────────────────────
+
+
+def test_parse_redirect_schemes_from_string() -> None:
+    """String env value → list parsing (line 269 branch)."""
+    result = CommonSettings.parse_redirect_schemes("chrome-extension://,myapp://")
+    assert result == ["chrome-extension://", "myapp://"]
+
+
+def test_parse_redirect_prefixes_from_string() -> None:
+    """String env value → list parsing (line 282 branch)."""
+    result = CommonSettings.parse_redirect_prefixes(
+        "chrome-extension://abc123/,chrome-extension://def456/"
+    )
+    assert result == [
+        "chrome-extension://abc123/",
+        "chrome-extension://def456/",
+    ]
+
+
+def test_parse_cors_origin_schemes_from_string() -> None:
+    """String env value → list parsing (line 296 branch)."""
+    result = CommonSettings.parse_cors_origin_schemes("chrome-extension://")
+    assert result == ["chrome-extension://"]
+
+
+# ── consumer+stateless with no DB_HOST (config_health.py 75->83) ─────────────
+
+
+def test_consumer_stateless_without_db_host_no_warning() -> None:
+    """consumer + stateless with empty DB_HOST → db_host branch is False (75->83)."""
+    settings = DummySettings(
+        ACCESS_TOKEN_ALGORITHM="HS256",
+        TOKEN_MODE="stateless",
+        AUTH_SERVICE_ROLE="consumer",
+    )
+    logger = DummyLogger()
+    check_config_health(settings, logger)
+    assert not any("DB_HOST" in w for w in logger.warnings)
