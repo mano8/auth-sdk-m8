@@ -34,6 +34,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   exchange results.  Labels: `result` (`success | expired_or_invalid |
   pkce_failed | redis_unavailable`).
 
+### Tests (0.6.13)
+
+- **100% branch coverage** — 388 tests, 1245 statements, 314 branches, 0
+  missing.
+
+- **`tests/test_core_config.py`** — 9 new tests covering previously-missed
+  branches in `core/config.py` and `core/config_health.py`:
+  `_assert_key_strength` HS256 no-op and valid ES256 P-256 paths; string
+  env-value parsing for the three new list validators
+  (`parse_redirect_schemes`, `parse_redirect_prefixes`,
+  `parse_cors_origin_schemes`); `_sync_token_algorithms` when both
+  `ACCESS_TOKEN_ALGORITHM` and `REFRESH_TOKEN_ALGORITHM` are pre-set to
+  non-HS256; `_validate_key_strength` JWKS-consumer no-local-key path;
+  `settings_customise_sources` vault mode without `VAULT_ADDR`; consumer +
+  stateless with no `DB_HOST` set.
+
 ### Removed (0.6.13)
 
 - **`EXTENSION_ID`** (`core/config.py`): deleted.  `fa-auth-m8` is a generic

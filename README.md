@@ -28,6 +28,7 @@ Companion SDK to [fa-auth-m8](https://github.com/mano8/fa-auth-m8) — install i
 - [Asymmetric key-strength enforcement](#asymmetric-key-strength-enforcement)
 - [Strict production mode](#strict-production-mode)
 - [Token modes](#token-modes)
+- [Chrome extension / native-app OAuth support](#chrome-extension--native-app-oauth-support)
 - [Auth degradation policy](#auth-degradation-policy)
 - [Issuer / audience enforcement](#issuer--audience-enforcement)
 - [Refresh token rotation](#refresh-token-rotation)
@@ -414,6 +415,41 @@ REDIS_SSL_KEY=/opt/certs/client.key
 
 ---
 
+## Chrome extension / native-app OAuth support
+
+`CommonSettings` provides three settings for deploying `fa-auth-m8` as a backend
+for Chrome extensions or native-app OAuth clients.
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `OAUTH_ALLOWED_REDIRECT_SCHEMES` | `["chrome-extension://"]` | URI schemes accepted as `redirect_target` at the login-URL endpoint. `http://` and `https://` are always hard-rejected regardless of this list. |
+| `OAUTH_ALLOWED_REDIRECT_PREFIXES` | `[]` | Optional full-URI allowlist for operator-controlled extension binding. Empty = open public-client model (any extension with the correct scheme). |
+| `CORS_ALLOWED_ORIGIN_SCHEMES` | `[]` | URI scheme prefixes allowed as `Origin` in CORS preflight requests. Required for Chrome extension `fetch()` calls. |
+
+Both settings accept comma-separated strings from env vars:
+
+```ini
+# Accept any chrome-extension:// redirect (open public-client model)
+OAUTH_ALLOWED_REDIRECT_SCHEMES=chrome-extension://
+
+# Optional: restrict to specific extension IDs
+OAUTH_ALLOWED_REDIRECT_PREFIXES=chrome-extension://abcdefghijklmnopqrstuvwxyzabcdef/
+
+# Enable CORS for extension fetch() calls
+CORS_ALLOWED_ORIGIN_SCHEMES=chrome-extension://
+```
+
+`CORS_ALLOWED_ORIGIN_SCHEMES` is consumed by `fa-auth-m8`'s `CORSMiddleware`
+setup (`_build_cors_origin_regex`). Chrome extension IDs are constrained to
+exactly 32 lowercase letters; the middleware rejects any origin that does not
+match. Only `chrome-extension://` is a supported scheme value — other
+schemes require custom CORS validation.
+
+`EXTENSION_ID` (present in versions ≤ 0.6.12) has been removed. `fa-auth-m8`
+is a generic auth provider; it must not require per-client backend configuration.
+
+---
+
 ## Auth degradation policy
 
 When Redis is unavailable, each security control can independently `fail_open` (allow the request through) or `fail_closed` (return HTTP 503). Set these in `CommonSettings` or your `.env`:
@@ -588,7 +624,7 @@ METRICS_GROUPS=all   # or: traffic,performance,reliability,health,auth
 | `performance` | `http_request_duration_seconds` histogram |
 | `reliability` | `http_errors_total` (4xx/5xx) |
 | `health` | `http_status_total` by exact status code |
-| `auth` | `token_login_total`, `token_refresh_total` (result: success\|failure\|rate_limited), `token_logout_total`, `token_validation_failure_total`, `oauth_attempt_total`, `auth_revocation_failure_total` (operation: access_blacklist\|refresh_allowlist\|db_session), `auth_degraded_decision_total` (control, mode, reason), `auth_redis_circuit_breaker_open` (gauge: 0=closed 1=open), `auth_degradation_mode_active` (gauge per control+mode), `auth_session_integrity_denial_total` (trigger: reuse_detected) |
+| `auth` | `token_login_total`, `token_refresh_total` (result: success\|failure\|rate_limited), `token_logout_total`, `token_validation_failure_total`, `oauth_attempt_total`, `auth_code_exchange_total` (result: success\|expired_or_invalid\|pkce_failed\|redis_unavailable), `auth_revocation_failure_total` (operation: access_blacklist\|refresh_allowlist\|db_session), `auth_degraded_decision_total` (control, mode, reason), `auth_redis_circuit_breaker_open` (gauge: 0=closed 1=open), `auth_degradation_mode_active` (gauge per control+mode), `auth_session_integrity_denial_total` (trigger: reuse_detected) |
 
 ---
 
