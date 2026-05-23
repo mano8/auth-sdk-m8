@@ -218,8 +218,6 @@ class CommonSettings(BaseSettings):
         "API_PREFIX",
         "PROJECT_NAME",
         "STACK_NAME",
-        "STATIC_BASE_PATH",
-        "TEMPLATES_BASE_PATH",
         "FRONTEND_HOST",
     ]
     secret_fields: ClassVar[List[str]] = [
@@ -243,12 +241,6 @@ class CommonSettings(BaseSettings):
     SET_REDOC: bool = True
     PROJECT_NAME: str = Field(..., pattern=ValidationConstants.KEY_REGEX.pattern)
     STACK_NAME: str = Field(..., pattern=ValidationConstants.SLUG_REGEX.pattern)
-    STATIC_BASE_PATH: str = Field(
-        ..., pattern=ValidationConstants.FILE_PATH_REGEX.pattern
-    )
-    TEMPLATES_BASE_PATH: str = Field(
-        ..., pattern=ValidationConstants.FILE_PATH_REGEX.pattern
-    )
 
     # ── CORS / Frontend ───────────────────────────────────────────────────────
     BACKEND_HOST: HttpUrl

@@ -34,9 +34,9 @@ class ValidationConstants:
     PASSWORD_REGEX: re.Pattern = re.compile(
         r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_])(?!.*\s).{8,}$"
     )
-    #: Secret key: 32+ chars, mixed case, digits, hyphens/underscores
+    #: Secret key: 32+ chars, upper, lower, digit, non-alphanumeric, no spaces
     SECRET_KEY_REGEX: re.Pattern = re.compile(
-        r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[-_])[A-Za-z\d\-_]{32,}$"
+        r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z0-9])\S{32,}$"
     )
     #: MySQL database / user name
     MYSQL_NAME_REGEX: re.Pattern = re.compile(r"^[A-Za-z0-9_]+$")
