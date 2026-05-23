@@ -60,8 +60,6 @@ VALID_SETTINGS_KWARGS: dict = {
     "API_PREFIX": "/api",
     "PROJECT_NAME": "my-project",
     "STACK_NAME": "my-stack",
-    "STATIC_BASE_PATH": "/static/path",
-    "TEMPLATES_BASE_PATH": "/templates/path",
     "BACKEND_HOST": "http://localhost:8000",
     "FRONTEND_HOST": "http://localhost:3000",
     "BACKEND_CORS_ORIGINS": "http://localhost:3000",

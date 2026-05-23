@@ -9,6 +9,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [0.6.14] — 2026-05-23 · Remove STATIC/TEMPLATES paths; unify secret-key regex
+
+### Breaking changes
+
+- **`STATIC_BASE_PATH` and `TEMPLATES_BASE_PATH` removed from `CommonSettings`.**
+  Services that set or read these fields will raise a Pydantic validation error at
+  startup. Remove both keys from your env files and any code that references them.
+
+### Changed
+
+- **`SECRET_KEY_REGEX`** unified with `PASSWORD_REGEX` character-class rules: now
+  requires at least one character outside `[a-zA-Z0-9]` (previously restricted to
+  `[-_]`). Minimum length remains 32 characters. Existing secret keys that already
+  contain a hyphen or underscore continue to pass without change.
+
+### Tests
+
+- Removed `"STATIC_BASE_PATH": "/static/path"` from `VALID_SETTINGS_KWARGS` fixture.
+
+---
+
 ## [0.6.13] — 2026-05-22 · Chrome extension OAuth support
 
 ### Added (0.6.13)
