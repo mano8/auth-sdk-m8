@@ -1370,3 +1370,107 @@ def test_consumer_stateless_without_db_host_no_warning() -> None:
     logger = DummyLogger()
     check_config_health(settings, logger)
     assert not any("DB_HOST" in w for w in logger.warnings)
+
+
+# ── requires_redis role-aware behaviour ──────────────────────────────────────
+
+
+_BASE_NO_REDIS = {k: v for k, v in VALID_SETTINGS_KWARGS.items() if "REDIS" not in k}
+
+
+@pytest.mark.parametrize("mode", ["stateless", "stateful", "hybrid"])
+def test_requires_redis_consumer_always_false(mode: str) -> None:
+    """Consumer services never need local Redis regardless of TOKEN_MODE."""
+    s = IsolatedSettings(
+        **{**_BASE_NO_REDIS, "AUTH_SERVICE_ROLE": "consumer", "TOKEN_MODE": mode}
+    )
+    assert s.requires_redis is False
+
+
+def test_requires_redis_issuer_stateful_true() -> None:
+    s = IsolatedSettings(
+        **{
+            **VALID_SETTINGS_KWARGS,
+            "AUTH_SERVICE_ROLE": "issuer",
+            "TOKEN_MODE": "stateful",
+        }
+    )
+    assert s.requires_redis is True
+
+
+def test_requires_redis_issuer_hybrid_true() -> None:
+    s = IsolatedSettings(
+        **{
+            **VALID_SETTINGS_KWARGS,
+            "AUTH_SERVICE_ROLE": "issuer",
+            "TOKEN_MODE": "hybrid",
+        }
+    )
+    assert s.requires_redis is True
+
+
+def test_requires_redis_issuer_stateless_false() -> None:
+    s = IsolatedSettings(
+        **{**_BASE_NO_REDIS, "AUTH_SERVICE_ROLE": "issuer", "TOKEN_MODE": "stateless"}
+    )
+    assert s.requires_redis is False
+
+
+# ── _enforce_redis_for_issuers validator ─────────────────────────────────────
+
+
+def test_enforce_redis_issuer_stateful_no_redis_raises() -> None:
+    """issuer + stateful without REDIS_* must raise ValidationError."""
+    with pytest.raises(Exception, match="requires all REDIS_\\* fields"):
+        IsolatedSettings(
+            **{
+                **_BASE_NO_REDIS,
+                "AUTH_SERVICE_ROLE": "issuer",
+                "TOKEN_MODE": "stateful",
+            }
+        )
+
+
+def test_enforce_redis_issuer_hybrid_no_redis_raises() -> None:
+    """issuer + hybrid without REDIS_* must raise ValidationError."""
+    with pytest.raises(Exception, match="requires all REDIS_\\* fields"):
+        IsolatedSettings(
+            **{**_BASE_NO_REDIS, "AUTH_SERVICE_ROLE": "issuer", "TOKEN_MODE": "hybrid"}
+        )
+
+
+def test_enforce_redis_issuer_stateless_no_redis_ok() -> None:
+    """issuer + stateless does not need Redis — must start without error."""
+    s = IsolatedSettings(
+        **{**_BASE_NO_REDIS, "AUTH_SERVICE_ROLE": "issuer", "TOKEN_MODE": "stateless"}
+    )
+    assert s.requires_redis is False
+
+
+def test_enforce_redis_consumer_stateful_no_redis_ok() -> None:
+    """consumer + stateful does not need local Redis — must start without error."""
+    s = IsolatedSettings(
+        **{**_BASE_NO_REDIS, "AUTH_SERVICE_ROLE": "consumer", "TOKEN_MODE": "stateful"}
+    )
+    assert s.requires_redis is False
+
+
+def test_enforce_redis_issuer_empty_password_raises() -> None:
+    """Empty REDIS_PASSWORD string is treated as missing (SecretStr truthy trap)."""
+    from pydantic import SecretStr as _SecretStr
+
+    kwargs = {
+        **_BASE_NO_REDIS,
+        "REDIS_HOST": "localhost",
+        "REDIS_PORT": 6379,
+        "REDIS_USER": "appuser",
+        "REDIS_PASSWORD": _SecretStr(""),
+    }
+    with pytest.raises(Exception, match="requires all REDIS_\\* fields"):
+        IsolatedSettings(**{**kwargs, "TOKEN_MODE": "stateful"})
+
+
+def test_enforce_redis_issuer_stateful_with_all_fields_ok() -> None:
+    """issuer + stateful with all REDIS_* provided must start without error."""
+    s = IsolatedSettings(**{**VALID_SETTINGS_KWARGS, "TOKEN_MODE": "stateful"})
+    assert s.requires_redis is True

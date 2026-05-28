@@ -362,8 +362,17 @@ class CommonSettings(BaseSettings):
     @computed_field
     @property
     def requires_redis(self) -> bool:
-        """True when TOKEN_MODE requires Redis (``stateful`` or ``hybrid``)."""
-        return self.TOKEN_MODE in {"stateful", "hybrid"}
+        """True when THIS service owns and manages a Redis instance.
+
+        Only issuers in hybrid/stateful mode need local Redis:
+          hybrid issuer  → refresh token allowlist
+          stateful issuer → access token blacklist + refresh allowlist
+
+        Consumer services never need local auth Redis in any mode:
+          stateless/hybrid consumer → access tokens are stateless, no blacklist
+          stateful consumer         → revocation delegated via HTTP introspection
+        """
+        return self.AUTH_SERVICE_ROLE == "issuer" and not self.is_stateless
 
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 120
@@ -436,10 +445,16 @@ class CommonSettings(BaseSettings):
         return f"mysql+pymysql://{credentials}"
 
     # ── Redis ─────────────────────────────────────────────────────────────────
-    REDIS_HOST: str = Field(..., pattern=ValidationConstants.HOST_REGEX.pattern)
-    REDIS_PORT: int
-    REDIS_USER: str = Field(..., pattern=ValidationConstants.KEY_REGEX.pattern)
-    REDIS_PASSWORD: SecretStr
+    # Optional for consumer services — only issuers in hybrid/stateful mode
+    # need local Redis.  Validated by _enforce_redis_for_issuers.
+    REDIS_HOST: Optional[str] = Field(
+        default=None, pattern=ValidationConstants.HOST_REGEX.pattern
+    )
+    REDIS_PORT: Optional[int] = None
+    REDIS_USER: Optional[str] = Field(
+        default=None, pattern=ValidationConstants.KEY_REGEX.pattern
+    )
+    REDIS_PASSWORD: Optional[SecretStr] = None
     REDIS_SSL: bool = False
     REDIS_SSL_CA: Optional[str] = None
     REDIS_SSL_CERT: Optional[str] = None
@@ -538,6 +553,27 @@ class CommonSettings(BaseSettings):
             raise ValueError(
                 "REDIS_SSL_CERT and REDIS_SSL_KEY must both be set or both unset"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _enforce_redis_for_issuers(self) -> "CommonSettings":
+        """Issuers in hybrid/stateful mode must supply all four REDIS_* fields."""
+        if self.AUTH_SERVICE_ROLE == "issuer" and not self.is_stateless:
+            missing: list[str] = []
+            for name in ("REDIS_HOST", "REDIS_PORT", "REDIS_USER"):
+                if not getattr(self, name):  # None or ""
+                    missing.append(name)
+            # SecretStr is always truthy — must unwrap to check for empty value
+            if (
+                self.REDIS_PASSWORD is None
+                or not self.REDIS_PASSWORD.get_secret_value()
+            ):
+                missing.append("REDIS_PASSWORD")
+            if missing:
+                raise ValueError(
+                    f"AUTH_SERVICE_ROLE=issuer with TOKEN_MODE={self.TOKEN_MODE} "
+                    f"requires all REDIS_* fields; missing or empty: {missing}"
+                )
         return self
 
     @model_validator(mode="after")

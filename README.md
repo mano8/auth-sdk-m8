@@ -225,43 +225,35 @@ openssl ec -in keys/private.pem -pubout -out keys/public.pem
 
 ### Token validation dependency
 
+Consumer services validate tokens locally and check revocation via HTTP (not direct Redis access).
+See `examples/fastapi_service/core/deps.py` in [fa-auth-m8](https://github.com/mano8/fa-auth-m8)
+for the full reference implementation. The key pieces:
+
 ```python
-from typing import Annotated, Optional
+from typing import Annotated
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
-from redis import Redis
 from auth_sdk_m8.core.exceptions import InvalidToken
 from auth_sdk_m8.schemas.user import UserModel
-from auth_sdk_m8.security import AccessTokenBlacklist, build_access_validator
+from auth_sdk_m8.security import build_access_validator
 
 oauth2 = OAuth2PasswordBearer(tokenUrl="/user/login/access-token")
 TokenDep = Annotated[str, Depends(oauth2)]
 
 _validator = build_access_validator(settings)  # module-level singleton
 
-def get_redis() -> Optional[Redis]:
-    try:
-        r = Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT,
-                  decode_responses=True, socket_connect_timeout=1)
-        r.ping()
-        return r
-    except Exception:
-        return None
-
-RedisDep = Annotated[Optional[Redis], Depends(get_redis)]
-
-def get_current_user(token: TokenDep, redis: RedisDep) -> UserModel:
+async def get_current_user(token: TokenDep) -> UserModel:
     try:
         payload = _validator.validate_access_token(token)
     except InvalidToken as exc:
         raise HTTPException(status_code=403, detail="Could not validate credentials.") from exc
-
-    if settings.TOKEN_MODE != "stateless" and redis is not None:
-        if AccessTokenBlacklist(redis).is_revoked(payload.jti):
-            raise HTTPException(status_code=403, detail="Token has been revoked.")
-
+    # Revocation: call auth service HTTP endpoint (not Redis directly)
+    # See RemoteRevocationClient in fa-auth-m8 examples/fastapi_service/core/revocation.py
     return UserModel(**{**payload.model_dump(exclude={"sub", "jti", "exp", "type"}), "id": payload.sub})
 ```
+
+> **Redis isolation:** consumer services must not connect to auth Redis.
+> Use `POST /private/v1/jti-status` on the auth service instead (see [fa-auth-m8](https://github.com/mano8/fa-auth-m8)).
 
 ### Startup config validation
 
@@ -293,7 +285,7 @@ Checks performed:
 | `AUTH_SERVICE_ROLE=consumer` with `ACCESS_PRIVATE_KEY_FILE` | **fatal** |
 | `AUTH_SERVICE_ROLE=issuer` with asymmetric algorithm but no private key | **fatal** |
 | `AUTH_SERVICE_ROLE=issuer` with `JWKS_URI` set | warning (fatal under `STRICT_PRODUCTION_MODE`) |
-| `TOKEN_MODE=stateful/hybrid` without Redis credentials | **fatal** |
+| `AUTH_SERVICE_ROLE=issuer` + `TOKEN_MODE=stateful/hybrid` without Redis credentials | **fatal** (via `_enforce_redis_for_issuers`) |
 | `JWKS_CACHE_TTL_SECONDS` below 30 s | warning |
 | `ENVIRONMENT=production` with `localhost`/`127.0.0.1` in `ALLOWED_ORIGINS` | **fatal** |
 | `ENVIRONMENT=production` with `SET_DOCS=true` or `SET_OPEN_API=true` | warning (fatal under `STRICT_PRODUCTION_MODE`) |
@@ -360,11 +352,16 @@ What strict mode adds on top of the base `check_config_health` checks:
 
 Set `TOKEN_MODE` to control session strategy. Both auth service and consumers must agree.
 
-| `TOKEN_MODE` | Access tokens | Refresh tokens | Redis required |
-| --- | --- | --- | --- |
-| `stateless` | pure JWT, no revocation | pure JWT | no |
-| `hybrid` | pure JWT | JTI tracked in Redis | yes |
-| `stateful` | JTI blacklisted in Redis | JTI tracked in Redis | yes |
+| `TOKEN_MODE` | Access tokens | Refresh tokens | Redis required (issuer) | Redis required (consumer) |
+| --- | --- | --- | --- | --- |
+| `stateless` | pure JWT, no revocation | pure JWT | no | no |
+| `hybrid` | pure JWT | JTI tracked in Redis | yes | no |
+| `stateful` | JTI blacklisted in Redis | JTI tracked in Redis | yes | no — use HTTP introspection |
+
+`requires_redis` returns `True` only for `AUTH_SERVICE_ROLE=issuer` with `TOKEN_MODE` ≠ `stateless`.
+Consumer services never hold Redis credentials — they call `POST /private/v1/jti-status` on the
+auth service instead (see [fa-auth-m8](https://github.com/mano8/fa-auth-m8) for the reference
+`RemoteRevocationClient`).
 
 ---
 
