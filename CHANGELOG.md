@@ -9,6 +9,37 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [0.7.0] — 2026-05-26 · REDIS_* optional; role-aware requires_redis; issuer enforcement
+
+### Breaking changes
+
+- **`REDIS_*` fields are now `Optional` with `None` defaults.**  Consumer
+  services (`AUTH_SERVICE_ROLE=consumer`) no longer need Redis credentials in
+  their env files.  Any consumer env file that sets REDIS fields will raise a
+  Pydantic validation error at startup (`extra="forbid"`).
+
+- **`requires_redis` is now role-aware.**  Returns `True` only for
+  `AUTH_SERVICE_ROLE=issuer` with `TOKEN_MODE` ≠ `stateless`.  Always `False`
+  for consumer and observer roles.  Code that evaluated `requires_redis` to
+  decide whether to create a Redis pool must be updated (consumer services
+  should use HTTP introspection instead — see `fa-auth-m8` v0.11.0).
+
+### Added
+
+- **`_enforce_redis_for_issuers` model validator** (`core/config.py`): ensures
+  that issuers in `hybrid` or `stateful` mode provide all four `REDIS_*` fields
+  (`REDIS_HOST`, `REDIS_PORT`, `REDIS_USER`, `REDIS_PASSWORD`).  Uses
+  `.get_secret_value()` to avoid the `SecretStr("")` truthy-object trap.
+
+### Tests
+
+- **11 new tests** in `tests/test_core_config.py` covering the `requires_redis`
+  role matrix (6 scenarios: 3 roles × 2 relevant token modes) and
+  `_enforce_redis_for_issuers` validator (missing fields, empty password,
+  valid pass-through, non-issuer short-circuit).
+
+---
+
 ## [0.6.14] — 2026-05-23 · Remove STATIC/TEMPLATES paths; unify secret-key regex
 
 ### Breaking changes
