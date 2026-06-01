@@ -4,9 +4,10 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from auth_sdk_m8.schemas.base import AuthProviderType, RoleType
+from auth_sdk_m8.utils.email import normalize_email
 
 
 class UserModel(BaseModel):
@@ -14,6 +15,13 @@ class UserModel(BaseModel):
 
     id: uuid.UUID
     email: EmailStr
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalise_email(cls, v: str) -> str:
+        """Normalise email to lowercase and strip whitespace."""
+        return normalize_email(v)
+
     full_name: Optional[str] = None
     avatar: Optional[str] = None
     is_active: bool = True
