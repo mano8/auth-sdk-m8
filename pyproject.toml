@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "auth-sdk-m8"
-version = "0.6.15"
+version = "0.6.16"
 description = "Shared authentication schemas, JWT utilities and FastAPI base components for m8 microservices."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -25,65 +25,68 @@ classifiers = [
 
 # Minimal hard dependency: only pure-Pydantic models and email validation.
 dependencies = [
-    "pydantic>=2.10.6",
-    "email-validator>=2.2.0",
+    "pydantic>=2.13.4",
+    "email-validator>=2.3.0",
 ]
 
 [project.optional-dependencies]
 # JWT encode/decode (core/security.py); cryptography required for RS256/ES256 and JWKS
 security = [
-    "PyJWT>=2.10.1",
-    "cryptography>=44.0",
+    "PyJWT>=2.13.0",
+    "cryptography>=48.0.0",
 ]
 # FastAPI cookie helpers + BaseController (core/security.py cookie methods, controllers/base.py)
 fastapi = [
-    "fastapi>=0.115.7",
+    "fastapi>=0.136.3",
 ]
 # Redis Pub/Sub event bus (redis_events/)
 redis = [
-    "redis>=5.2.1",
+    "redis>=8.0.0",
 ]
 # CommonSettings base class (core/config.py)
 config = [
-    "pydantic-settings>=2.7.1",
+    "pydantic-settings>=2.14.1",
 ]
 # SQLModel TimestampMixin and BaseController DB session (models/shared.py, controllers/base.py)
 db = [
-    "sqlmodel>=0.0.22",
-    "sqlalchemy>=2.0.38",
+    "sqlmodel>=0.0.38",
+    "sqlalchemy>=2.0.50",
 ]
 # MySQL database driver (use with db extra)
 mysql = [
-    "pymysql>=1.1.0",
+    "pymysql>=1.2.0",
 ]
 # PostgreSQL database driver (use with db extra)
 postgres = [
-    "psycopg2-binary>=2.9.0",
+    "psycopg2-binary>=2.9.12",
 ]
 # Prometheus metrics middleware and registry (observability/)
 observability = [
-    "prometheus-client>=0.21.0",
-    "fastapi>=0.115.7",
+    "prometheus-client>=0.25.0",
+    "fastapi>=0.136.3",
 ]
 # Install every optional feature
 all = [
-    "PyJWT>=2.10.1",
-    "cryptography>=44.0",
-    "fastapi>=0.115.7",
-    "redis>=5.2.1",
-    "pydantic-settings>=2.7.1",
-    "sqlmodel>=0.0.22",
-    "sqlalchemy>=2.0.38",
-    "pymysql>=1.1.0",
-    "psycopg2-binary>=2.9.0",
-    "prometheus-client>=0.21.0",
+    "PyJWT>=2.13.0",
+    "cryptography>=48.0.0",
+    "fastapi>=0.136.3",
+    "redis>=8.0.0",
+    "pydantic-settings>=2.14.1",
+    "sqlmodel>=0.0.38",
+    "sqlalchemy>=2.0.50",
+    "pymysql>=1.2.0",
+    "psycopg2-binary>=2.9.12",
+    "prometheus-client>=0.25.0",
 ]
 # Development / test extras
 dev = [
-    "pytest>=8.3",
-    "pytest-asyncio>=0.23",
-    "pytest-cov>=5.0",
-    "ruff>=0.9",
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.4.0",
+    "coverage>=7.14.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.15",
+    "bandit>=1.9.4",
+    "mypy>=2.1.0"
 ]
 
 [project.urls]
