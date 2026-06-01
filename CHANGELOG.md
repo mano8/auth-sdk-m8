@@ -9,6 +9,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [0.6.17] — 2026-06-01 · Email normalisation helper
+
+### Added
+
+- **`auth_sdk_m8/utils/email.py`** — new `normalize_email(email: str) -> str` helper that
+  strips whitespace and lowercases the address. Exported from `auth_sdk_m8.utils`.
+
+- **`UserModel.normalise_email` validator** (`schemas/user.py`): `@field_validator("email",
+  mode="before")` calls `normalize_email()` so every `UserModel` instance stores a canonical
+  email regardless of input casing or surrounding whitespace. Consumer services (`fastapi_service`)
+  inherit this automatically via the SDK.
+
+### Tests
+
+- `tests/test_utils_email.py` — 6 tests covering lowercase, strip, combined, already-normalised,
+  plus-tags, and dot-separated local parts.
+- `tests/test_schemas_user.py` — 2 new tests: `UserModel` normalises mixed-case email and
+  strips whitespace on construction.
+
+---
+
 ## [0.7.0] — 2026-05-26 · REDIS_* optional; role-aware requires_redis; issuer enforcement
 
 ### Breaking changes

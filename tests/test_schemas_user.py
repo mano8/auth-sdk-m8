@@ -21,6 +21,16 @@ def test_user_model() -> None:
     assert user.avatar is None
 
 
+def test_user_model_normalises_email_case() -> None:
+    user = UserModel(id=uuid.uuid4(), email="User@Example.COM")
+    assert user.email == "user@example.com"
+
+
+def test_user_model_normalises_email_whitespace() -> None:
+    user = UserModel(id=uuid.uuid4(), email="  user@example.com  ")
+    assert user.email == "user@example.com"
+
+
 def test_user_model_with_all_fields() -> None:
     uid = uuid.uuid4()
     user = UserModel(
