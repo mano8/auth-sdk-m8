@@ -141,7 +141,7 @@ class JwksKeyResolver:
             pem = self._jwk_to_pem(jwk)
             new_cache[jwk.get("kid")] = TokenSecret(
                 secret_key=SecretStr(pem),
-                algorithm=self._algorithm,
+                algorithm=self._algorithm,  # type: ignore[arg-type]
             )
         self._cache = new_cache
         self._cache_expires_at = time.monotonic() + self._cache_ttl
@@ -164,6 +164,6 @@ class JwksKeyResolver:
         kty = jwk.get("kty", "RSA")
         alg_cls = ECAlgorithm if kty == "EC" else RSAAlgorithm
         key_obj = alg_cls.from_jwk(json.dumps(jwk))
-        return key_obj.public_bytes(
+        return key_obj.public_bytes(  # type: ignore[union-attr]
             Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
         ).decode()

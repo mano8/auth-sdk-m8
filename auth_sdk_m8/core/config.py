@@ -259,7 +259,7 @@ class CommonSettings(BaseSettings):
         """Parse comma-separated redirect schemes from env."""
         if isinstance(v, str):
             return [s.strip() for s in v.split(",") if s.strip()]
-        return list(v) if v else ["chrome-extension://"]
+        return list(v) if v else ["chrome-extension://"]  # type: ignore[call-overload]
 
     # Optional: restrict to known extension IDs (empty = open public-client model).
     # Set to chrome-extension://abc123.../ to pin specific extensions.
@@ -272,7 +272,7 @@ class CommonSettings(BaseSettings):
         """Parse comma-separated redirect prefix allowlist from env."""
         if isinstance(v, str):
             return [s.strip() for s in v.split(",") if s.strip()]
-        return list(v) if v else []
+        return list(v) if v else []  # type: ignore[call-overload]
 
     # CORS scheme allowlist — required for extension fetch() calls.
     # Extension sends Origin: chrome-extension://{id}. Standard CORSMiddleware
@@ -286,7 +286,7 @@ class CommonSettings(BaseSettings):
         """Parse comma-separated CORS origin scheme allowlist from env."""
         if isinstance(v, str):
             return [s.strip() for s in v.split(",") if s.strip()]
-        return list(v) if v else []
+        return list(v) if v else []  # type: ignore[call-overload]
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod
@@ -297,7 +297,7 @@ class CommonSettings(BaseSettings):
         parse_cors(v)
         return v
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def ALLOWED_ORIGINS(self) -> List[str]:
         """Combine BACKEND_CORS_ORIGINS with FRONTEND_HOST."""
@@ -347,19 +347,19 @@ class CommonSettings(BaseSettings):
     #   stateful  — full Redis blacklist + DB session (default, current behaviour)
     TOKEN_MODE: Literal["stateless", "stateful", "hybrid"] = "stateful"
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def is_stateless(self) -> bool:
         """True when TOKEN_MODE is ``stateless`` — no Redis or DB session needed."""
         return self.TOKEN_MODE == "stateless"  # nosec B105 - token mode name, not a password
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def is_stateful(self) -> bool:
         """True when TOKEN_MODE is ``stateful`` — full Redis blacklist + DB session."""
         return self.TOKEN_MODE == "stateful"  # nosec B105 - token mode name, not a password
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def requires_redis(self) -> bool:
         """True when THIS service owns and manages a Redis instance.
@@ -430,7 +430,7 @@ class CommonSettings(BaseSettings):
             )
         return secret
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def SQLALCHEMY_DATABASE_URI(self) -> str:
         """Build the SQLAlchemy connection URI for the selected database."""
