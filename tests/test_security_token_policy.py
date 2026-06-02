@@ -29,14 +29,14 @@ def _make_policy(store: SessionStore | None = None) -> TokenPolicy:
     return TokenPolicy(validator=validator, store=store)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_token_policy_passes_without_store() -> None:
     payload = await _make_policy().validate(make_access_token())
 
     assert payload.sub == "user-123"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_token_policy_rejects_revoked_token() -> None:
     store = _RevocationStore(revoked=True)
 
@@ -46,7 +46,7 @@ async def test_token_policy_rejects_revoked_token() -> None:
     store.is_revoked.assert_awaited_once_with("test-jti-0000")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_token_policy_checks_store_and_returns_payload() -> None:
     store = _RevocationStore(revoked=False)
 

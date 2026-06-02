@@ -12,7 +12,13 @@ from auth_sdk_m8.redis_events.subscriber import EventSubscriber
 from auth_sdk_m8.schemas.user_events import UserDeletedEvent
 
 _REDIS_URL = "redis://localhost:6379"
-pytestmark = pytest.mark.asyncio
+pytestmark = pytest.mark.anyio
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    """Pin redis tests to asyncio — production code uses asyncio.create_task."""
+    return "asyncio"
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
