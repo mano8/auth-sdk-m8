@@ -141,7 +141,9 @@ class TestJwtCrossServiceContract:
         token, _ = _issue_token(expires_delta=timedelta(seconds=-60))
         validator = TokenValidator(
             secrets=_SECRET,
-            config=TokenValidationConfig(allowed_algorithms=["HS256"], leeway_seconds=0),
+            config=TokenValidationConfig(
+                allowed_algorithms=["HS256"], leeway_seconds=0
+            ),
         )
         with pytest.raises(InvalidToken, match="expired"):
             validator.validate_access_token(token)
