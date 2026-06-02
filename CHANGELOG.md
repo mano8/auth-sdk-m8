@@ -7,6 +7,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 
+---
+
+## [0.6.18] — 2026-06-02 · Production boundary enforcement + mypy CI gate
+
 ### Added
 
 - **Production boundary warning for `TOKEN_ISSUER` / `TOKEN_AUDIENCE`** — `check_config_health()`
