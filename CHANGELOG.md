@@ -9,6 +9,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [0.6.19] — 2026-06-02 · Security regression tests and cross-service contract
+
+### Tests
+
+- **Algorithm pinning and malformed-token regression tests** (`test_security_token_validator.py`):
+  `alg: none` attack, algorithm confusion (HS256 vs RS256-only allowlist), missing `sub`,
+  `jti`, and `exp` individually, future `nbf`, clock-skew leeway boundary (accepts within
+  window, rejects beyond it).
+
+- **Cross-service JWT contract test** (`test_jwt_contract.py`): issues a token with the
+  exact claim structure from `auth_user_service` and validates it with `build_access_validator`.
+  Asserts all claims round-trip correctly into `TokenUserData` and construct a valid
+  `UserModel`. Any SDK change that silently renames a claim or changes a type will fail
+  this test immediately.
+
+---
+
 ## [0.6.18] — 2026-06-02 · Production boundary enforcement + mypy CI gate
 
 ### Added
