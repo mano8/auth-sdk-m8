@@ -384,3 +384,150 @@ def test_resolve_secrets_raises_when_both_resolver_and_secrets_are_none() -> Non
 
     with pytest.raises(RuntimeError, match="key_resolver is None"):
         validator._resolve_secrets("dummy.token.value")
+
+
+# ---------------------------------------------------------------------------
+# 3.6 — Algorithm pinning, malformed-token, and clock skew regression tests
+# ---------------------------------------------------------------------------
+
+
+def _validator_hs256() -> TokenValidator:
+    return TokenValidator(
+        secrets=TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256"),
+        config=TokenValidationConfig(leeway_seconds=0),
+    )
+
+
+def test_alg_none_attack_rejected() -> None:
+    """A token with alg=none must never be accepted."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": "user-123",
+        "type": "access",
+        "email": "test@example.com",
+        "role": "user",
+        "jti": "test-jti-0000",
+        "exp": int((now + timedelta(hours=1)).timestamp()),
+        "is_active": True,
+        "email_verified": False,
+        "is_superuser": False,
+    }
+    # jwt.encode with algorithm="none" produces an unsigned token
+    token = jwt.encode(payload, "", algorithm="none")
+    with pytest.raises(InvalidToken):
+        _validator_hs256().validate_access_token(token)
+
+
+def test_algorithm_confusion_hs256_token_against_rs256_only_config() -> None:
+    """HS256 token presented to an RS256-only validator must be rejected.
+
+    The algorithm allowlist is enforced at validator construction time — a
+    secret whose algorithm is not in allowed_algorithms is rejected before any
+    token can be decoded. This prevents algorithm-confusion attacks where an
+    attacker downgrades the expected algorithm.
+    """
+    token = make_access_token()  # HS256-signed
+    with pytest.raises(ValueError, match="not allowed by configuration"):
+        TokenValidator(
+            secrets=TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256"),
+            config=TokenValidationConfig(allowed_algorithms=["RS256"]),
+        ).validate_access_token(token)
+
+
+def test_missing_sub_raises_invalid_token() -> None:
+    """Token without sub claim must be rejected (sub is required by default)."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        "type": "access",
+        "email": "test@example.com",
+        "role": "user",
+        "jti": "test-jti-0000",
+        "exp": int((now + timedelta(hours=1)).timestamp()),
+        "is_active": True,
+        "email_verified": False,
+        "is_superuser": False,
+    }
+    token = jwt.encode(payload, VALID_KEY, algorithm="HS256")
+    with pytest.raises(InvalidToken):
+        _validator_hs256().validate_access_token(token)
+
+
+def test_missing_jti_raises_invalid_token() -> None:
+    """Token without jti claim must be rejected (jti is required by default)."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": "user-123",
+        "type": "access",
+        "email": "test@example.com",
+        "role": "user",
+        "exp": int((now + timedelta(hours=1)).timestamp()),
+        "is_active": True,
+        "email_verified": False,
+        "is_superuser": False,
+    }
+    token = jwt.encode(payload, VALID_KEY, algorithm="HS256")
+    with pytest.raises(InvalidToken):
+        _validator_hs256().validate_access_token(token)
+
+
+def test_missing_exp_raises_invalid_token() -> None:
+    """Token without exp claim must be rejected (exp is required by default)."""
+    payload = {
+        "sub": "user-123",
+        "type": "access",
+        "email": "test@example.com",
+        "role": "user",
+        "jti": "test-jti-0000",
+        "is_active": True,
+        "email_verified": False,
+        "is_superuser": False,
+    }
+    token = jwt.encode(payload, VALID_KEY, algorithm="HS256")
+    with pytest.raises(InvalidToken):
+        _validator_hs256().validate_access_token(token)
+
+
+def test_future_nbf_raises_invalid_token() -> None:
+    """Token with nbf in the future must be rejected (not yet valid)."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": "user-123",
+        "type": "access",
+        "email": "test@example.com",
+        "role": "user",
+        "jti": "test-jti-0000",
+        "exp": int((now + timedelta(hours=1)).timestamp()),
+        "nbf": int((now + timedelta(minutes=5)).timestamp()),  # 5 min in the future
+        "is_active": True,
+        "email_verified": False,
+        "is_superuser": False,
+    }
+    token = jwt.encode(payload, VALID_KEY, algorithm="HS256")
+    with pytest.raises(InvalidToken):
+        _validator_hs256().validate_access_token(token)
+
+
+def test_leeway_allows_token_expired_within_window() -> None:
+    """Token expired within leeway_seconds must be accepted (clock skew tolerance)."""
+    validator = TokenValidator(
+        secrets=TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256"),
+        config=TokenValidationConfig(leeway_seconds=30),
+    )
+    # Expired 10 seconds ago — within the 30 s leeway window
+    just_expired = int((datetime.now(timezone.utc) - timedelta(seconds=10)).timestamp())
+    token = make_access_token(exp=just_expired)
+    payload = validator.validate_access_token(token)
+    assert payload.sub == "user-123"
+
+
+def test_leeway_rejects_token_expired_beyond_window() -> None:
+    """Token expired beyond leeway_seconds must be rejected."""
+    validator = TokenValidator(
+        secrets=TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256"),
+        config=TokenValidationConfig(leeway_seconds=5),
+    )
+    # Expired 60 seconds ago — well outside the 5 s leeway window
+    long_expired = int((datetime.now(timezone.utc) - timedelta(seconds=60)).timestamp())
+    token = make_access_token(exp=long_expired)
+    with pytest.raises(InvalidToken, match="Access token expired"):
+        validator.validate_access_token(token)
