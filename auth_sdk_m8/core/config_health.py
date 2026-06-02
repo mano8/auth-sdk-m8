@@ -155,6 +155,43 @@ _RATE_LIMIT_WARNING_RPM: dict[str, float] = {
 }
 
 
+def _check_token_boundary_config(
+    settings: CommonSettings,
+    environment: str,
+    strict: bool,
+) -> tuple[list[str], list[str]]:
+    """Warn when TOKEN_ISSUER or TOKEN_AUDIENCE are unset in production.
+
+    Without these claims, tokens issued in dev are accepted in production
+    (same key, no boundary check) and a token for one service can be
+    replayed against another.
+    """
+    if environment != "production":
+        return [], []
+    fatal: list[str] = []
+    warnings: list[str] = []
+    issuer: str | None = getattr(settings, "TOKEN_ISSUER", None) or None
+    audience: str | None = getattr(settings, "TOKEN_AUDIENCE", None) or None
+    if not issuer:
+        msg = (
+            "CONFIG: ENVIRONMENT=production but TOKEN_ISSUER is not set — "
+            "tokens have no issuer boundary; a dev-environment token signed "
+            "with the same key is valid in production. "
+            "Set TOKEN_ISSUER to a unique service identifier (e.g. "
+            "'https://auth.example.com')."
+        )
+        (fatal if strict else warnings).append(msg)
+    if not audience:
+        msg = (
+            "CONFIG: ENVIRONMENT=production but TOKEN_AUDIENCE is not set — "
+            "tokens have no audience boundary; a token issued for one service "
+            "can be replayed against another. "
+            "Set TOKEN_AUDIENCE to the consuming service's URL or identifier."
+        )
+        (fatal if strict else warnings).append(msg)
+    return fatal, warnings
+
+
 def _check_rate_limit_config(settings: CommonSettings) -> list[str]:
     warnings: list[str] = []
     for control, threshold in _RATE_LIMIT_WARNING_RPM.items():
@@ -195,6 +232,7 @@ def check_config_health(
     - TOKEN_MODE=stateful/hybrid without Redis credentials (fatal)
     - ENVIRONMENT=production with localhost origins in ALLOWED_ORIGINS (fatal)
     - ENVIRONMENT=production with SET_DOCS/SET_OPEN_API enabled (warning / fatal under STRICT)
+    - ENVIRONMENT=production with TOKEN_ISSUER or TOKEN_AUDIENCE unset (warning / fatal under STRICT)
     - STRICT_PRODUCTION_MODE: wildcard in ALLOWED_ORIGINS (fatal)
     - STRICT_PRODUCTION_MODE: SESSION_COOKIE_SECURE=false outside local (fatal)
     """
@@ -215,13 +253,15 @@ def check_config_health(
     f4, w4 = _check_production_env(settings, environment, strict)
     f5 = _check_strict_mode(settings, environment)
     w6 = _check_rate_limit_config(settings)
+    f7, w7 = _check_token_boundary_config(settings, environment, strict)
 
     warnings: list[str] = []
     warnings.extend(w1)
     warnings.extend(w2)
     warnings.extend(w4)
     warnings.extend(w6)
-    fatal_errors = f1 + f2 + f3 + f4 + f5
+    warnings.extend(w7)
+    fatal_errors = f1 + f2 + f3 + f4 + f5 + f7
 
     for warning in warnings:
         logger.warning(warning)

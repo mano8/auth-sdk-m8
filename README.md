@@ -345,6 +345,7 @@ What strict mode adds on top of the base `check_config_health` checks:
 - `AUTH_SERVICE_ROLE=issuer` with `JWKS_URI` set → **fatal** (base: warning)
 - Wildcard `*` in `ALLOWED_ORIGINS` → **fatal**
 - `SESSION_COOKIE_SECURE=false` outside `ENVIRONMENT=local` → **fatal**
+- `TOKEN_ISSUER` or `TOKEN_AUDIENCE` not set in production → **fatal** (base: warning)
 
 ---
 

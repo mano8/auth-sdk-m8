@@ -9,6 +9,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [0.6.18] — 2026-06-02 · Production boundary enforcement + mypy CI gate
+
+### Added
+
+- **Production boundary warning for `TOKEN_ISSUER` / `TOKEN_AUDIENCE`** — `check_config_health()`
+  now warns (or raises `ConfigurationError` under `STRICT_PRODUCTION_MODE=true`) when
+  `ENVIRONMENT=production` and either claim is unset. Without these claims a token signed with
+  the same key in dev is valid in production, and a token for one service can be replayed
+  against another. Two new `_check_token_boundary_config` tests cover the warning and fatal
+  code paths. The `_strict_base()` test fixture updated to include both claims in the
+  "properly hardened production" baseline.
+
+- **mypy type-checking in CI** — new `typecheck` job in `.github/workflows/CI.yaml` runs
+  `mypy auth_sdk_m8 --ignore-missing-imports` on Python 3.14. Mirrors the gate already
+  in `fa-auth-m8`.
+
+---
+
 ## [0.6.17] — 2026-06-01 · Email normalisation helper
 
 ### Added

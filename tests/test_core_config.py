@@ -791,6 +791,8 @@ def _strict_base(**overrides) -> DummySettings:
         SESSION_COOKIE_SECURE=True,
         SET_DOCS=False,
         SET_OPEN_API=False,
+        TOKEN_ISSUER="https://auth.example.com",
+        TOKEN_AUDIENCE="https://api.example.com",
     )
     defaults.update(overrides)
     return DummySettings(**defaults)
@@ -1474,3 +1476,97 @@ def test_enforce_redis_issuer_stateful_with_all_fields_ok() -> None:
     """issuer + stateful with all REDIS_* provided must start without error."""
     s = IsolatedSettings(**{**VALID_SETTINGS_KWARGS, "TOKEN_MODE": "stateful"})
     assert s.requires_redis is True
+
+
+# ── _check_token_boundary_config ─────────────────────────────────────────────
+
+
+def _prod_settings(**kwargs) -> DummySettings:
+    """Base production-like settings for token boundary tests."""
+    base = {
+        "ACCESS_TOKEN_ALGORITHM": "HS256",
+        "TOKEN_MODE": "stateless",
+        "ENVIRONMENT": "production",
+        "ALLOWED_ORIGINS": [],
+        "SET_DOCS": False,
+        "SET_OPEN_API": False,
+        "STRICT_PRODUCTION_MODE": False,
+    }
+    base.update(kwargs)
+    return DummySettings(**base)
+
+
+def test_token_boundary_no_warning_in_local() -> None:
+    """TOKEN_ISSUER/AUDIENCE unset in local environment → no warning."""
+    settings = DummySettings(
+        ACCESS_TOKEN_ALGORITHM="HS256",
+        TOKEN_MODE="stateless",
+        ENVIRONMENT="local",
+    )
+    logger = DummyLogger()
+    check_config_health(settings, logger)
+    assert not any("TOKEN_ISSUER" in w for w in logger.warnings)
+    assert not any("TOKEN_AUDIENCE" in w for w in logger.warnings)
+
+
+def test_token_boundary_missing_issuer_warns_in_production() -> None:
+    """TOKEN_ISSUER unset in production → warning (non-strict)."""
+    settings = _prod_settings(TOKEN_AUDIENCE="https://api.example.com")
+    logger = DummyLogger()
+    check_config_health(settings, logger)
+    assert any("TOKEN_ISSUER" in w for w in logger.warnings)
+    assert not any("TOKEN_AUDIENCE" in w for w in logger.warnings)
+
+
+def test_token_boundary_missing_audience_warns_in_production() -> None:
+    """TOKEN_AUDIENCE unset in production → warning (non-strict)."""
+    settings = _prod_settings(TOKEN_ISSUER="https://auth.example.com")
+    logger = DummyLogger()
+    check_config_health(settings, logger)
+    assert not any("TOKEN_ISSUER" in w for w in logger.warnings)
+    assert any("TOKEN_AUDIENCE" in w for w in logger.warnings)
+
+
+def test_token_boundary_both_missing_two_warnings() -> None:
+    """Neither TOKEN_ISSUER nor TOKEN_AUDIENCE set in production → two warnings."""
+    settings = _prod_settings()
+    logger = DummyLogger()
+    check_config_health(settings, logger)
+    assert any("TOKEN_ISSUER" in w for w in logger.warnings)
+    assert any("TOKEN_AUDIENCE" in w for w in logger.warnings)
+
+
+def test_token_boundary_both_set_no_warning() -> None:
+    """Both TOKEN_ISSUER and TOKEN_AUDIENCE set in production → no boundary warning."""
+    settings = _prod_settings(
+        TOKEN_ISSUER="https://auth.example.com",
+        TOKEN_AUDIENCE="https://api.example.com",
+    )
+    logger = DummyLogger()
+    check_config_health(settings, logger)
+    assert not any("TOKEN_ISSUER" in w for w in logger.warnings)
+    assert not any("TOKEN_AUDIENCE" in w for w in logger.warnings)
+
+
+def test_token_boundary_missing_issuer_fatal_in_strict() -> None:
+    """TOKEN_ISSUER unset in strict production → fatal."""
+    settings = _prod_settings(
+        STRICT_PRODUCTION_MODE=True,
+        TOKEN_AUDIENCE="https://api.example.com",
+    )
+    logger = DummyLogger()
+    with pytest.raises(ConfigurationError):
+        check_config_health(settings, logger)
+    assert any("TOKEN_ISSUER" in e for e in logger.criticals)
+
+
+def test_token_boundary_missing_audience_fatal_in_strict() -> None:
+    """TOKEN_AUDIENCE unset in strict production → fatal."""
+    settings = _prod_settings(
+        STRICT_PRODUCTION_MODE=True,
+        TOKEN_ISSUER="https://auth.example.com",
+    )
+    logger = DummyLogger()
+    with pytest.raises(ConfigurationError):
+        check_config_health(settings, logger)
+    assert any("TOKEN_AUDIENCE" in e for e in logger.criticals)

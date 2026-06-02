@@ -53,7 +53,7 @@ def _decode_refresh_payload(
             token,
             secrets.secret_key.get_secret_value(),
             algorithms=[secrets.algorithm],
-            options=_REFRESH_DECODE_OPTIONS,
+            options=_REFRESH_DECODE_OPTIONS,  # type: ignore[arg-type]
         )
     except ExpiredSignatureError as ex:
         raise InvalidToken("Refresh token expired") from ex
@@ -68,7 +68,7 @@ def _decode_refresh_payload(
             token,
             old_secrets.secret_key.get_secret_value(),
             algorithms=[old_secrets.algorithm],
-            options=_REFRESH_DECODE_OPTIONS,
+            options=_REFRESH_DECODE_OPTIONS,  # type: ignore[arg-type]
         )
         logger.warning(
             "Refresh token accepted with REFRESH_SECRET_KEY_OLD — "
@@ -168,7 +168,7 @@ class ComSecurityHelper:
         return user_id
 
     @staticmethod
-    def get_refresh_token_from_cookie(refresh_token: str = None) -> str:
+    def get_refresh_token_from_cookie(refresh_token: str | None = None) -> str:
         """Extract the refresh token from an HTTP-only cookie.
 
         Intended for use as a FastAPI dependency.
@@ -190,7 +190,7 @@ class ComSecurityHelper:
         return refresh_token
 
     @staticmethod
-    def get_access_token_from_cookie(access_token: str = None) -> str:
+    def get_access_token_from_cookie(access_token: str | None = None) -> str:
         """Extract the access token from an HTTP-only cookie.
 
         See ``get_refresh_token_from_cookie`` for usage pattern.
