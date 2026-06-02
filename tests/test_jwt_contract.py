@@ -18,8 +18,12 @@ from pydantic import SecretStr
 
 from auth_sdk_m8.schemas.auth import TokenAccessData, TokenSecret
 from auth_sdk_m8.schemas.user import UserModel
-from auth_sdk_m8.security import TokenValidationConfig, TokenValidator, build_access_validator
-from tests.conftest import VALID_KEY, IsolatedSettings, VALID_SETTINGS_KWARGS
+from auth_sdk_m8.security import (
+    TokenValidationConfig,
+    TokenValidator,
+    build_access_validator,
+)
+from tests.conftest import VALID_KEY, VALID_SETTINGS_KWARGS, IsolatedSettings
 
 _SECRET = TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256")
 
