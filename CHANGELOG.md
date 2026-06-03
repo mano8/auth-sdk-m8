@@ -9,6 +9,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [0.7.1] — 2026-06-03 · Secure-by-default revocation + lazy Redis import
+
+### Security
+
+- **`ACCESS_REVOCATION_FAILURE_MODE` default changed `fail_open` → `fail_closed`** (`core/config.py`).
+  Any outage that prevents verifying token revocation now returns HTTP 503 rather than accepting
+  a potentially-revoked token. This is a security-motivated default change flagged prominently here
+  as 0.x SemVer permits it; the behaviour remains 100% env-selectable:
+  - **Availability-first stacks:** set `ACCESS_REVOCATION_FAILURE_MODE=fail_open`
+  - **High-security stacks:** set `AUTH_STRICT_MODE=true` (forces all controls closed)
+  - Mixed postures are supported — each control is its own env var, set independently.
+
+### Fixed
+
+- **Lazy `redis` import in `auth_sdk_m8/security/blacklist.py`**: `Redis` was imported at module
+  level but is only used as a type annotation in `__init__(self, client: Redis)`. Changed to a
+  `TYPE_CHECKING`-only import so `import auth_sdk_m8.security` works under
+  `pip install auth-sdk-m8[security]` without the `redis` package installed. Consumers and
+  `fastapi-m8` can now drop the `[redis]` extra from their install.
+
+### Tests
+
+- Updated `test_effective_failure_mode_defaults` to assert `access_revocation == "fail_closed"`.
+
+---
+
 ## [0.6.19] — 2026-06-02 · Security regression tests and cross-service contract
 
 ### Tests
@@ -82,6 +108,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ### Added
 
+- **`ConsumerAuthMixin`** (`core/consumer.py`, exported from `auth_sdk_m8.core`): new Pydantic
+  mixin for consumer microservice settings. Adds `INTROSPECTION_URL: AnyHttpUrl | None` and
+  `PRIVATE_API_SECRET: SecretStr | None` fields. A `_require_introspection_for_stateful_consumer`
+  validator enforces that both fields are set when `TOKEN_MODE` is `stateful` or `hybrid`.
+  `fastapi-m8`'s `ConsumerServiceSettings` already inherits this mixin; manual use is only
+  needed when building a consumer without fastapi-m8.
+
 - **`_enforce_redis_for_issuers` model validator** (`core/config.py`): ensures
   that issuers in `hybrid` or `stateful` mode provide all four `REDIS_*` fields
   (`REDIS_HOST`, `REDIS_PORT`, `REDIS_USER`, `REDIS_PASSWORD`).  Uses
@@ -93,6 +126,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   role matrix (6 scenarios: 3 roles × 2 relevant token modes) and
   `_enforce_redis_for_issuers` validator (missing fields, empty password,
   valid pass-through, non-issuer short-circuit).
+- **7 tests** in `tests/test_consumer_mixin.py` covering `ConsumerAuthMixin` field defaults,
+  stateless/issuer no-introspection pass-through, stateful with both fields, and missing-field
+  validation errors.
 
 ---
 

@@ -315,6 +315,31 @@ AUTH_SERVICE_ROLE=consumer
 
 ---
 
+## Consumer settings mixin (`ConsumerAuthMixin`)
+
+Consumer microservices that use HTTP introspection should mix `ConsumerAuthMixin` into their settings class. It adds `INTROSPECTION_URL` and `PRIVATE_API_SECRET` and enforces that both are set when `TOKEN_MODE` is `stateful` or `hybrid`.
+
+```python
+from auth_sdk_m8.core import ConsumerAuthMixin
+from auth_sdk_m8.core.config import CommonSettings
+
+class MyServiceSettings(ConsumerAuthMixin, CommonSettings):
+    ...  # your service-specific fields
+```
+
+Required fields added by the mixin:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `INTROSPECTION_URL` | `AnyHttpUrl \| None` | Full URL of the auth service JTI-status endpoint, e.g. `https://auth.example.com/user/private/v1/jti-status` |
+| `PRIVATE_API_SECRET` | `SecretStr \| None` | Shared secret presented in `X-Internal-Token` for introspection requests |
+
+Both fields default to `None` (stateless mode). The `_require_introspection_for_stateful_consumer` validator raises `ValueError` when `TOKEN_MODE` is `stateful` or `hybrid` and either field is unset.
+
+> `fastapi-m8`'s `ConsumerServiceSettings` already inherits `ConsumerAuthMixin` — you only need to mix it in manually if you build a consumer without fastapi-m8.
+
+---
+
 ## Asymmetric key-strength enforcement
 
 `CommonSettings` validates loaded key material at startup:
@@ -458,15 +483,19 @@ When Redis is unavailable, each security control can independently `fail_open` (
 | `REFRESH_VALIDATION_FAILURE_MODE` | `fail_closed` | Refresh token allowlist check |
 | `SESSION_WRITE_FAILURE_MODE` | `fail_closed` | Session write on login / logout revocation |
 | `RATE_LIMIT_FAILURE_MODE` | `fail_open` | Refresh rate limiter |
-| `ACCESS_REVOCATION_FAILURE_MODE` | `fail_open` | Access token JTI blacklist check |
+| `ACCESS_REVOCATION_FAILURE_MODE` | `fail_closed` | Access token JTI blacklist check |
+
+> **Security note:** `ACCESS_REVOCATION_FAILURE_MODE` defaults to `fail_closed` — any outage (auth service, Redis, network) that prevents verifying token revocation returns HTTP 503 rather than accepting a potentially-revoked token. Availability-first stacks can set `ACCESS_REVOCATION_FAILURE_MODE=fail_open` to preserve service availability during outages. High-security stacks can set `AUTH_STRICT_MODE=true` to force all controls closed regardless of individual settings.
 
 ```ini
 # Harden everything — any Redis outage blocks the request
 AUTH_STRICT_MODE=true
 
+# Availability-first: allow requests when revocation check unavailable
+ACCESS_REVOCATION_FAILURE_MODE=fail_open
+
 # Or tune per-control (AUTH_STRICT_MODE must be false/unset)
 RATE_LIMIT_FAILURE_MODE=fail_closed
-ACCESS_REVOCATION_FAILURE_MODE=fail_closed
 ```
 
 Resolve the effective mode programmatically:
