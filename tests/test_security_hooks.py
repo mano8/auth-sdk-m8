@@ -17,6 +17,8 @@ from auth_sdk_m8.security import (
 )
 from tests.conftest import VALID_KEY, WRONG_KEY, make_access_token
 
+pytestmark = pytest.mark.anyio
+
 
 def _mock_hooks() -> MagicMock:
     return MagicMock(spec=ValidationHooks)

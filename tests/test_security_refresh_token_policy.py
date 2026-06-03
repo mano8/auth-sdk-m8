@@ -11,6 +11,8 @@ from auth_sdk_m8.schemas.auth import TokenSecret
 from auth_sdk_m8.security import RefreshTokenPolicy, RefreshTokenStore
 from tests.conftest import VALID_KEY, make_refresh_token
 
+pytestmark = pytest.mark.anyio
+
 
 class _MockStore(RefreshTokenStore):
     def __init__(self, valid: bool = True) -> None:

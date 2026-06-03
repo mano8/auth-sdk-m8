@@ -22,6 +22,8 @@ from auth_sdk_m8.observability.metrics import (
 from auth_sdk_m8.observability.middleware import MetricsMiddleware
 from auth_sdk_m8.observability.settings import ObservabilitySettingsMixin
 
+pytestmark = pytest.mark.anyio
+
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
