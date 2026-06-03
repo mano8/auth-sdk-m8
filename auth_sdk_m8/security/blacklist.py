@@ -1,6 +1,11 @@
 """Redis-backed JTI blacklist check for revoked access tokens."""
 
-from redis import Redis
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from redis import Redis
 
 
 class AccessTokenBlacklist:

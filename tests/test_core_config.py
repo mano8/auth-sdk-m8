@@ -336,12 +336,12 @@ def test_flags_are_mutually_consistent_for_all_modes() -> None:
 
 
 def test_effective_failure_mode_defaults() -> None:
-    """Default policy: refresh+session writes fail_closed, rate limit+access fail_open."""
+    """Default policy: refresh+session+access_revocation fail_closed, rate_limit fail_open."""
     s = IsolatedSettings(**VALID_SETTINGS_KWARGS)
     assert s.effective_failure_mode("refresh_validation") == "fail_closed"
     assert s.effective_failure_mode("session_write") == "fail_closed"
     assert s.effective_failure_mode("rate_limit") == "fail_open"
-    assert s.effective_failure_mode("access_revocation") == "fail_open"
+    assert s.effective_failure_mode("access_revocation") == "fail_closed"
 
 
 def test_effective_failure_mode_strict_overrides_all() -> None:

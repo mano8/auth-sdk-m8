@@ -474,7 +474,7 @@ class CommonSettings(BaseSettings):
     REFRESH_VALIDATION_FAILURE_MODE: Literal["fail_open", "fail_closed"] = "fail_closed"
     SESSION_WRITE_FAILURE_MODE: Literal["fail_open", "fail_closed"] = "fail_closed"
     RATE_LIMIT_FAILURE_MODE: Literal["fail_open", "fail_closed"] = "fail_open"
-    ACCESS_REVOCATION_FAILURE_MODE: Literal["fail_open", "fail_closed"] = "fail_open"
+    ACCESS_REVOCATION_FAILURE_MODE: Literal["fail_open", "fail_closed"] = "fail_closed"
 
     def effective_failure_mode(
         self,
