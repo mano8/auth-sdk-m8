@@ -56,14 +56,14 @@ def _make_jwk(kid: str = "test-kid-1") -> dict:
     from jwt.algorithms import RSAAlgorithm
 
     key_obj = load_pem_public_key(_RSA_PUBLIC_PEM.strip().encode())
-    jwk = json.loads(RSAAlgorithm.to_jwk(key_obj))
+    jwk = json.loads(RSAAlgorithm.to_jwk(key_obj))  # type: ignore[arg-type]
     jwk["use"] = "sig"
     jwk["alg"] = "RS256"
     jwk["kid"] = kid
     return jwk
 
 
-def _make_jwks_response(kids: list[str] = None) -> bytes:
+def _make_jwks_response(kids: list[str] | None = None) -> bytes:
     kids = kids or ["test-kid-1"]
     keys = [_make_jwk(k) for k in kids]
     return json.dumps({"keys": keys}).encode()

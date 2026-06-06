@@ -103,6 +103,7 @@ async def test_event_bus_subscribe_processes_message() -> None:
         handler = AsyncMock()
         bus = EventBus(_REDIS_URL)
         await bus.subscribe("user.deleted", UserDeletedEvent, handler)
+        assert bus.task is not None
         await bus.task  # task finishes naturally when CancelledError is caught
 
         handler.assert_called_once()
@@ -129,6 +130,7 @@ async def test_event_bus_subscribe_no_message() -> None:
         handler = AsyncMock()
         bus = EventBus(_REDIS_URL)
         await bus.subscribe("ch", UserDeletedEvent, handler)
+        assert bus.task is not None
         await bus.task
 
         handler.assert_not_called()
@@ -152,6 +154,7 @@ async def test_event_bus_subscribe_wrong_message_type() -> None:
         handler = AsyncMock()
         bus = EventBus(_REDIS_URL)
         await bus.subscribe("ch", UserDeletedEvent, handler)
+        assert bus.task is not None
         await bus.task
 
         handler.assert_not_called()
@@ -185,6 +188,7 @@ async def test_event_bus_subscribe_exception_handling() -> None:
             await bus.subscribe("ch", UserDeletedEvent, handler)
             await sleep_started.wait()
             # task is blocked in asyncio.sleep(999); cancel it from outside
+            assert bus.task is not None
             bus.task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await bus.task
@@ -279,6 +283,7 @@ async def test_event_subscriber_subscribe_processes_message() -> None:
         handler = AsyncMock()
         subscriber = EventSubscriber(_REDIS_URL)
         await subscriber.subscribe("user.deleted", handler)
+        assert subscriber.task is not None
         await subscriber.task
 
         handler.assert_called_once()
@@ -306,6 +311,7 @@ async def test_event_subscriber_subscribe_no_message() -> None:
         handler = AsyncMock()
         subscriber = EventSubscriber(_REDIS_URL)
         await subscriber.subscribe("ch", handler)
+        assert subscriber.task is not None
         await subscriber.task
 
         handler.assert_not_called()
@@ -332,6 +338,7 @@ async def test_event_subscriber_exception_handling() -> None:
         with patch("auth_sdk_m8.redis_events.subscriber.asyncio.sleep", mock_sleep):
             await subscriber.subscribe("ch", AsyncMock())
             await sleep_started.wait()
+            assert subscriber.task is not None
             subscriber.task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await subscriber.task

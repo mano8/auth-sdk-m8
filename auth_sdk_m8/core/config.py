@@ -64,7 +64,7 @@ class VaultProvider(SecretProvider):
 
     def __init__(self, addr: str, token: str) -> None:
         try:
-            import hvac  # noqa: PLC0415
+            import hvac  # type: ignore[import-untyped]  # noqa: PLC0415
         except ImportError as e:
             raise RuntimeError("hvac library is required for Vault integration") from e
         self._client = hvac.Client(url=addr, token=token)
@@ -504,6 +504,32 @@ class CommonSettings(BaseSettings):
     def emails_enabled(self) -> bool:
         """True when SMTP_HOST and EMAILS_FROM_EMAIL are both configured."""
         return bool(self.SMTP_HOST and self.EMAILS_FROM_EMAIL)
+
+    # ── Docs/OpenAPI gating ───────────────────────────────────────────────────
+    # Docs endpoints are gated off in production (ENVIRONMENT=="production" or
+    # STRICT_PRODUCTION_MODE=True) regardless of the raw SET_* flags.
+    # Non-production: effective value == configured value (dev DX preserved).
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def effective_set_open_api(self) -> bool:
+        """OpenAPI schema enabled only when not in production mode."""
+        is_production = self.ENVIRONMENT == "production" or self.STRICT_PRODUCTION_MODE
+        return self.SET_OPEN_API and not is_production
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def effective_set_docs(self) -> bool:
+        """Swagger UI enabled only when not in production mode."""
+        is_production = self.ENVIRONMENT == "production" or self.STRICT_PRODUCTION_MODE
+        return self.SET_DOCS and not is_production
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def effective_set_redoc(self) -> bool:
+        """ReDoc UI enabled only when not in production mode."""
+        is_production = self.ENVIRONMENT == "production" or self.STRICT_PRODUCTION_MODE
+        return self.SET_REDOC and not is_production
 
     # ── Validators ────────────────────────────────────────────────────────────
 

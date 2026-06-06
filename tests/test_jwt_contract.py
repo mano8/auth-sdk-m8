@@ -17,6 +17,7 @@ import pytest
 from pydantic import SecretStr
 
 from auth_sdk_m8.schemas.auth import TokenAccessData, TokenSecret
+from auth_sdk_m8.schemas.base import RoleType
 from auth_sdk_m8.schemas.user import UserModel
 from auth_sdk_m8.security import (
     TokenValidationConfig,
@@ -30,7 +31,7 @@ _SECRET = TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256")
 _USER_ID = str(uuid.uuid4())
 _EMAIL = "contract@example.com"
 _FULL_NAME = "Contract User"
-_ROLE = "user"
+_ROLE = RoleType.USER
 
 
 def _issue_token(

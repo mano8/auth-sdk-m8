@@ -2,13 +2,31 @@
 
 from __future__ import annotations
 
-import logging
-from typing import TYPE_CHECKING
+from typing import Protocol, runtime_checkable
 
 from auth_sdk_m8.core.exceptions import ConfigurationError
 
-if TYPE_CHECKING:
-    from auth_sdk_m8.core.config import CommonSettings
+
+@runtime_checkable
+class _SettingsProto(Protocol):
+    """Structural protocol covering what check_config_health reads from settings."""
+
+    ACCESS_TOKEN_ALGORITHM: str
+    TOKEN_MODE: str
+
+    @property
+    def is_stateless(self) -> bool: ...
+
+    @property
+    def requires_redis(self) -> bool: ...
+
+
+class _LoggerProto(Protocol):
+    """Structural protocol for the logger accepted by check_config_health."""
+
+    def warning(self, msg: str, *args: object) -> None: ...
+
+    def critical(self, msg: str, *args: object) -> None: ...
 
 
 def _check_jwt_config(
@@ -45,7 +63,7 @@ def _check_role_config(
     role: str,
     priv_key_file: str | None,
     jwks_uri: str | None,
-    settings: CommonSettings,
+    settings: _SettingsProto,
     strict: bool,
 ) -> tuple[list[str], list[str]]:
     fatal: list[str] = []
@@ -83,7 +101,7 @@ def _check_role_config(
     return fatal, warnings
 
 
-def _check_redis_config(settings: CommonSettings) -> list[str]:
+def _check_redis_config(settings: _SettingsProto) -> list[str]:
     if not settings.requires_redis:
         return []
     redis_host: str = getattr(settings, "REDIS_HOST", "") or ""
@@ -98,7 +116,7 @@ def _check_redis_config(settings: CommonSettings) -> list[str]:
 
 
 def _check_production_env(
-    settings: CommonSettings,
+    settings: _SettingsProto,
     environment: str,
     strict: bool,
 ) -> tuple[list[str], list[str]]:
@@ -128,7 +146,7 @@ def _check_production_env(
     return fatal, warnings
 
 
-def _check_strict_mode(settings: CommonSettings, environment: str) -> list[str]:
+def _check_strict_mode(settings: _SettingsProto, environment: str) -> list[str]:
     if not getattr(settings, "STRICT_PRODUCTION_MODE", False):
         return []
     fatal: list[str] = []
@@ -156,7 +174,7 @@ _RATE_LIMIT_WARNING_RPM: dict[str, float] = {
 
 
 def _check_token_boundary_config(
-    settings: CommonSettings,
+    settings: _SettingsProto,
     environment: str,
     strict: bool,
 ) -> tuple[list[str], list[str]]:
@@ -192,7 +210,7 @@ def _check_token_boundary_config(
     return fatal, warnings
 
 
-def _check_rate_limit_config(settings: CommonSettings) -> list[str]:
+def _check_rate_limit_config(settings: _SettingsProto) -> list[str]:
     warnings: list[str] = []
     for control, threshold in _RATE_LIMIT_WARNING_RPM.items():
         if control == "refresh" and settings.is_stateless:
@@ -212,8 +230,8 @@ def _check_rate_limit_config(settings: CommonSettings) -> list[str]:
 
 
 def check_config_health(
-    settings: CommonSettings,
-    logger: logging.Logger,
+    settings: _SettingsProto,
+    logger: _LoggerProto,
 ) -> None:
     """Validate critical application configuration at startup.
 

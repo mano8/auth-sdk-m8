@@ -9,6 +9,35 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [0.7.2] — 2026-06-06 · Docs/OpenAPI gated off in production by default (F5)
+
+### Security
+
+- **Docs/OpenAPI are now gated off in production by default** (`core/config.py`). Three new
+  computed properties — `effective_set_open_api`, `effective_set_docs`, `effective_set_redoc` —
+  give the *effective* flag as the configured `SET_*` value **and not** production, where
+  production is `ENVIRONMENT == "production"` **or** `STRICT_PRODUCTION_MODE == true`. Consumers
+  mount their OpenAPI/Swagger/ReDoc endpoints from these single-source properties so the schema and
+  interactive docs are never exposed in production, regardless of the raw `SET_*` flags.
+  - The raw `SET_OPEN_API` / `SET_DOCS` / `SET_REDOC` defaults are **unchanged** (`True`) so local
+    and CI developer experience is preserved.
+  - **Opt back on:** the effective flags equal the raw flags in any non-production environment
+    (`local`, `development`, `staging`); to expose docs, run outside production by setting
+    `ENVIRONMENT` to a non-production value and leaving `STRICT_PRODUCTION_MODE` unset/false.
+
+### Tests
+
+- Added coverage for the three effective-docs properties: production-by-`ENVIRONMENT`,
+  `STRICT_PRODUCTION_MODE=true`, dev with `SET_*=true`/`false`, staging (non-production), and the
+  raw-flags-unchanged invariant.
+
+### Internal
+
+- Typed `check_config_health` against structural `Protocol`s for its settings and logger arguments,
+  resolving pre-existing `mypy` findings across the config-health call sites and test suite.
+
+---
+
 ## [0.7.1] — 2026-06-03 · Secure-by-default revocation + lazy Redis import
 
 ### Security
