@@ -58,7 +58,7 @@ coherent secure-by-default release.
 Every new default has a documented opt-out so existing deployments can stage their migration:
 
 | Want the previous behaviour | Set |
-|---|---|
+| --- | --- |
 | Keep `HS256` access tokens | `ACCESS_TOKEN_ALGORITHM=HS256` (+ `ACCESS_SECRET_KEY`) |
 | No `iss`/`aud` binding (single-service/dev) | `TOKEN_STRICT_VALIDATION=false` |
 | Disable event signing | `EVENT_SIGNING_ENABLED=false` |
