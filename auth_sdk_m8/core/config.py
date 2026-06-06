@@ -339,11 +339,17 @@ class CommonSettings(BaseSettings):
 
     REFRESH_SECRET_KEY: SecretStr  # Always HS256 (internal)
     REFRESH_SECRET_KEY_OLD: Optional[SecretStr] = None  # Set during key rotation
-    # Deprecated: set ACCESS_TOKEN_ALGORITHM / REFRESH_TOKEN_ALGORITHM instead.
-    # Kept as a fallback: if the per-type fields are not explicitly set they
-    # inherit this value via _sync_token_algorithms.
-    TOKEN_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_ALGORITHM: str = "HS256"
+    # Deprecated: set ACCESS_TOKEN_ALGORITHM instead.  Kept as a fallback: when
+    # ACCESS_TOKEN_ALGORITHM is left at its default it inherits this value via
+    # _sync_token_algorithms.  Never propagated to REFRESH_TOKEN_ALGORITHM.
+    #
+    # SECURE-BY-DEFAULT (BREAKING in 1.0.0): the default access-token algorithm
+    # is RS256 (asymmetric / JWKS).  HS256 (shared secret) is still fully
+    # supported but must be opted into explicitly by setting
+    # ACCESS_TOKEN_ALGORITHM=HS256 (or TOKEN_ALGORITHM=HS256) and providing
+    # ACCESS_SECRET_KEY.  Refresh tokens are internal and remain HS256 always.
+    TOKEN_ALGORITHM: str = "RS256"
+    ACCESS_TOKEN_ALGORITHM: str = "RS256"
     REFRESH_TOKEN_ALGORITHM: str = "HS256"
     # Controls session persistence and JTI blacklisting strategy:
     #   stateless — pure JWT, no Redis or DB session required
@@ -388,6 +394,14 @@ class CommonSettings(BaseSettings):
     # consuming service's URL so tokens issued for a different audience are
     # rejected.  Both services must agree on this value.
     TOKEN_AUDIENCE: Optional[str] = None
+    # SECURE-BY-DEFAULT (BREAKING in 1.0.0): strict access-token validation is
+    # ON by default.  The SDK's validation wiring (build_access_validator)
+    # enforces both `iss` and `aud` binding, and startup REQUIRES TOKEN_ISSUER
+    # and TOKEN_AUDIENCE to be set (fail-closed at boot).  Opt out only for
+    # single-service / dev deployments that do not need cross-service token
+    # boundaries by setting TOKEN_STRICT_VALIDATION=false — validation then
+    # falls back to the permissive profile (iss/aud enforced only when set).
+    TOKEN_STRICT_VALIDATION: bool = True
     # RS256/ES256 only — key ID embedded in the JWT `kid` header and served
     # in /.well-known/jwks.json.  If unset the auth service derives a stable
     # fingerprint from the public key.  Consumer services do not need to set
@@ -411,6 +425,23 @@ class CommonSettings(BaseSettings):
     # Controls the Secure flag on session cookies (Starlette SessionMiddleware
     # https_only parameter).  Defaults True; only set False in local/dev.
     SESSION_COOKIE_SECURE: bool = True
+
+    # ── Event bus signing (Redis Pub/Sub) ─────────────────────────────────────
+    # SECURE-BY-DEFAULT (BREAKING in 1.0.0): event-bus payloads are HMAC-SHA256
+    # signed and consumers reject unsigned/forged events.  Pass
+    # EVENT_SIGNING_KEY to EventBus / EventPublisher / EventSubscriber.
+    #   EVENT_SIGNING_ENABLED          — master switch (default True).  When
+    #     True, EVENT_SIGNING_KEY is required at startup (fail-closed at boot).
+    #     Set False to disable signing entirely (opt-out).
+    #   EVENT_SIGNING_KEY              — shared HMAC secret; all publishers and
+    #     subscribers on a channel must share it.  Must satisfy SECRET_KEY_REGEX.
+    #   EVENT_SIGNING_ACCEPT_UNSIGNED  — transitional rollout flag.  When True,
+    #     consumers accept BOTH signed and unsigned messages (still rejecting
+    #     forged signatures) so a mixed fleet can migrate.  Default False
+    #     (signed-required); flip back to False once every publisher signs.
+    EVENT_SIGNING_ENABLED: bool = True
+    EVENT_SIGNING_KEY: Optional[SecretStr] = None
+    EVENT_SIGNING_ACCEPT_UNSIGNED: bool = False
 
     SENTRY_DSN: Optional[HttpUrl] = None
     SELECTED_DB: Literal["Mysql", "Postgres"] = "Mysql"
@@ -543,12 +574,19 @@ class CommonSettings(BaseSettings):
 
     @model_validator(mode="after")
     def _sync_token_algorithms(self) -> "CommonSettings":
-        """Propagate TOKEN_ALGORITHM to per-type fields when not overridden."""
-        if self.TOKEN_ALGORITHM != "HS256":  # nosec B105 - JWT algorithm name, not a password
-            if self.ACCESS_TOKEN_ALGORITHM == "HS256":  # nosec B105
-                self.ACCESS_TOKEN_ALGORITHM = self.TOKEN_ALGORITHM
-            if self.REFRESH_TOKEN_ALGORITHM == "HS256":  # nosec B105
-                self.REFRESH_TOKEN_ALGORITHM = self.TOKEN_ALGORITHM
+        """Seed ACCESS_TOKEN_ALGORITHM from the deprecated TOKEN_ALGORITHM.
+
+        The deprecated ``TOKEN_ALGORITHM`` knob only seeds
+        ``ACCESS_TOKEN_ALGORITHM`` when the per-type field is still at its
+        default (``RS256``); an explicit ``ACCESS_TOKEN_ALGORITHM`` always wins.
+        ``TOKEN_ALGORITHM`` is never propagated to ``REFRESH_TOKEN_ALGORITHM`` —
+        refresh tokens are internal and must always use symmetric HS256 signing.
+        """
+        if (
+            self.ACCESS_TOKEN_ALGORITHM == "RS256"  # nosec B105 - default sentinel, not a password
+            and self.TOKEN_ALGORITHM != "RS256"  # nosec B105
+        ):
+            self.ACCESS_TOKEN_ALGORITHM = self.TOKEN_ALGORITHM
         if self.REFRESH_TOKEN_ALGORITHM != "HS256":  # nosec B105
             raise ValueError(
                 "REFRESH_TOKEN_ALGORITHM must be HS256. "
@@ -608,6 +646,60 @@ class CommonSettings(BaseSettings):
                     f"AUTH_SERVICE_ROLE=issuer with TOKEN_MODE={self.TOKEN_MODE} "
                     f"requires all REDIS_* fields; missing or empty: {missing}"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _enforce_strict_token_binding(self) -> "CommonSettings":
+        """Require TOKEN_ISSUER/TOKEN_AUDIENCE when strict validation is on.
+
+        Secure-by-default: with ``TOKEN_STRICT_VALIDATION`` enabled (the
+        default) the SDK enforces ``iss``/``aud`` binding, which is meaningless
+        without both values configured.  Fail closed at boot with a clear
+        message instead of silently issuing/accepting unbound tokens.  Operators
+        that genuinely do not need cross-service boundaries opt out via
+        ``TOKEN_STRICT_VALIDATION=false``.
+        """
+        if not self.TOKEN_STRICT_VALIDATION:
+            return self
+        missing: list[str] = []
+        if not (self.TOKEN_ISSUER and self.TOKEN_ISSUER.strip()):
+            missing.append("TOKEN_ISSUER")
+        if not (self.TOKEN_AUDIENCE and self.TOKEN_AUDIENCE.strip()):
+            missing.append("TOKEN_AUDIENCE")
+        if missing:
+            raise ValueError(
+                f"TOKEN_STRICT_VALIDATION=true requires {missing} to be set so "
+                "tokens are bound to a specific issuer and audience. "
+                "Set both values, or set TOKEN_STRICT_VALIDATION=false for "
+                "single-service/dev deployments that do not need cross-service "
+                "token boundaries."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _enforce_event_signing_key(self) -> "CommonSettings":
+        """Require a strong EVENT_SIGNING_KEY when event signing is enabled.
+
+        Secure-by-default: event-bus payloads are signed unless
+        ``EVENT_SIGNING_ENABLED=false``.  Mirrors ``_enforce_redis_for_issuers``
+        — fail closed at boot if the master switch is on but no usable key is
+        configured.
+        """
+        if not self.EVENT_SIGNING_ENABLED:
+            return self
+        if self.EVENT_SIGNING_KEY is None or not (
+            self.EVENT_SIGNING_KEY.get_secret_value().strip()
+        ):
+            raise ValueError(
+                "EVENT_SIGNING_ENABLED=true requires EVENT_SIGNING_KEY to be "
+                "set so event-bus payloads can be HMAC-signed. Set a strong "
+                "EVENT_SIGNING_KEY, or set EVENT_SIGNING_ENABLED=false to "
+                "disable event signing."
+            )
+        if not ValidationConstants.SECRET_KEY_REGEX.match(
+            self.EVENT_SIGNING_KEY.get_secret_value().strip()
+        ):
+            raise ValueError("EVENT_SIGNING_KEY must be a valid secret key.")
         return self
 
     @model_validator(mode="after")
