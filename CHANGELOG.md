@@ -9,6 +9,37 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [0.7.3] — 2026-06-06 · Production docs opt-in (`SERVE_DOCS_IN_PRODUCTION`)
+
+### Added
+
+- **`SERVE_DOCS_IN_PRODUCTION` setting (default `False`).** Turns the production docs gate from a
+  hard block into a genuine secure-by-default **opt-out**: deployments that *intentionally* publish
+  docs (e.g. public / open-source APIs) set this `True` to lift the gate, after which
+  `effective_set_open_api` / `effective_set_docs` / `effective_set_redoc` follow the raw `SET_*`
+  flags even in production. Rationale is **not** security-through-obscurity (the repo is
+  open-source); gating avoids serving a live interactive Swagger/ReDoc console wired to the
+  production server, leaking deployment-specific runtime info, and presenting a scanner/fingerprint
+  target.
+
+### Security
+
+- **The opt-in is never silent.** `check_config_health` **always logs a warning** while
+  `SERVE_DOCS_IN_PRODUCTION=true` (interactive docs are exposed in production), but it is **never
+  escalated to fatal** — even under `STRICT_PRODUCTION_MODE` — because it is an explicit operator
+  decision. When the opt-in is *not* set, leaving raw `SET_DOCS`/`SET_OPEN_API` `true` in production
+  still warns (fatal under strict), nudging operators to disable them.
+
+### Tests
+
+- `effective_*` opt-in coverage: serves docs in production, respects raw flags per-endpoint,
+  overrides strict mode, no-op when all docs flags are off; `SERVE_DOCS_IN_PRODUCTION` defaults
+  `False`.
+- `check_config_health` opt-in coverage: warns-not-fatal under strict, warns in normal mode, and
+  emits no warning when the opt-in serves nothing.
+
+---
+
 ## [0.7.2] — 2026-06-06 · Docs/OpenAPI gated off in production by default (F5)
 
 ### Security

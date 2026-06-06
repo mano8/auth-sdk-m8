@@ -132,17 +132,32 @@ def _check_production_env(
             f"localhost entries {local_origins} — "
             "remove all localhost/127.0.0.1 origins before deploying to production."
         )
-    for attr, label, flag in [
-        ("SET_DOCS", "Swagger UI", "SET_DOCS=false"),
-        ("SET_OPEN_API", "OpenAPI schema endpoint", "SET_OPEN_API=false"),
-    ]:
-        if getattr(settings, attr, True):
-            msg = (
-                f"CONFIG: ENVIRONMENT=production with {attr}=true — "
-                f"{label} is publicly accessible. "
-                f"Set {flag} to disable it in production."
+    if getattr(settings, "SERVE_DOCS_IN_PRODUCTION", False):
+        # Explicit opt-in: allowed and never fatal (even under STRICT), but never
+        # silent — always warn so the operator is reminded of the exposed-console risk.
+        if any(
+            getattr(settings, a, True)
+            for a in ("SET_DOCS", "SET_OPEN_API", "SET_REDOC")
+        ):
+            warnings.append(
+                "CONFIG: ENVIRONMENT=production with SERVE_DOCS_IN_PRODUCTION=true — "
+                "interactive API docs (Swagger/ReDoc/OpenAPI) are intentionally published "
+                "in production. This exposes a live docs console wired to the production "
+                "server; confirm the exposed surface is acceptable."
             )
-            (fatal if strict else warnings).append(msg)
+    else:
+        for attr, label, flag in [
+            ("SET_DOCS", "Swagger UI", "SET_DOCS=false"),
+            ("SET_OPEN_API", "OpenAPI schema endpoint", "SET_OPEN_API=false"),
+        ]:
+            if getattr(settings, attr, True):
+                msg = (
+                    f"CONFIG: ENVIRONMENT=production with {attr}=true — "
+                    f"{label} is publicly accessible. "
+                    f"Set {flag} to disable it, or set "
+                    f"SERVE_DOCS_IN_PRODUCTION=true to publish docs intentionally."
+                )
+                (fatal if strict else warnings).append(msg)
     return fatal, warnings
 
 
@@ -249,7 +264,8 @@ def check_config_health(
     - AUTH_SERVICE_ROLE=consumer + TOKEN_MODE=stateless + DB_HOST set (warning)
     - TOKEN_MODE=stateful/hybrid without Redis credentials (fatal)
     - ENVIRONMENT=production with localhost origins in ALLOWED_ORIGINS (fatal)
-    - ENVIRONMENT=production with SET_DOCS/SET_OPEN_API enabled (warning / fatal under STRICT)
+    - ENVIRONMENT=production with SET_DOCS/SET_OPEN_API enabled (warning / fatal under STRICT),
+      unless SERVE_DOCS_IN_PRODUCTION=true opts in
     - ENVIRONMENT=production with TOKEN_ISSUER or TOKEN_AUDIENCE unset (warning / fatal under STRICT)
     - STRICT_PRODUCTION_MODE: wildcard in ALLOWED_ORIGINS (fatal)
     - STRICT_PRODUCTION_MODE: SESSION_COOKIE_SECURE=false outside local (fatal)
