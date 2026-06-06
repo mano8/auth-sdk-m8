@@ -4,12 +4,12 @@ Requires the `redis` extra:  pip install "auth-sdk-m8[redis]"
 """
 
 import asyncio
-import json
 import logging
-from typing import Awaitable, Callable, Type
+from typing import Awaitable, Callable, Optional, Type
 
 import redis.asyncio as redis
 
+from auth_sdk_m8.redis_events._signing import deserialize, serialize
 from auth_sdk_m8.schemas.redis_events import EventBase
 
 logger = logging.getLogger(__name__)
@@ -18,9 +18,13 @@ logger = logging.getLogger(__name__)
 class EventBus:
     """Publish and subscribe to strongly-typed Redis Pub/Sub events.
 
+    Secure-by-default: pass *signing_key* (from ``EVENT_SIGNING_KEY``) to
+    HMAC-sign published payloads and reject unsigned/forged messages on
+    consume.  Publishers and subscribers on a channel must share the same key.
+
     Usage::
 
-        bus = EventBus("redis://localhost:6379")
+        bus = EventBus("redis://localhost:6379", signing_key="…")
 
         async def handle(event: UserDeletedEvent) -> None:
             ...
@@ -30,14 +34,23 @@ class EventBus:
         await bus.close()
     """
 
-    def __init__(self, redis_url: str) -> None:
+    def __init__(
+        self,
+        redis_url: str,
+        *,
+        signing_key: Optional[str] = None,
+        accept_unsigned: bool = False,
+    ) -> None:
         self.redis = redis.from_url(redis_url, decode_responses=True)
         self.pubsub = self.redis.pubsub()
         self.task: asyncio.Task | None = None
+        self._signing_key = signing_key
+        self._accept_unsigned = accept_unsigned
 
     async def publish(self, channel: str, event: EventBase) -> None:
-        """Serialize *event* and publish it to *channel*."""
-        await self.redis.publish(channel, event.model_dump_json())
+        """Serialize *event* (signing it when a key is set) and publish it."""
+        raw = serialize(event.model_dump(mode="json"), self._signing_key)
+        await self.redis.publish(channel, raw)
 
     async def subscribe(
         self,
@@ -61,7 +74,13 @@ class EventBus:
                         ignore_subscribe_messages=True, timeout=1.0
                     )
                     if message and message["type"] == "message":
-                        payload = json.loads(message["data"])
+                        payload = deserialize(
+                            message["data"],
+                            self._signing_key,
+                            accept_unsigned=self._accept_unsigned,
+                        )
+                        if payload is None:
+                            continue
                         await handler(event_schema(**payload))
                 except asyncio.CancelledError:
                     break
