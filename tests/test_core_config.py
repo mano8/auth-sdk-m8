@@ -850,6 +850,51 @@ def test_normal_mode_set_docs_production_is_warning() -> None:
     assert logger.criticals == []
 
 
+def test_serve_docs_in_production_opt_in_warns_not_fatal_under_strict() -> None:
+    """SERVE_DOCS_IN_PRODUCTION=true under STRICT serves docs — warns, never fatal."""
+    settings = _strict_base(SERVE_DOCS_IN_PRODUCTION=True, SET_DOCS=True)
+    logger = DummyLogger()
+    check_config_health(settings, logger)  # must NOT raise
+    assert any("SERVE_DOCS_IN_PRODUCTION=true" in w for w in logger.warnings)
+    assert logger.criticals == []
+
+
+def test_serve_docs_in_production_opt_in_warns_normal_mode() -> None:
+    """Opt-in in normal production mode emits the risk warning, no fatal."""
+    settings = DummySettings(
+        ACCESS_TOKEN_ALGORITHM="HS256",
+        TOKEN_MODE="stateful",
+        REDIS_HOST="localhost",
+        REDIS_PASSWORD="pass",
+        JWKS_CACHE_TTL_SECONDS=300,
+        STRICT_PRODUCTION_MODE=False,
+        ENVIRONMENT="production",
+        ALLOWED_ORIGINS=["https://example.com"],
+        SESSION_COOKIE_SECURE=True,
+        SERVE_DOCS_IN_PRODUCTION=True,
+        SET_DOCS=True,
+        SET_OPEN_API=True,
+    )
+    logger = DummyLogger()
+    check_config_health(settings, logger)
+    assert any("SERVE_DOCS_IN_PRODUCTION=true" in w for w in logger.warnings)
+    assert logger.criticals == []
+
+
+def test_serve_docs_in_production_opt_in_no_docs_no_warning() -> None:
+    """Opt-in with every docs flag off serves nothing — no risk warning."""
+    settings = _strict_base(
+        SERVE_DOCS_IN_PRODUCTION=True,
+        SET_DOCS=False,
+        SET_OPEN_API=False,
+        SET_REDOC=False,
+    )
+    logger = DummyLogger()
+    check_config_health(settings, logger)
+    assert not any("SERVE_DOCS_IN_PRODUCTION" in w for w in logger.warnings)
+    assert logger.criticals == []
+
+
 def test_strict_mode_issuer_with_jwks_uri_is_fatal() -> None:
     """Issuer with JWKS_URI set should be fatal under strict mode."""
     settings = _strict_base(
@@ -1651,3 +1696,51 @@ def test_effective_docs_staging_not_production() -> None:
     assert s.effective_set_open_api is True
     assert s.effective_set_docs is False
     assert s.effective_set_redoc is True
+
+
+def test_effective_docs_production_opt_in_serves() -> None:
+    """SERVE_DOCS_IN_PRODUCTION=True re-enables docs in production (raw SET_* honored)."""
+    s = _docs_settings(
+        ENVIRONMENT="production",
+        SERVE_DOCS_IN_PRODUCTION=True,
+        SET_OPEN_API=True,
+        SET_DOCS=True,
+        SET_REDOC=True,
+    )
+    assert s.effective_set_open_api is True
+    assert s.effective_set_docs is True
+    assert s.effective_set_redoc is True
+
+
+def test_effective_docs_production_opt_in_respects_raw_flags() -> None:
+    """Opt-in lifts the production gate but the raw SET_* flags still apply per-endpoint."""
+    s = _docs_settings(
+        ENVIRONMENT="production",
+        SERVE_DOCS_IN_PRODUCTION=True,
+        SET_OPEN_API=False,
+        SET_DOCS=True,
+        SET_REDOC=False,
+    )
+    assert s.effective_set_open_api is False
+    assert s.effective_set_docs is True
+    assert s.effective_set_redoc is False
+
+
+def test_effective_docs_strict_mode_opt_in_serves() -> None:
+    """The opt-in also overrides STRICT_PRODUCTION_MODE gating."""
+    s = _docs_settings(
+        ENVIRONMENT="local",
+        STRICT_PRODUCTION_MODE=True,
+        SERVE_DOCS_IN_PRODUCTION=True,
+        SET_OPEN_API=True,
+        SET_DOCS=True,
+        SET_REDOC=True,
+    )
+    assert s.effective_set_open_api is True
+    assert s.effective_set_docs is True
+    assert s.effective_set_redoc is True
+
+
+def test_serve_docs_in_production_defaults_false() -> None:
+    """The opt-in is off by default (secure-by-default)."""
+    assert _docs_settings().SERVE_DOCS_IN_PRODUCTION is False

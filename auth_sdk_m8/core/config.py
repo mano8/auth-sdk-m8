@@ -239,6 +239,10 @@ class CommonSettings(BaseSettings):
     SET_OPEN_API: bool = True
     SET_DOCS: bool = True
     SET_REDOC: bool = True
+    # Explicit opt-in to serve docs endpoints in production (ENVIRONMENT==
+    # "production" or STRICT_PRODUCTION_MODE).  Default False (secure-by-default);
+    # set True for public/open-source APIs that intentionally publish live docs.
+    SERVE_DOCS_IN_PRODUCTION: bool = False
     PROJECT_NAME: str = Field(..., pattern=ValidationConstants.KEY_REGEX.pattern)
     STACK_NAME: str = Field(..., pattern=ValidationConstants.SLUG_REGEX.pattern)
 
@@ -507,29 +511,33 @@ class CommonSettings(BaseSettings):
 
     # ── Docs/OpenAPI gating ───────────────────────────────────────────────────
     # Docs endpoints are gated off in production (ENVIRONMENT=="production" or
-    # STRICT_PRODUCTION_MODE=True) regardless of the raw SET_* flags.
-    # Non-production: effective value == configured value (dev DX preserved).
+    # STRICT_PRODUCTION_MODE=True) regardless of the raw SET_* flags, UNLESS
+    # SERVE_DOCS_IN_PRODUCTION=True explicitly opts back in.  Non-production:
+    # effective value == configured value (dev DX preserved).
+
+    @property
+    def _docs_gated(self) -> bool:
+        """True when production hides docs and the operator has not opted in."""
+        is_production = self.ENVIRONMENT == "production" or self.STRICT_PRODUCTION_MODE
+        return is_production and not self.SERVE_DOCS_IN_PRODUCTION
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def effective_set_open_api(self) -> bool:
-        """OpenAPI schema enabled only when not in production mode."""
-        is_production = self.ENVIRONMENT == "production" or self.STRICT_PRODUCTION_MODE
-        return self.SET_OPEN_API and not is_production
+        """OpenAPI schema enabled unless gated off by production mode."""
+        return self.SET_OPEN_API and not self._docs_gated
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def effective_set_docs(self) -> bool:
-        """Swagger UI enabled only when not in production mode."""
-        is_production = self.ENVIRONMENT == "production" or self.STRICT_PRODUCTION_MODE
-        return self.SET_DOCS and not is_production
+        """Swagger UI enabled unless gated off by production mode."""
+        return self.SET_DOCS and not self._docs_gated
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def effective_set_redoc(self) -> bool:
-        """ReDoc UI enabled only when not in production mode."""
-        is_production = self.ENVIRONMENT == "production" or self.STRICT_PRODUCTION_MODE
-        return self.SET_REDOC and not is_production
+        """ReDoc UI enabled unless gated off by production mode."""
+        return self.SET_REDOC and not self._docs_gated
 
     # ── Validators ────────────────────────────────────────────────────────────
 

@@ -288,7 +288,8 @@ Checks performed:
 | `AUTH_SERVICE_ROLE=issuer` + `TOKEN_MODE=stateful/hybrid` without Redis credentials | **fatal** (via `_enforce_redis_for_issuers`) |
 | `JWKS_CACHE_TTL_SECONDS` below 30 s | warning |
 | `ENVIRONMENT=production` with `localhost`/`127.0.0.1` in `ALLOWED_ORIGINS` | **fatal** |
-| `ENVIRONMENT=production` with `SET_DOCS=true` or `SET_OPEN_API=true` | warning (fatal under `STRICT_PRODUCTION_MODE`) |
+| `ENVIRONMENT=production` with `SET_DOCS=true` or `SET_OPEN_API=true` (and **not** `SERVE_DOCS_IN_PRODUCTION`) | warning (fatal under `STRICT_PRODUCTION_MODE`) |
+| `ENVIRONMENT=production` with `SERVE_DOCS_IN_PRODUCTION=true` (docs intentionally published) | warning (never fatal — explicit opt-in) |
 | `AUTH_SERVICE_ROLE=consumer` + `TOKEN_MODE=stateless` + `DB_HOST` set | warning |
 | `STRICT_PRODUCTION_MODE=true` with wildcard `*` in `ALLOWED_ORIGINS` | **fatal** |
 | `STRICT_PRODUCTION_MODE=true` with `SESSION_COOKIE_SECURE=false` outside `local` | **fatal** |
@@ -305,13 +306,16 @@ inherits:
 
 | Property | Value |
 | --- | --- |
-| `effective_set_open_api` | `SET_OPEN_API` **and not** production |
-| `effective_set_docs` | `SET_DOCS` **and not** production |
-| `effective_set_redoc` | `SET_REDOC` **and not** production |
+| `effective_set_open_api` | `SET_OPEN_API` **and not** gated |
+| `effective_set_docs` | `SET_DOCS` **and not** gated |
+| `effective_set_redoc` | `SET_REDOC` **and not** gated |
 
-Production is `ENVIRONMENT == "production"` **or** `STRICT_PRODUCTION_MODE == true`. In production
-all three effective flags resolve to `False` regardless of the raw `SET_*` values — there is no way
-to expose docs in production by flipping a flag, which is the point.
+where **gated** = production **and not** `SERVE_DOCS_IN_PRODUCTION`.
+
+Production is `ENVIRONMENT == "production"` **or** `STRICT_PRODUCTION_MODE == true`. In production all
+three effective flags resolve to `False` regardless of the raw `SET_*` values — **unless** you set
+`SERVE_DOCS_IN_PRODUCTION=true` to explicitly publish docs (e.g. a public / open-source API).
+Secure-by-default, but the operator can opt in.
 
 ```python
 from fastapi import FastAPI
@@ -326,11 +330,17 @@ app = FastAPI(
 )
 ```
 
-**Opting back on:** the effective flags equal the raw `SET_*` flags in every non-production
-environment (`local`, `development`, `staging`), so docs are available there by default. To expose
-docs you must be outside production — set `ENVIRONMENT` to a non-production value and leave
-`STRICT_PRODUCTION_MODE` unset/false. This complements the `check_config_health` warning (fatal
-under strict mode) that fires when raw `SET_DOCS`/`SET_OPEN_API` are `true` in production.
+**Opting back on:** docs are available by default in every non-production environment (`local`,
+`development`, `staging`). To serve them **in production**, set `SERVE_DOCS_IN_PRODUCTION=true` (the
+raw `SET_*` flags still apply per-endpoint).
+
+> ⚠️ **Risk — never silent.** Publishing docs in production exposes a live interactive
+> Swagger/ReDoc console wired to your production server. `check_config_health` **always logs a
+> warning** while `SERVE_DOCS_IN_PRODUCTION=true` so the choice is never accidental (it is *not*
+> escalated to fatal, even under strict mode — it's your explicit decision).
+
+When the opt-in is **not** set, leaving raw `SET_DOCS`/`SET_OPEN_API` `true` in production also
+triggers a `check_config_health` warning (fatal under strict mode), nudging you to disable them.
 
 ---
 
