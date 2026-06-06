@@ -38,13 +38,26 @@ def build_access_validator(
     algo = settings.ACCESS_TOKEN_ALGORITHM
     issuer: Optional[str] = getattr(settings, "TOKEN_ISSUER", None) or None
     audience: Optional[str] = getattr(settings, "TOKEN_AUDIENCE", None) or None
-    config = TokenValidationConfig(
-        allowed_algorithms=[algo],
-        issuer=issuer,
-        audience=audience,
-        require_iss=bool(issuer),
-        require_aud=bool(audience),
-    )
+    strict: bool = bool(getattr(settings, "TOKEN_STRICT_VALIDATION", True))
+    if strict:
+        # Secure-by-default: enforce iss/aud binding.  CommonSettings guarantees
+        # both values are present at boot when strict is on; an empty value here
+        # (duck-typed settings) trips TokenValidationConfig's own dependency
+        # check, which fails closed with a clear message.
+        config = TokenValidationConfig.strict(
+            issuer=issuer or "",
+            audience=audience or "",
+            allowed_algorithms=[algo],
+        )
+    else:
+        # Documented opt-out: permissive profile — iss/aud enforced only when set.
+        config = TokenValidationConfig(
+            allowed_algorithms=[algo],
+            issuer=issuer,
+            audience=audience,
+            require_iss=bool(issuer),
+            require_aud=bool(audience),
+        )
 
     jwks_uri: Optional[str] = getattr(settings, "JWKS_URI", None) or None
     if jwks_uri and algo in ASYMMETRIC_ALGORITHMS:

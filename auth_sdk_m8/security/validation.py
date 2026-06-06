@@ -39,14 +39,21 @@ class TokenValidationConfig(BaseModel):
         cls,
         issuer: str,
         audience: Sequence[str] | str,
+        allowed_algorithms: list[str] | None = None,
     ) -> "TokenValidationConfig":
-        """Return a stricter validation profile for new integrations."""
+        """Return the secure-by-default validation profile.
+
+        Enforces ``iss`` and ``aud`` binding with a tight leeway and the full
+        required-claims set.  Defaults to the asymmetric ``RS256`` posture; pass
+        *allowed_algorithms* to pin a different algorithm (e.g. ``["HS256"]``
+        when an operator has opted back into symmetric signing).
+        """
         return cls(
             issuer=issuer,
             audience=audience,
             require_iss=True,
             require_aud=True,
             required_claims=["exp", "sub", "jti", "type", "iat", "nbf"],
-            allowed_algorithms=["HS256"],
+            allowed_algorithms=allowed_algorithms or ["RS256"],
             leeway_seconds=2,
         )
