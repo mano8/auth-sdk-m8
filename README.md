@@ -16,8 +16,9 @@ Companion SDK to [fa-auth-m8](https://github.com/mano8/fa-auth-m8) — install i
 ## Summary
 
 - [Installation](#installation)
+- [Secure-by-default (1.0.0)](#secure-by-default-100)
 - [Deployment modes](#deployment-modes)
-  - [HS256 — symmetric](#hs256--symmetric-simple-single-service-or-monolith)
+  - [HS256 — symmetric](#hs256--symmetric-opt-in-single-service-or-monolith)
   - [RS256 — issuer side](#rs256--asymmetric-issuer-side-auth_user_service)
   - [RS256 — consumer JWKS](#rs256--asymmetric-consumer-side-jwks-recommended)
   - [RS256 — consumer offline](#rs256--asymmetric-consumer-offline-static-public-key-file)
@@ -67,18 +68,46 @@ pip install "auth-sdk-m8[security,fastapi,config,db,mysql]"
 
 ---
 
+## Secure-by-default (1.0.0)
+
+**1.0.0 is a breaking release.** The most secure design is now the default; operators opt out via
+config. Three defaults changed:
+
+| Finding | Secure default (1.0.0) | Opt-out |
+| --- | --- | --- |
+| **F2 — algorithm** | `ACCESS_TOKEN_ALGORITHM=RS256` (asymmetric / JWKS) | `ACCESS_TOKEN_ALGORITHM=HS256` (+ `ACCESS_SECRET_KEY`) |
+| **F1 — token binding** | `TOKEN_STRICT_VALIDATION=true` — `iss`/`aud` enforced; `TOKEN_ISSUER` + `TOKEN_AUDIENCE` **required at boot** | `TOKEN_STRICT_VALIDATION=false` (single-service/dev) |
+| **F3 — event bus** | `EVENT_SIGNING_ENABLED=true` — payloads HMAC-signed; `EVENT_SIGNING_KEY` **required at boot** | `EVENT_SIGNING_ENABLED=false`, or `EVENT_SIGNING_ACCEPT_UNSIGNED=true` during rollout |
+
+A service that relied on the old implicit `HS256` default, or that ran without `TOKEN_ISSUER` /
+`TOKEN_AUDIENCE` / `EVENT_SIGNING_KEY`, will now **fail closed at startup** until it either adopts the
+secure posture (recommended) or sets the opt-out. Refresh tokens are always `HS256` (internal,
+symmetric) and `TOKEN_ALGORITHM` is never propagated to `REFRESH_TOKEN_ALGORITHM`.
+
+**Migrating an existing HS256 / permissive deployment:**
+
+1. Stay on HS256 for now: set `ACCESS_TOKEN_ALGORITHM=HS256`. Move to RS256 when ready (below).
+2. Set `TOKEN_ISSUER` and `TOKEN_AUDIENCE` on every service (both issuer and consumers must agree),
+   or set `TOKEN_STRICT_VALIDATION=false` if you genuinely have no cross-service boundary.
+3. Distribute a shared `EVENT_SIGNING_KEY` to all event-bus publishers and subscribers; roll out
+   with `EVENT_SIGNING_ACCEPT_UNSIGNED=true`, then flip it back to `false` once every publisher signs.
+   Set `EVENT_SIGNING_ENABLED=false` only if you do not use the event bus.
+
+---
+
 ## Deployment modes
 
 | Mode | When to use |
 | ---- | ----------- |
-| **HS256** | Single service or tight monolith — all services share the same secret |
-| **RS256 / ES256 — JWKS** | Multiple independent consumers — each fetches the public key dynamically; recommended for most multi-service setups |
+| **RS256 / ES256 — JWKS** | **Default.** Multiple independent consumers — each fetches the public key dynamically; recommended for most multi-service setups |
 | **RS256 / ES256 — offline** | Air-gapped or embedded deployments where the JWKS endpoint is unreachable |
+| **HS256** | Opt-in. Single service or tight monolith — all services share the same secret |
 
-### HS256 — symmetric (simple, single-service or monolith)
+### HS256 — symmetric (opt-in: single-service or monolith)
 
 Every service shares the same secret. Simple to set up; not recommended when consumers are
-maintained by different teams.
+maintained by different teams. **Since 1.0.0 HS256 is opt-in** — you must set
+`ACCESS_TOKEN_ALGORITHM=HS256` explicitly (the default is `RS256`).
 
 #### .env
 
@@ -86,6 +115,10 @@ maintained by different teams.
 ACCESS_TOKEN_ALGORITHM=HS256
 ACCESS_SECRET_KEY=your-strong-secret-key
 REFRESH_SECRET_KEY=your-strong-refresh-secret
+# Strict iss/aud binding is on by default — set both, or opt out:
+TOKEN_ISSUER=https://auth.example.com
+TOKEN_AUDIENCE=https://api.example.com
+# TOKEN_STRICT_VALIDATION=false   # single-service/dev opt-out instead of iss/aud
 ```
 
 #### Settings
@@ -589,7 +622,14 @@ TOKEN_ISSUER=https://auth.example.com
 TOKEN_AUDIENCE=https://api.example.com
 ```
 
-`build_access_validator` automatically enforces `iss` and `aud` claims when these are set.
+**Since 1.0.0 strict binding is on by default** (`TOKEN_STRICT_VALIDATION=true`):
+`build_access_validator` enforces `iss` **and** `aud`, and `CommonSettings` **requires both
+`TOKEN_ISSUER` and `TOKEN_AUDIENCE`** at startup — a service without them fails closed at boot.
+Tokens with a wrong or missing `iss`/`aud` are rejected.
+
+Single-service or dev deployments that genuinely have no cross-service boundary opt out with
+`TOKEN_STRICT_VALIDATION=false`, which restores the permissive profile (claims enforced only when
+`TOKEN_ISSUER` / `TOKEN_AUDIENCE` are set).
 
 ---
 
@@ -706,12 +746,19 @@ METRICS_GROUPS=all   # or: traffic,performance,reliability,health,auth
 
 ## Redis event bus
 
+**Since 1.0.0 event payloads are HMAC-SHA256 signed by default.** Pass `EVENT_SIGNING_KEY` (the same
+shared secret on every publisher and subscriber) to `EventBus` / `EventPublisher` / `EventSubscriber`;
+consumers configured with a key reject unsigned or forged messages — the handler is never invoked.
+The wire format is a signed envelope `{"payload": {...}, "sig": "<hex hmac>"}` over a canonical JSON
+encoding (sorted keys), verified with `hmac.compare_digest`.
+
 ```python
 import asyncio
 from auth_sdk_m8.redis_events.event_bus import EventBus
 from auth_sdk_m8.schemas.user_events import UserDeletedEvent
 
-bus = EventBus(redis_url="redis://localhost:6379")
+# Same key on both ends (settings.EVENT_SIGNING_KEY.get_secret_value()).
+bus = EventBus(redis_url="redis://localhost:6379", signing_key="<EVENT_SIGNING_KEY>")
 
 async def on_user_deleted(event: UserDeletedEvent) -> None:
     print(f"User {event.user_id} deleted — cleaning up local data.")
@@ -722,6 +769,17 @@ async def main():
 
 asyncio.run(main())
 ```
+
+Rollout / opt-out:
+
+- **Mixed fleet during migration:** construct subscribers with `accept_unsigned=True` (from
+  `EVENT_SIGNING_ACCEPT_UNSIGNED`) so they accept both signed and unsigned messages while still
+  rejecting forged signatures; flip back to `False` once every publisher signs.
+- **Disable signing entirely:** set `EVENT_SIGNING_ENABLED=false` and omit `signing_key` — payloads
+  are published and consumed unsigned (legacy behaviour).
+
+`EventPublisher` and `EventSubscriber` (raw-dict variants) take the same `signing_key` /
+`accept_unsigned` keyword arguments.
 
 ---
 
