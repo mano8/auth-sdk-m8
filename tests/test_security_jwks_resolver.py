@@ -202,6 +202,7 @@ def test_build_access_validator_uses_jwks_resolver_when_uri_set():
     settings.ACCESS_TOKEN_ALGORITHM = "RS256"
     settings.JWKS_URI = "http://auth/jwks.json"
     settings.JWKS_CACHE_TTL_SECONDS = 300
+    settings.TOKEN_STRICT_VALIDATION = False
     del settings.TOKEN_ISSUER
     del settings.TOKEN_AUDIENCE
 

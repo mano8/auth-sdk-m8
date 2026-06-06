@@ -4,11 +4,12 @@ Requires the `redis` extra:  pip install "auth-sdk-m8[redis]"
 """
 
 import asyncio
-import json
 import logging
-from typing import Any, Awaitable, Callable, Dict
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 import redis.asyncio as redis
+
+from auth_sdk_m8.redis_events._signing import deserialize
 
 logger = logging.getLogger(__name__)
 
@@ -17,12 +18,23 @@ class EventSubscriber:
     """Subscribe to Redis Pub/Sub channels and dispatch raw dict payloads.
 
     For typed events with Pydantic validation, prefer ``EventBus`` instead.
+    Secure-by-default: pass *signing_key* (from ``EVENT_SIGNING_KEY``) to verify
+    each message's HMAC signature before invoking the handler; forged or (unless
+    *accept_unsigned*) unsigned messages are dropped.
     """
 
-    def __init__(self, redis_url: str) -> None:
+    def __init__(
+        self,
+        redis_url: str,
+        *,
+        signing_key: Optional[str] = None,
+        accept_unsigned: bool = False,
+    ) -> None:
         self.redis: redis.Redis = redis.from_url(redis_url, decode_responses=True)
         self.pubsub = self.redis.pubsub()
         self.task: asyncio.Task | None = None
+        self._signing_key = signing_key
+        self._accept_unsigned = accept_unsigned
 
     async def subscribe(
         self,
@@ -44,7 +56,14 @@ class EventSubscriber:
                         ignore_subscribe_messages=True, timeout=1.0
                     )
                     if message and message["type"] == "message":
-                        await handler(json.loads(message["data"]))
+                        payload = deserialize(
+                            message["data"],
+                            self._signing_key,
+                            accept_unsigned=self._accept_unsigned,
+                        )
+                        if payload is None:
+                            continue
+                        await handler(payload)
                 except asyncio.CancelledError:
                     break
                 except Exception:

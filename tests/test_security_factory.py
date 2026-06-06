@@ -87,6 +87,7 @@ def test_rs256_uses_public_key_branch() -> None:
     )
     settings.ACCESS_SECRET_KEY = None  # should be ignored for asymmetric
     settings.JWKS_URI = None  # test the static public key branch, not JWKS
+    settings.TOKEN_STRICT_VALIDATION = False  # permissive: exercise the no-binding path
     # getattr fallback used by factory.py
     del settings.TOKEN_ISSUER
     del settings.TOKEN_AUDIENCE

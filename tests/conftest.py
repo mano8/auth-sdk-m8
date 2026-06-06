@@ -66,6 +66,17 @@ VALID_SETTINGS_KWARGS: dict = {
     "SECRET_KEY": VALID_KEY,
     "ACCESS_SECRET_KEY": VALID_KEY,
     "REFRESH_SECRET_KEY": VALID_KEY,
+    # The 1.0.0 secure-by-default posture is RS256 + strict iss/aud binding.
+    # This shared fixture pins the documented OPT-OUT (single-service/dev:
+    # explicit HS256 + permissive validation) so the broad suite keeps exercising
+    # legacy behaviour; secure-default behaviour has its own dedicated tests.
+    # (TOKEN_ALGORITHM is left at its RS256 default so tests that override only
+    # ACCESS_TOKEN_ALGORITHM are not re-seeded by _sync_token_algorithms.)
+    "ACCESS_TOKEN_ALGORITHM": "HS256",
+    "TOKEN_STRICT_VALIDATION": False,
+    # Event signing is ON by default in 1.0.0; supply a key so the secure
+    # default is satisfied for settings-construction tests.
+    "EVENT_SIGNING_KEY": VALID_KEY,
     "DB_HOST": "localhost",
     "DB_PORT": 3306,
     "DB_DATABASE": "testdb",

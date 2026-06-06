@@ -9,6 +9,77 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [1.0.0] — 2026-06-06 · Secure-by-default signing & binding (F1, F2, F3) · **BREAKING**
+
+The most secure design is now the **default**; operators opt out via config. Three architectural
+defaults change at once — they share the same config/validation/test surface and ship as one
+coherent secure-by-default release.
+
+### ⚠️ BREAKING CHANGES
+
+- **F2 — RS256 is the default access-token algorithm.** `TOKEN_ALGORITHM` and
+  `ACCESS_TOKEN_ALGORITHM` now default to **`RS256`** (asymmetric / JWKS) instead of `HS256`. A
+  service that previously relied on the implicit `HS256` default now fails at boot
+  (`ACCESS_TOKEN_ALGORITHM=RS256 requires a public key source`) until it either provides RS256 key
+  material or **explicitly opts back into HS256**. Refresh tokens remain `HS256` always (internal,
+  symmetric) — `TOKEN_ALGORITHM` is no longer propagated to `REFRESH_TOKEN_ALGORITHM`.
+- **F1 — Strict `iss`/`aud` binding is on by default.** New `TOKEN_STRICT_VALIDATION` defaults to
+  **`True`**: `build_access_validator()` enforces both issuer and audience, and startup **requires
+  `TOKEN_ISSUER` and `TOKEN_AUDIENCE`** to be set (fail-closed at boot). Tokens with a wrong/missing
+  `iss` or `aud` are rejected. A service with no issuer/audience configured now fails to start until
+  it sets them or opts out.
+- **F3 — Event-bus payloads are HMAC-signed by default.** New `EVENT_SIGNING_ENABLED` defaults to
+  **`True`** and **requires `EVENT_SIGNING_KEY`** at boot. `EventBus` / `EventPublisher` /
+  `EventSubscriber` accept a `signing_key`; consumers configured with a key **reject unsigned or
+  forged events** (handler is never invoked) unless transitional acceptance is enabled.
+
+### Added
+
+- **`TOKEN_STRICT_VALIDATION: bool = True`** — master switch for strict `iss`/`aud` binding (F1).
+- **`TokenValidationConfig.strict(..., allowed_algorithms=...)`** — the strict profile is now
+  algorithm-aware and defaults to `["RS256"]` (was pinned to `["HS256"]`).
+- **`EVENT_SIGNING_ENABLED: bool = True`**, **`EVENT_SIGNING_KEY: SecretStr | None`**,
+  **`EVENT_SIGNING_ACCEPT_UNSIGNED: bool = False`** — event-bus signing config (F3), with boot-time
+  key-strength validation consistent with `_enforce_redis_for_issuers`.
+- **`auth_sdk_m8.redis_events._signing`** — canonical-JSON HMAC-SHA256 sign/verify helper.
+  `EventBus` / `EventPublisher` / `EventSubscriber` gain `signing_key` (and `accept_unsigned` on the
+  consume side) keyword arguments.
+
+### Security
+
+- Wrong/missing `aud`/`iss` ⇒ rejected; strict-without-issuer/audience ⇒ startup raises (F1).
+- RS256 sign → JWKS/public-key verify round-trip is the default; alg-confusion (e.g. an HS256 token
+  presented to an RS256 validator) is still rejected; public-key-only consumers cannot sign (F2).
+- Tampered / wrong-key / unsigned event payloads are dropped before deserialization and never reach
+  the handler; signature verification uses `hmac.compare_digest` over a canonical serialization (F3).
+
+### Migration / opt-out
+
+Every new default has a documented opt-out so existing deployments can stage their migration:
+
+| Want the previous behaviour | Set |
+| --- | --- |
+| Keep `HS256` access tokens | `ACCESS_TOKEN_ALGORITHM=HS256` (+ `ACCESS_SECRET_KEY`) |
+| No `iss`/`aud` binding (single-service/dev) | `TOKEN_STRICT_VALIDATION=false` |
+| Disable event signing | `EVENT_SIGNING_ENABLED=false` |
+| Mixed signed/unsigned fleet during rollout | `EVENT_SIGNING_ACCEPT_UNSIGNED=true` (still rejects forged sigs) |
+
+To adopt the secure posture: generate an RS256 keypair and mount it via
+`ACCESS_PRIVATE_KEY_FILE` / `ACCESS_PUBLIC_KEY_FILE` (issuer) or set `JWKS_URI` +
+`AUTH_SERVICE_ROLE=consumer` (consumer); set `TOKEN_ISSUER` / `TOKEN_AUDIENCE` on every service; and
+distribute a shared `EVENT_SIGNING_KEY` to all event-bus publishers and subscribers. See the README
+"Secure-by-default (1.0.0)" section for the full guide.
+
+### Tests
+
+- `tests/test_secure_defaults.py` — RS256 default, HS256 opt-out, strict accept/reject + boot
+  requirement, strict opt-out, and event-signing key boot enforcement (required / weak / disabled).
+- `tests/test_redis_events_signing.py` — signing helper branches and signed/tampered/unsigned/
+  transitional publish-and-consume paths for `EventBus`, `EventPublisher`, `EventSubscriber`.
+- Existing suite re-pinned to the documented HS256 + permissive opt-out via the shared fixture.
+
+---
+
 ## [0.7.3] — 2026-06-06 · Production docs opt-in (`SERVE_DOCS_IN_PRODUCTION`)
 
 ### Added

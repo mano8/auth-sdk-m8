@@ -209,6 +209,7 @@ def _asymmetric_settings(**overrides) -> MagicMock:
     del s.TOKEN_ISSUER
     del s.TOKEN_AUDIENCE
     del s.JWKS_URI
+    s.TOKEN_STRICT_VALIDATION = False  # permissive: no iss/aud binding for this path
     for k, v in overrides.items():
         setattr(s, k, v)
     return s
@@ -256,6 +257,7 @@ def test_factory_rs256_jwks_resolver_validates() -> None:
     settings.ACCESS_TOKEN_ALGORITHM = "RS256"
     settings.JWKS_URI = "https://auth.example.com/.well-known/jwks.json"
     settings.JWKS_CACHE_TTL_SECONDS = 300
+    settings.TOKEN_STRICT_VALIDATION = False
     del settings.TOKEN_ISSUER
     del settings.TOKEN_AUDIENCE
 
@@ -280,6 +282,7 @@ def test_factory_rs256_jwks_unknown_kid_raises() -> None:
     settings.ACCESS_TOKEN_ALGORITHM = "RS256"
     settings.JWKS_URI = "https://auth.example.com/.well-known/jwks.json"
     settings.JWKS_CACHE_TTL_SECONDS = 300
+    settings.TOKEN_STRICT_VALIDATION = False
     del settings.TOKEN_ISSUER
     del settings.TOKEN_AUDIENCE
 
