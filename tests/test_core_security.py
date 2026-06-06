@@ -105,7 +105,7 @@ def test_decode_refresh_token_with_jti() -> None:
     sub = "550e8400-e29b-41d4-a716-446655440000"
     token = make_refresh_token(sub=sub)
     secrets = TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256")
-    user_id, jti = ComSecurityHelper.decode_refresh_token(
+    user_id, jti = ComSecurityHelper.decode_refresh_token(  # type: ignore[misc]
         token, secrets, return_jti=True
     )
     assert user_id == uuid.UUID(sub)
@@ -194,7 +194,7 @@ def test_decode_refresh_token_fallback_accepts_old_key_token() -> None:
     token = make_refresh_token(secret=WRONG_KEY)
     current = TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256")
     old = TokenSecret(secret_key=SecretStr(WRONG_KEY), algorithm="HS256")
-    user_id, jti = ComSecurityHelper.decode_refresh_token(
+    user_id, jti = ComSecurityHelper.decode_refresh_token(  # type: ignore[misc]
         token, current, return_jti=True, old_secrets=old
     )
     assert isinstance(user_id, uuid.UUID)

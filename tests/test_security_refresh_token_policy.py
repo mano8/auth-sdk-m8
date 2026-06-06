@@ -16,9 +16,9 @@ pytestmark = pytest.mark.anyio
 
 class _MockStore(RefreshTokenStore):
     def __init__(self, valid: bool = True) -> None:
-        self.is_valid = AsyncMock(return_value=valid)
-        self.rotate = AsyncMock()
-        self.revoke = AsyncMock()
+        self.is_valid = AsyncMock(return_value=valid)  # type: ignore[method-assign]
+        self.rotate = AsyncMock()  # type: ignore[method-assign]
+        self.revoke = AsyncMock()  # type: ignore[method-assign]
 
 
 def _make_policy(
@@ -43,39 +43,39 @@ async def test_validate_and_rotate_without_store() -> None:
 
 
 async def test_validate_and_rotate_with_valid_store() -> None:
-    store = _MockStore(valid=True)
+    store = _MockStore(valid=True)  # type: ignore[abstract]
     policy = _make_policy(store=store)
 
     user_id, old_jti = await policy.validate_and_rotate(
         make_refresh_token(), new_jti="new-jti-0000"
     )
 
-    store.is_valid.assert_awaited_once_with("test-jti-0000")
-    store.rotate.assert_awaited_once_with("test-jti-0000", "new-jti-0000", 86_400)
+    store.is_valid.assert_awaited_once_with("test-jti-0000")  # type: ignore[attr-defined]
+    store.rotate.assert_awaited_once_with("test-jti-0000", "new-jti-0000", 86_400)  # type: ignore[attr-defined]
     assert old_jti == "test-jti-0000"
     assert isinstance(user_id, uuid.UUID)
 
 
 async def test_validate_and_rotate_rejects_reused_token() -> None:
-    store = _MockStore(valid=False)
+    store = _MockStore(valid=False)  # type: ignore[abstract]
     policy = _make_policy(store=store)
 
     with pytest.raises(InvalidToken, match="already used or revoked"):
         await policy.validate_and_rotate(make_refresh_token(), new_jti="new-jti")
 
-    store.is_valid.assert_awaited_once()
-    store.rotate.assert_not_awaited()
+    store.is_valid.assert_awaited_once()  # type: ignore[attr-defined]
+    store.rotate.assert_not_awaited()  # type: ignore[attr-defined]
 
 
 async def test_validate_and_rotate_custom_ttl() -> None:
-    store = _MockStore(valid=True)
+    store = _MockStore(valid=True)  # type: ignore[abstract]
     policy = _make_policy(store=store)
 
     await policy.validate_and_rotate(
         make_refresh_token(), new_jti="new-jti", ttl_seconds=3600
     )
 
-    store.rotate.assert_awaited_once_with("test-jti-0000", "new-jti", 3600)
+    store.rotate.assert_awaited_once_with("test-jti-0000", "new-jti", 3600)  # type: ignore[attr-defined]
 
 
 async def test_validate_and_rotate_rejects_invalid_token() -> None:
@@ -102,12 +102,12 @@ async def test_validate_and_rotate_rejects_wrong_token_type() -> None:
 
 
 async def test_revoke_delegates_to_store() -> None:
-    store = _MockStore()
+    store = _MockStore()  # type: ignore[abstract]
     policy = _make_policy(store=store)
 
     await policy.revoke("test-jti-0000")
 
-    store.revoke.assert_awaited_once_with("test-jti-0000")
+    store.revoke.assert_awaited_once_with("test-jti-0000")  # type: ignore[attr-defined]
 
 
 # ── old_secrets fallback ──────────────────────────────────────────────────────
@@ -134,11 +134,11 @@ async def test_validate_and_rotate_accepts_old_key_token() -> None:
 
 async def test_validate_and_rotate_old_key_with_store() -> None:
     token = make_refresh_token(secret=OLD_KEY)
-    store = _MockStore(valid=True)
+    store = _MockStore(valid=True)  # type: ignore[abstract]
     policy = _make_policy_with_old(store=store)
     await policy.validate_and_rotate(token, new_jti="new-jti")
-    store.is_valid.assert_awaited_once_with("test-jti-0000")
-    store.rotate.assert_awaited_once()
+    store.is_valid.assert_awaited_once_with("test-jti-0000")  # type: ignore[attr-defined]
+    store.rotate.assert_awaited_once()  # type: ignore[attr-defined]
 
 
 async def test_validate_and_rotate_fallback_both_keys_fail() -> None:
@@ -184,7 +184,7 @@ async def test_hooks_on_success_called_for_valid_rotation() -> None:
     from auth_sdk_m8.security import ValidationHooks
 
     hooks = MagicMock(spec=ValidationHooks)
-    store = _MockStore(valid=True)
+    store = _MockStore(valid=True)  # type: ignore[abstract]
     policy = _make_policy(store=store, hooks=hooks)
 
     user_id, _ = await policy.validate_and_rotate(
@@ -203,7 +203,7 @@ async def test_hooks_on_failure_called_for_reused_token() -> None:
     from auth_sdk_m8.security import ValidationHooks
 
     hooks = MagicMock(spec=ValidationHooks)
-    store = _MockStore(valid=False)
+    store = _MockStore(valid=False)  # type: ignore[abstract]
     policy = _make_policy(store=store, hooks=hooks)
 
     with pytest.raises(InvalidToken):

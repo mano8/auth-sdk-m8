@@ -24,7 +24,7 @@ import pytest
 from pydantic import SecretStr
 
 from auth_sdk_m8.core.exceptions import InvalidToken
-from auth_sdk_m8.schemas.auth import TokenSecret
+from auth_sdk_m8.schemas.auth import TokenAlgorithm, TokenSecret
 from auth_sdk_m8.security.factory import build_access_validator
 from auth_sdk_m8.security.token_validator import TokenValidator
 from auth_sdk_m8.security.validation import TokenValidationConfig
@@ -113,7 +113,7 @@ def _make_token(
     return jwt.encode(payload, private_pem, algorithm=algorithm, headers=headers)
 
 
-def _validator(public_pem: str, algorithm: str) -> TokenValidator:
+def _validator(public_pem: str, algorithm: TokenAlgorithm) -> TokenValidator:
     return TokenValidator(
         secrets=TokenSecret(secret_key=SecretStr(public_pem), algorithm=algorithm),
         config=TokenValidationConfig(allowed_algorithms=[algorithm]),

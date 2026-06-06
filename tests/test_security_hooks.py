@@ -106,12 +106,12 @@ class _RevocationStore(SessionStore):
     def __init__(self, revoked: bool) -> None:
         from unittest.mock import AsyncMock
 
-        self.is_revoked = AsyncMock(return_value=revoked)
+        self.is_revoked = AsyncMock(return_value=revoked)  # type: ignore[method-assign]
 
 
 async def test_policy_hooks_on_failure_called_for_revoked_token() -> None:
     hooks = _mock_hooks()
-    store = _RevocationStore(revoked=True)
+    store = _RevocationStore(revoked=True)  # type: ignore[abstract]
     validator = _make_validator()
     policy = TokenPolicy(validator=validator, store=store, hooks=hooks)
 
@@ -123,7 +123,7 @@ async def test_policy_hooks_on_failure_called_for_revoked_token() -> None:
 
 async def test_policy_hooks_not_called_for_valid_token() -> None:
     hooks = _mock_hooks()
-    store = _RevocationStore(revoked=False)
+    store = _RevocationStore(revoked=False)  # type: ignore[abstract]
     validator = _make_validator()
     policy = TokenPolicy(validator=validator, store=store, hooks=hooks)
 

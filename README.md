@@ -295,6 +295,45 @@ Checks performed:
 
 ---
 
+## Docs / OpenAPI gating (secure-by-default)
+
+`SET_OPEN_API`, `SET_DOCS`, and `SET_REDOC` keep their `True` defaults for developer
+experience, but the interactive API docs (OpenAPI schema, Swagger UI, ReDoc) are **gated off in
+production by default**. Rather than reading the raw `SET_*` flags directly, mount your docs
+endpoints from the three computed properties, which are the single source of truth every consumer
+inherits:
+
+| Property | Value |
+| --- | --- |
+| `effective_set_open_api` | `SET_OPEN_API` **and not** production |
+| `effective_set_docs` | `SET_DOCS` **and not** production |
+| `effective_set_redoc` | `SET_REDOC` **and not** production |
+
+Production is `ENVIRONMENT == "production"` **or** `STRICT_PRODUCTION_MODE == true`. In production
+all three effective flags resolve to `False` regardless of the raw `SET_*` values — there is no way
+to expose docs in production by flipping a flag, which is the point.
+
+```python
+from fastapi import FastAPI
+from auth_sdk_m8.core.config import CommonSettings
+
+settings = CommonSettings()  # your concrete settings
+
+app = FastAPI(
+    openapi_url="/openapi.json" if settings.effective_set_open_api else None,
+    docs_url="/docs" if settings.effective_set_docs else None,
+    redoc_url="/redoc" if settings.effective_set_redoc else None,
+)
+```
+
+**Opting back on:** the effective flags equal the raw `SET_*` flags in every non-production
+environment (`local`, `development`, `staging`), so docs are available there by default. To expose
+docs you must be outside production — set `ENVIRONMENT` to a non-production value and leave
+`STRICT_PRODUCTION_MODE` unset/false. This complements the `check_config_health` warning (fatal
+under strict mode) that fires when raw `SET_DOCS`/`SET_OPEN_API` are `true` in production.
+
+---
+
 ## Service role (`AUTH_SERVICE_ROLE`)
 
 Set `AUTH_SERVICE_ROLE` to declare whether a service issues tokens or only validates them.

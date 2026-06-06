@@ -36,7 +36,7 @@ def test_handle_integrity_error_with_session() -> None:
     response = BaseController.handle_exception(exc, session)
     session.rollback.assert_called_once()
     assert response.status_code == 500
-    body = response.body
+    body = bytes(response.body)
     assert (
         b"integrity" in body.lower()
         or b"duplicate" in body.lower()
@@ -70,7 +70,7 @@ def test_handle_io_error() -> None:
 def test_handle_generic_exception() -> None:
     response = BaseController.handle_exception(RuntimeError("oops"))
     assert response.status_code == 500
-    assert b"unexpected" in response.body.lower()
+    assert b"unexpected" in bytes(response.body).lower()
 
 
 def test_handle_exception_no_session_no_rollback() -> None:

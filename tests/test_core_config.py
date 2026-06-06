@@ -1,6 +1,7 @@
 """Tests for auth_sdk_m8.core.config."""
 
 import sys
+from pathlib import Path
 from typing import ClassVar, Optional
 from unittest.mock import MagicMock, patch
 
@@ -525,6 +526,9 @@ def test_redis_ssl_false_fields_default_none() -> None:
 class DummySettings:
     """Minimal settings object for testing."""
 
+    ACCESS_TOKEN_ALGORITHM: str
+    TOKEN_MODE: str
+
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
 
@@ -544,10 +548,10 @@ class DummyLogger:
         self.warnings: list[str] = []
         self.criticals: list[str] = []
 
-    def warning(self, msg: str, *args) -> None:
+    def warning(self, msg: str, *args: object) -> None:
         self.warnings.append(msg % args if args else msg)
 
-    def critical(self, msg: str, *args) -> None:
+    def critical(self, msg: str, *args: object) -> None:
         self.criticals.append(msg % args if args else msg)
 
 
@@ -722,7 +726,7 @@ def test_multiple_fatal_errors_combined() -> None:
 # ── _load_pem_files ───────────────────────────────────────────────────────────
 
 
-def test_pem_files_loaded_from_disk(tmp_path: pytest.TempPathFactory) -> None:
+def test_pem_files_loaded_from_disk(tmp_path: Path) -> None:
     """ACCESS_PRIVATE/PUBLIC_KEY properties return content from *_FILE paths."""
     priv = tmp_path / "private.pem"
     pub = tmp_path / "public.pem"
@@ -743,7 +747,7 @@ def test_pem_files_loaded_from_disk(tmp_path: pytest.TempPathFactory) -> None:
     assert "BEGIN PUBLIC KEY" in (s.ACCESS_PUBLIC_KEY or "")
 
 
-def test_pem_private_file_missing_raises(tmp_path: pytest.TempPathFactory) -> None:
+def test_pem_private_file_missing_raises(tmp_path: Path) -> None:
     """Should raise ValueError when ACCESS_PRIVATE_KEY_FILE path does not exist."""
     with pytest.raises(Exception, match="ACCESS_PRIVATE_KEY_FILE not found"):
         IsolatedSettings(
@@ -757,7 +761,7 @@ def test_pem_private_file_missing_raises(tmp_path: pytest.TempPathFactory) -> No
         )
 
 
-def test_pem_public_file_missing_raises(tmp_path: pytest.TempPathFactory) -> None:
+def test_pem_public_file_missing_raises(tmp_path: Path) -> None:
     """Should raise ValueError when ACCESS_PUBLIC_KEY_FILE path does not exist."""
     priv = tmp_path / "private.pem"
     priv.write_text("PRIVATE_PEM_CONTENT")
@@ -1570,3 +1574,80 @@ def test_token_boundary_missing_audience_fatal_in_strict() -> None:
     with pytest.raises(ConfigurationError):
         check_config_health(settings, logger)
     assert any("TOKEN_AUDIENCE" in e for e in logger.criticals)
+
+
+# ── effective_set_open_api / effective_set_docs / effective_set_redoc ─────────
+
+
+def _docs_settings(**overrides) -> IsolatedSettings:
+    """Minimal IsolatedSettings for testing effective docs flags."""
+    return IsolatedSettings(**{**VALID_SETTINGS_KWARGS, **overrides})
+
+
+def test_effective_docs_production_env_all_false() -> None:
+    """ENVIRONMENT==production gates all three effective flags off."""
+    s = _docs_settings(
+        ENVIRONMENT="production", SET_OPEN_API=True, SET_DOCS=True, SET_REDOC=True
+    )
+    assert s.effective_set_open_api is False
+    assert s.effective_set_docs is False
+    assert s.effective_set_redoc is False
+
+
+def test_effective_docs_strict_production_mode_all_false() -> None:
+    """STRICT_PRODUCTION_MODE=True gates all three effective flags off regardless of ENVIRONMENT."""
+    s = _docs_settings(
+        ENVIRONMENT="local",
+        STRICT_PRODUCTION_MODE=True,
+        SET_OPEN_API=True,
+        SET_DOCS=True,
+        SET_REDOC=True,
+    )
+    assert s.effective_set_open_api is False
+    assert s.effective_set_docs is False
+    assert s.effective_set_redoc is False
+
+
+def test_effective_docs_dev_set_true_all_true() -> None:
+    """Non-production + SET_*=True → effective == True."""
+    s = _docs_settings(
+        ENVIRONMENT="local", SET_OPEN_API=True, SET_DOCS=True, SET_REDOC=True
+    )
+    assert s.effective_set_open_api is True
+    assert s.effective_set_docs is True
+    assert s.effective_set_redoc is True
+
+
+def test_effective_docs_dev_set_false_all_false() -> None:
+    """Non-production + SET_*=False → effective == False (configured value respected)."""
+    s = _docs_settings(
+        ENVIRONMENT="development", SET_OPEN_API=False, SET_DOCS=False, SET_REDOC=False
+    )
+    assert s.effective_set_open_api is False
+    assert s.effective_set_docs is False
+    assert s.effective_set_redoc is False
+
+
+def test_effective_docs_production_overrides_raw_flags() -> None:
+    """Production forces False even when SET_*=True (raw flag unchanged)."""
+    s = _docs_settings(
+        ENVIRONMENT="production", SET_OPEN_API=True, SET_DOCS=True, SET_REDOC=True
+    )
+    # raw flags are unchanged
+    assert s.SET_OPEN_API is True
+    assert s.SET_DOCS is True
+    assert s.SET_REDOC is True
+    # effective flags are gated off
+    assert s.effective_set_open_api is False
+    assert s.effective_set_docs is False
+    assert s.effective_set_redoc is False
+
+
+def test_effective_docs_staging_not_production() -> None:
+    """Staging is not production — effective flags respect configured values."""
+    s = _docs_settings(
+        ENVIRONMENT="staging", SET_OPEN_API=True, SET_DOCS=False, SET_REDOC=True
+    )
+    assert s.effective_set_open_api is True
+    assert s.effective_set_docs is False
+    assert s.effective_set_redoc is True
