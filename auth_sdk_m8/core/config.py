@@ -251,10 +251,11 @@ class CommonSettings(BaseSettings):
     FRONTEND_HOST: HttpUrl
     BACKEND_CORS_ORIGINS: str
 
-    # ── OAuth native-client redirect policy ───────────────────────────────────
+    # ── OAuth redirect policy ─────────────────────────────────────────────────
     # URI schemes accepted as redirect_target at /google-api/login-url/.
     # Default: chrome-extension:// only. Comma-separated for multiple clients.
-    # http:// and https:// are hard-rejected regardless of this setting.
+    # Web schemes (http://, https://) must be explicitly listed and paired with
+    # OAUTH_ALLOWED_REDIRECT_PREFIXES by the auth service before use.
     OAUTH_ALLOWED_REDIRECT_SCHEMES: List[str] = ["chrome-extension://"]
 
     @field_validator("OAUTH_ALLOWED_REDIRECT_SCHEMES", mode="before")
