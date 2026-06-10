@@ -9,6 +9,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [1.1.0] — 2026-06-10 · Shared response security-header layer (N2)
+
+### Added
+
+- **`auth_sdk_m8.security.headers`** — the env-gated response-hardening layer
+  (HSTS, CSP, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`,
+  `Permissions-Policy`) now lives in the SDK so every m8 FastAPI app shares one
+  implementation: `add_security_headers_middleware(app, settings)` plus
+  `build_security_headers(settings)` and the `SecurityHeadersSettings` protocol.
+  Gated on `ENVIRONMENT == "production" or STRICT_PRODUCTION_MODE` — the same
+  contract as docs hiding — so local/dev stays unrestricted. Requires the
+  `fastapi` extra. Resolves N2 from the 2026-06-10 re-verification: `fa-auth-m8`
+  builds its own `FastAPI()` app and previously had no app-level header layer.
+- **`CommonSettings`** gains the six header knobs (`SECURITY_HEADERS_ENABLED`,
+  `HSTS_MAX_AGE`, `HSTS_INCLUDE_SUBDOMAINS`, `CONTENT_SECURITY_POLICY`,
+  `REFERRER_POLICY`, `PERMISSIONS_POLICY`) — moved up from
+  `fastapi_m8.ConsumerServiceSettings` so the provider and every consumer expose
+  them uniformly. Defaults are unchanged; no migration needed.
+
+---
+
 ## [1.0.0] — 2026-06-06 · Secure-by-default signing & binding (F1, F2, F3) · **BREAKING**
 
 The most secure design is now the **default**; operators opt out via config. Three architectural
