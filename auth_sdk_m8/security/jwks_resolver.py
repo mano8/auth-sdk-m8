@@ -19,6 +19,11 @@ _logger = logging.getLogger(__name__)
 # all hit this gate and back off together instead of hammering the endpoint.
 _MIN_REFRESH_INTERVAL: float = 10.0
 
+# Hard ceiling on the JWKS response body.  A legitimate key set is a few KB even
+# with many keys; this cap bounds memory use so a compromised, misconfigured, or
+# oversized endpoint cannot exhaust memory via an unbounded read.
+_MAX_JWKS_BYTES: int = 1024 * 1024  # 1 MiB
+
 
 class JwksKeyResolver:
     """Resolve RS256/ES256 signing keys from a remote JWKS endpoint.
@@ -147,9 +152,21 @@ class JwksKeyResolver:
         self._cache_expires_at = time.monotonic() + self._cache_ttl
 
     def _fetch_jwks(self) -> list[dict]:
-        """Download and parse the JWKS JSON document."""
+        """Download and parse the JWKS JSON document.
+
+        The read is capped at ``_MAX_JWKS_BYTES`` so a compromised or oversized
+        endpoint cannot exhaust memory.  We read one byte past the cap and reject
+        the response if it is reached, rather than silently truncating into a
+        malformed JSON parse.
+        """
         with urllib.request.urlopen(self._jwks_uri, timeout=5) as resp:  # noqa: S310  # nosec B310 - scheme validated in __init__
-            body = json.loads(resp.read())
+            raw = resp.read(_MAX_JWKS_BYTES + 1)
+        if len(raw) > _MAX_JWKS_BYTES:
+            raise ValueError(
+                f"JWKS response from {self._jwks_uri} exceeds "
+                f"{_MAX_JWKS_BYTES} byte cap"
+            )
+        body = json.loads(raw)
         return body.get("keys", [])
 
     @staticmethod

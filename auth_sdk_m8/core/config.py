@@ -251,10 +251,11 @@ class CommonSettings(BaseSettings):
     FRONTEND_HOST: HttpUrl
     BACKEND_CORS_ORIGINS: str
 
-    # ── OAuth native-client redirect policy ───────────────────────────────────
+    # ── OAuth redirect policy ─────────────────────────────────────────────────
     # URI schemes accepted as redirect_target at /google-api/login-url/.
     # Default: chrome-extension:// only. Comma-separated for multiple clients.
-    # http:// and https:// are hard-rejected regardless of this setting.
+    # Web schemes (http://, https://) must be explicitly listed and paired with
+    # OAUTH_ALLOWED_REDIRECT_PREFIXES by the auth service before use.
     OAUTH_ALLOWED_REDIRECT_SCHEMES: List[str] = ["chrome-extension://"]
 
     @field_validator("OAUTH_ALLOWED_REDIRECT_SCHEMES", mode="before")
@@ -425,6 +426,30 @@ class CommonSettings(BaseSettings):
     # Controls the Secure flag on session cookies (Starlette SessionMiddleware
     # https_only parameter).  Defaults True; only set False in local/dev.
     SESSION_COOKIE_SECURE: bool = True
+
+    # ── Response security headers (production/staging only) ────────────────────
+    # The hardening header layer (HSTS + CSP + Referrer/Permissions policy) is
+    # applied ONLY when ENVIRONMENT=="production" or STRICT_PRODUCTION_MODE — the
+    # same gate as docs hiding and TrustedHostMiddleware. Local/dev stays
+    # unrestricted so Swagger/ReDoc and tooling keep working. The layer is wired
+    # by auth_sdk_m8.security.headers.add_security_headers_middleware (shared by
+    # consumer services via fastapi_m8.create_app and by fa-auth's own app). Set
+    # SECURITY_HEADERS_ENABLED=false to opt out even in production.
+    SECURITY_HEADERS_ENABLED: bool = True
+    # HSTS max-age in seconds (0 disables the Strict-Transport-Security header).
+    # Browsers ignore HSTS over plain HTTP, so emitting it behind a TLS-
+    # terminating proxy is safe; set to 0 if TLS is not terminated upstream.
+    HSTS_MAX_AGE: int = 31536000  # 1 year
+    HSTS_INCLUDE_SUBDOMAINS: bool = True
+    # Content-Security-Policy value. None → a tight default suitable for a JSON
+    # API (`default-src 'none'; frame-ancestors 'none'; base-uri 'none';
+    # form-action 'none'`). Override for services that serve HTML in production.
+    CONTENT_SECURITY_POLICY: Optional[str] = None
+    REFERRER_POLICY: str = "strict-origin-when-cross-origin"
+    PERMISSIONS_POLICY: str = (
+        "accelerometer=(), camera=(), geolocation=(), gyroscope=(), "
+        "magnetometer=(), microphone=(), payment=(), usb=()"
+    )
 
     # ── Event bus signing (Redis Pub/Sub) ─────────────────────────────────────
     # SECURE-BY-DEFAULT (BREAKING in 1.0.0): event-bus payloads are HMAC-SHA256

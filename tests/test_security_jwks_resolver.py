@@ -86,6 +86,43 @@ def test_fetch_jwks_returns_key_list():
     assert keys[0]["kid"] == "kid-a"
 
 
+def test_fetch_jwks_rejects_oversized_response():
+    from auth_sdk_m8.security.jwks_resolver import _MAX_JWKS_BYTES
+
+    resolver = JwksKeyResolver("http://auth/jwks.json")
+    oversized = b"x" * (_MAX_JWKS_BYTES + 1)
+
+    mock_resp = MagicMock()
+    # Mirror urllib's read(n): return at most n bytes of the body.
+    mock_resp.read.side_effect = lambda n=None: (
+        oversized if n is None else oversized[:n]
+    )
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+
+    with patch("urllib.request.urlopen", return_value=mock_resp):
+        with pytest.raises(ValueError, match="byte cap"):
+            resolver._fetch_jwks()
+
+
+def test_fetch_jwks_accepts_response_at_cap_boundary():
+    from auth_sdk_m8.security.jwks_resolver import _MAX_JWKS_BYTES
+
+    resolver = JwksKeyResolver("http://auth/jwks.json")
+    body = _make_jwks_response(["kid-a"])
+    assert len(body) <= _MAX_JWKS_BYTES
+
+    mock_resp = MagicMock()
+    mock_resp.read.side_effect = lambda n=None: body if n is None else body[:n]
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+
+    with patch("urllib.request.urlopen", return_value=mock_resp):
+        keys = resolver._fetch_jwks()
+
+    assert keys[0]["kid"] == "kid-a"
+
+
 # ── resolve — cache hit ───────────────────────────────────────────────────────
 
 
