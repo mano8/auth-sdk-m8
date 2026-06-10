@@ -94,7 +94,9 @@ def test_fetch_jwks_rejects_oversized_response():
 
     mock_resp = MagicMock()
     # Mirror urllib's read(n): return at most n bytes of the body.
-    mock_resp.read.side_effect = lambda n=None: oversized if n is None else oversized[:n]
+    mock_resp.read.side_effect = lambda n=None: (
+        oversized if n is None else oversized[:n]
+    )
     mock_resp.__enter__ = lambda s: s
     mock_resp.__exit__ = MagicMock(return_value=False)
 
