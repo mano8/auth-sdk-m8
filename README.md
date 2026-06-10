@@ -737,10 +737,12 @@ METRICS_GROUPS=all   # or: traffic,performance,reliability,health,auth
 | Group | Metrics |
 | --- | --- |
 | `traffic` | `http_requests_total` (method, endpoint, status_code) |
-| `performance` | `http_request_duration_seconds` histogram |
-| `reliability` | `http_errors_total` (4xx/5xx) |
+| `performance` | `http_request_duration_seconds` histogram (method, endpoint) |
+| `reliability` | `http_errors_total` (method, endpoint, status_class) |
 | `health` | `http_status_total` by exact status code |
-| `auth` | `token_login_total`, `token_refresh_total` (result: success\|failure\|rate_limited), `token_logout_total`, `token_validation_failure_total`, `oauth_attempt_total`, `auth_code_exchange_total` (result: success\|expired_or_invalid\|pkce_failed\|redis_unavailable), `auth_revocation_failure_total` (operation: access_blacklist\|refresh_allowlist\|db_session), `auth_degraded_decision_total` (control, mode, reason), `auth_redis_circuit_breaker_open` (gauge: 0=closed 1=open), `auth_degradation_mode_active` (gauge per control+mode), `auth_session_integrity_denial_total` (trigger: reuse_detected) |
+| `auth` | `auth_login_attempts_total` (result: success\|wrong_credentials\|inactive_user\|rate_limited), `auth_token_refresh_total` (result: success\|invalid\|revoked\|rate_limited), `auth_logout_total`, `auth_token_validation_failures_total` (reason: invalid\|revoked\|inactive), `auth_oauth_attempts_total` (provider, result: success\|failed), `auth_code_exchange_total` (result: success\|expired_or_invalid\|pkce_failed\|redis_unavailable), `auth_revocation_failure_total` (operation: access_blacklist\|refresh_allowlist\|db_session), `auth_degraded_decision_total` (control, mode, reason), `auth_redis_circuit_breaker_open` (gauge: 0=closed 1=open), `auth_degradation_mode_active` (gauge per control+mode), `auth_session_integrity_denial_total` (trigger: reuse_detected), `auth_api_key_validations_total` (result: success\|invalid\|revoked\|expired), `auth_api_key_rate_limit_checks_total` (result: allowed\|blocked), `auth_api_key_rate_limit_hits_total` (period: minute\|hour\|day\|month), `auth_api_key_lifecycle_total` (action: created\|revoked), `auth_api_key_flush_duration_seconds` (histogram) |
+
+> Metric names are prefixed with the normalised `API_PREFIX` passed to `metrics.setup()` (e.g. `/user` → `user_auth_login_attempts_total`), so each service's metrics never collide.
 
 ---
 
@@ -794,11 +796,14 @@ auth_sdk_m8/
 │   ├── user.py          # UserModel, SessionModel
 │   └── user_events.py   # UserDeletedEvent
 ├── core/
-│   ├── config.py        # CommonSettings, check_config_health, SecretProvider
+│   ├── config.py        # CommonSettings, SecretProvider (re-exports check_config_health)
+│   ├── config_health.py # check_config_health — startup validation checks
+│   ├── consumer.py      # ConsumerAuthMixin — consumer introspection settings
 │   ├── exceptions.py    # InvalidToken, ConfigurationError
 │   └── security.py      # ComSecurityHelper (legacy: PKCE, token hashing)
 ├── security/
 │   ├── factory.py            # build_access_validator() — settings-driven factory
+│   ├── headers.py            # add_security_headers_middleware, build_security_headers
 │   ├── blacklist.py          # AccessTokenBlacklist — Redis JTI revocation check
 │   ├── jwks_resolver.py      # JwksKeyResolver — JWKS endpoint with TTL cache
 │   ├── token_validator.py    # TokenValidator — stateless JWT validation
@@ -816,12 +821,14 @@ auth_sdk_m8/
 ├── redis_events/
 │   ├── event_bus.py      # EventBus (typed pub/sub)
 │   ├── publisher.py      # EventPublisher
-│   └── subscriber.py     # EventSubscriber
+│   ├── subscriber.py     # EventSubscriber
+│   └── _signing.py       # canonical-JSON HMAC-SHA256 sign/verify
 ├── controllers/
 │   └── base.py           # BaseController: exception → JSONResponse
 ├── models/
 │   └── shared.py         # TimestampMixin, Message, Token, TokenPayload
 └── utils/
+    ├── email.py          # normalize_email
     ├── errors_parser.py  # parse_integrity_error (MySQL + PostgreSQL), parse_pydantic_errors
     └── paths.py          # find_dotenv
 ```
