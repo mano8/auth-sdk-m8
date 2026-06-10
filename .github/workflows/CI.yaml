@@ -70,6 +70,12 @@ jobs:
           name: bandit-security-report
           path: bandit-report.json
 
+      - name: Install project (incl. pip-audit)
+        run: pip install -e ".[all,dev]"
+
+      - name: Run pip-audit (dependency vulnerability scan)
+        run: pip-audit
+
   test:
     runs-on: ubuntu-latest
     strategy:
