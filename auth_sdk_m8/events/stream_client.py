@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import random
+import secrets
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional
 
@@ -156,7 +156,7 @@ class AuthEventStreamClient:
                     exc,
                     backoff,
                 )
-            jitter = backoff * _BACKOFF_JITTER * (2 * random.random() - 1)
+            jitter = backoff * _BACKOFF_JITTER * (secrets.randbelow(2001) / 1000.0 - 1.0)
             await asyncio.sleep(max(0.1, backoff + jitter))
             backoff = min(backoff * 2, _BACKOFF_CAP)
 

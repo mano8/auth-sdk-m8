@@ -791,6 +791,7 @@ async def lifespan(app: FastAPI):
 ```
 
 The client:
+
 - Authenticates with `X-Internal-Token: <PRIVATE_API_SECRET>` (same header used by `jti-status`).
 - Verifies every `data` frame with HMAC-SHA256 (`EVENT_SIGNING_KEY`); forged/unsigned events are dropped.
 - Reconnects automatically with jittered exponential back-off; sends `Last-Event-ID` for resume.
