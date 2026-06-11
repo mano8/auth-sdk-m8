@@ -19,6 +19,7 @@ from auth_sdk_m8.core.config import (
 )
 from auth_sdk_m8.core.exceptions import ConfigurationError
 from tests.conftest import (
+    PROD_VALID_KEY,
     RSA_PRIVATE_PEM,
     RSA_PUBLIC_PEM,
     VALID_SETTINGS_KWARGS,
@@ -251,6 +252,79 @@ def test_common_settings_insecure_default_secret() -> None:
     kwargs = {**VALID_SETTINGS_KWARGS, "DB_PASSWORD": "changethis"}
     with pytest.raises(Exception, match="Insecure default|strong password"):
         IsolatedSettings(**kwargs)
+
+
+# ── _guard_production_placeholder_keys ───────────────────────────────────────
+
+
+def test_guard_blocks_known_dev_key_in_production() -> None:
+    """VALID_KEY (a known dev placeholder) is rejected in production."""
+    kwargs = {
+        **VALID_SETTINGS_KWARGS,
+        "ENVIRONMENT": "production",
+        # Use prod-safe key everywhere *except* the one we want to test.
+        "ACCESS_SECRET_KEY": PROD_VALID_KEY,
+        "REFRESH_SECRET_KEY": PROD_VALID_KEY,
+        # Deliberately leave EVENT_SIGNING_KEY as VALID_KEY (a known dev key).
+        "EVENT_SIGNING_KEY": VALID_SETTINGS_KWARGS["EVENT_SIGNING_KEY"],
+    }
+    with pytest.raises(Exception, match="well-known development key"):
+        IsolatedSettings(**kwargs)
+
+
+def test_guard_blocks_known_dev_key_in_strict_mode() -> None:
+    """STRICT_PRODUCTION_MODE triggers the guard even with ENVIRONMENT!=production."""
+    from tests.conftest import VALID_KEY
+
+    kwargs = {
+        **VALID_SETTINGS_KWARGS,
+        "ENVIRONMENT": "local",
+        "STRICT_PRODUCTION_MODE": True,
+        "ACCESS_SECRET_KEY": VALID_KEY,  # dev placeholder
+        "REFRESH_SECRET_KEY": PROD_VALID_KEY,
+        "EVENT_SIGNING_KEY": PROD_VALID_KEY,
+    }
+    with pytest.raises(Exception, match="well-known development key"):
+        IsolatedSettings(**kwargs)
+
+
+def test_guard_allows_prod_safe_key_in_production() -> None:
+    """A key not in _dev_placeholder_keys is accepted in production."""
+    kwargs = {
+        **VALID_SETTINGS_KWARGS,
+        "ENVIRONMENT": "production",
+        "ACCESS_SECRET_KEY": PROD_VALID_KEY,
+        "REFRESH_SECRET_KEY": PROD_VALID_KEY,
+        "EVENT_SIGNING_KEY": PROD_VALID_KEY,
+    }
+    s = IsolatedSettings(**kwargs)
+    assert s.ENVIRONMENT == "production"
+
+
+def test_guard_skips_none_fields_in_production() -> None:
+    """None signing fields in production are skipped (not raised)."""
+    kwargs = {
+        **VALID_SETTINGS_KWARGS,
+        "ENVIRONMENT": "production",
+        "ACCESS_SECRET_KEY": PROD_VALID_KEY,
+        "REFRESH_SECRET_KEY": PROD_VALID_KEY,
+        "EVENT_SIGNING_KEY": PROD_VALID_KEY,
+        # Null out the optional key — guard must not crash on None.
+        "EVENT_SIGNING_ENABLED": False,
+        # Override to None after disabling (validator allows None when disabled)
+    }
+    kwargs["EVENT_SIGNING_KEY"] = None
+    s = IsolatedSettings(**kwargs)
+    assert s.ENVIRONMENT == "production"
+
+
+def test_guard_skips_in_non_production() -> None:
+    """Known dev keys are accepted in local/development environments."""
+    from tests.conftest import VALID_KEY
+
+    kwargs = {**VALID_SETTINGS_KWARGS, "ENVIRONMENT": "local"}
+    s = IsolatedSettings(**kwargs)
+    assert s.ACCESS_SECRET_KEY.get_secret_value() == VALID_KEY
 
 
 def test_common_settings_sqlalchemy_uri_mysql(valid_settings: IsolatedSettings) -> None:
@@ -1637,7 +1711,15 @@ def test_token_boundary_missing_audience_fatal_in_strict() -> None:
 
 def _docs_settings(**overrides) -> IsolatedSettings:
     """Minimal IsolatedSettings for testing effective docs flags."""
-    return IsolatedSettings(**{**VALID_SETTINGS_KWARGS, **overrides})
+    kwargs = {**VALID_SETTINGS_KWARGS, **overrides}
+    # Production mode rejects the well-known dev VALID_KEY; swap in a prod-safe key.
+    if kwargs.get("ENVIRONMENT") == "production" or kwargs.get(
+        "STRICT_PRODUCTION_MODE"
+    ):
+        for field in ("ACCESS_SECRET_KEY", "REFRESH_SECRET_KEY", "EVENT_SIGNING_KEY"):
+            if field not in overrides:
+                kwargs[field] = PROD_VALID_KEY
+    return IsolatedSettings(**kwargs)
 
 
 def test_effective_docs_production_env_all_false() -> None:

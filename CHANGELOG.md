@@ -7,13 +7,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 
-### Documentation
+---
 
-- Reconciled the README with the code: corrected the Prometheus `auth`-group metric names
-  (`auth_login_attempts_total`, `auth_token_refresh_total`, `auth_logout_total`,
-  `auth_token_validation_failures_total`, `auth_oauth_attempts_total`) and documented the
-  pre-existing `auth_api_key_*` metric family; added `core/config_health.py`, `core/consumer.py`,
-  `security/headers.py`, and `redis_events/_signing.py` to the package layout.
+## [1.2.0] — 2026-06-11 · fa-auth SSE bridge client (SA)
+
+- **`auth_sdk_m8.events.AuthEventStreamClient`** — httpx-based SSE client for the fa-auth
+  event-stream bridge (`GET /private/v1/events/stream`). Authenticates via `X-Internal-Token`
+  (reuses `PRIVATE_API_SECRET`); auto-reconnects with jittered backoff; `Last-Event-ID` resume;
+  verifies every `data` frame via the existing HMAC-SHA256 `deserialize`; fires `on_event` /
+  `on_gap` callbacks; never raises into the host application. Install with `events` extra.
+- **`SessionRevokedEvent`** added to `schemas/user_events.py` (`event_type="session.revoked"`,
+  fields: `user_id`, optional `jti`). `UserDeletedEvent` is unchanged.
+- **`derive_stream_url(introspection_url)`** helper — derives the SSE URL from
+  `INTROSPECTION_URL` (strips `/jti-status`, appends `/events/stream`).
+- **Production placeholder guard** — `CommonSettings._guard_production_placeholder_keys`
+  validator rejects any key in `secret_keys` or `EVENT_SIGNING_KEY` that matches a
+  well-known published dev/test value when `ENVIRONMENT=="production"` or
+  `STRICT_PRODUCTION_MODE=True`.
+- **Redis transport deprecated** — `EventBus`, `EventPublisher`, `EventSubscriber` now emit
+  `DeprecationWarning` on construction; these classes will be removed in 2.0.0.
+  `_signing.py` is exempt (the SSE bridge reuses it). `EVENT_SIGNING_*` config stays
+  (reused by the stream).
+- README reconciliation: corrected Prometheus metric names, documented new `events/` layout.
 
 ---
 

@@ -9,7 +9,7 @@
 
 Shared authentication schemas, JWT validation, and FastAPI base components for any service that issues or validates JWT tokens. Supports Python 3.11 – 3.14.
 
-Companion SDK to [fa-auth-m8](https://github.com/mano8/fa-auth-m8) — install in any FastAPI service that needs to validate tokens from the fa-auth-m8 authentication service. Provides Pydantic schemas, JWT validation, `CommonSettings`, Redis event bus, and optional Prometheus metrics.
+Companion SDK to [fa-auth-m8](https://github.com/mano8/fa-auth-m8) — install in any FastAPI service that needs to validate tokens from the fa-auth-m8 authentication service. Provides Pydantic schemas, JWT validation, `CommonSettings`, the fa-auth SSE event-stream bridge client, and optional Prometheus metrics.
 
 ---
 
@@ -35,7 +35,8 @@ Companion SDK to [fa-auth-m8](https://github.com/mano8/fa-auth-m8) — install i
 - [Refresh token rotation](#refresh-token-rotation)
 - [Observability hooks](#observability-hooks)
 - [Prometheus metrics](#prometheus-metrics)
-- [Redis event bus](#redis-event-bus)
+- [Auth event stream (SSE bridge)](#auth-event-stream-sse-bridge)
+- [Redis event bus (deprecated)](#redis-event-bus-deprecated)
 - [Package layout](#package-layout)
 - [Architecture note](#architecture-note)
 
@@ -55,7 +56,8 @@ Install only what your service needs:
 | `[security]` | `PyJWT`, `cryptography` | JWT validation |
 | `[fastapi]` | `fastapi` | cookie helpers, `BaseController` |
 | `[config]` | `pydantic-settings` | `CommonSettings` base class |
-| `[redis]` | `redis` | Redis event bus / blacklist |
+| `[events]` | `httpx` | fa-auth SSE event-stream client |
+| `[redis]` | `redis` | Redis event bus (deprecated) / blacklist |
 | `[db]` | `sqlmodel`, `sqlalchemy` | `TimestampMixin`, DB error parsing |
 | `[mysql]` | `pymysql` | MySQL driver |
 | `[postgres]` | `psycopg2-binary` | PostgreSQL driver |
@@ -746,42 +748,70 @@ METRICS_GROUPS=all   # or: traffic,performance,reliability,health,auth
 
 ---
 
-## Redis event bus
+## Auth event stream (SSE bridge)
 
-**Since 1.0.0 event payloads are HMAC-SHA256 signed by default.** Pass `EVENT_SIGNING_KEY` (the same
-shared secret on every publisher and subscriber) to `EventBus` / `EventPublisher` / `EventSubscriber`;
-consumers configured with a key reject unsigned or forged messages — the handler is never invoked.
-The wire format is a signed envelope `{"payload": {...}, "sig": "<hex hmac>"}` over a canonical JSON
-encoding (sorted keys), verified with `hmac.compare_digest`.
+**The chosen transport for auth-state events in the m8 fleet** is an authenticated
+Server-Sent Events stream on fa-auth's private API, not the Redis Pub/Sub bus (see
+[Redis event bus (deprecated)](#redis-event-bus-deprecated) below).
 
-```python
-import asyncio
-from auth_sdk_m8.redis_events.event_bus import EventBus
-from auth_sdk_m8.schemas.user_events import UserDeletedEvent
+Install the `events` extra:
 
-# Same key on both ends (settings.EVENT_SIGNING_KEY.get_secret_value()).
-bus = EventBus(redis_url="redis://localhost:6379", signing_key="<EVENT_SIGNING_KEY>")
-
-async def on_user_deleted(event: UserDeletedEvent) -> None:
-    print(f"User {event.user_id} deleted — cleaning up local data.")
-
-async def main():
-    await bus.subscribe("user.deleted", UserDeletedEvent, on_user_deleted)
-    await asyncio.sleep(3600)
-
-asyncio.run(main())
+```bash
+pip install "auth-sdk-m8[events]"
 ```
 
-Rollout / opt-out:
+```python
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from auth_sdk_m8.events import AuthEventStreamClient, AuthStreamEvent, derive_stream_url
 
-- **Mixed fleet during migration:** construct subscribers with `accept_unsigned=True` (from
-  `EVENT_SIGNING_ACCEPT_UNSIGNED`) so they accept both signed and unsigned messages while still
-  rejecting forged signatures; flip back to `False` once every publisher signs.
-- **Disable signing entirely:** set `EVENT_SIGNING_ENABLED=false` and omit `signing_key` — payloads
-  are published and consumed unsigned (legacy behaviour).
+client = AuthEventStreamClient(
+    stream_url=derive_stream_url(settings.INTROSPECTION_URL),  # e.g. http://fa-auth:8000/private/v1/events/stream
+    private_api_secret=settings.PRIVATE_API_SECRET.get_secret_value(),
+    signing_key=settings.EVENT_SIGNING_KEY.get_secret_value(),
+    on_event=handle_auth_event,
+    on_gap=flush_local_caches,
+)
 
-`EventPublisher` and `EventSubscriber` (raw-dict variants) take the same `signing_key` /
-`accept_unsigned` keyword arguments.
+async def handle_auth_event(event: AuthStreamEvent) -> None:
+    if event.event_type == "session-revoked":
+        await cache.evict(event.payload.get("jti"))
+    elif event.event_type == "user-deleted":
+        await cache.evict_user(event.payload.get("user_id"))
+
+async def flush_local_caches() -> None:
+    """Called when a resume gap is unresumable — flush all cached state."""
+    await cache.flush_all()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    client.start()
+    yield
+    await client.stop()
+```
+
+The client:
+- Authenticates with `X-Internal-Token: <PRIVATE_API_SECRET>` (same header used by `jti-status`).
+- Verifies every `data` frame with HMAC-SHA256 (`EVENT_SIGNING_KEY`); forged/unsigned events are dropped.
+- Reconnects automatically with jittered exponential back-off; sends `Last-Event-ID` for resume.
+- Calls `on_gap()` when the server signals an unresumable gap (epoch change or buffer eviction) —
+  the caller **must** flush all locally cached validation state.
+- Push is a **best-effort accelerator**: the JTI blacklist behind `POST /private/v1/jti-status`
+  remains the revocation authority. A missed event is safe (just slower to converge).
+
+`derive_stream_url(introspection_url)` strips `/jti-status` from `INTROSPECTION_URL` and appends
+`/events/stream`.
+
+---
+
+## Redis event bus (deprecated)
+
+> **Deprecated in 1.2.0.** `EventBus`, `EventPublisher`, and `EventSubscriber` will be removed in
+> 2.0.0. Use `AuthEventStreamClient` (above) instead. `_signing.py` is exempt — the SSE bridge
+> reuses it and `EVENT_SIGNING_KEY` stays.
+
+The classes still work and still emit a `DeprecationWarning` on construction. HMAC-SHA256 signing
+(`EVENT_SIGNING_KEY`) behaves identically — the wire format is shared with the SSE bridge.
 
 ---
 
@@ -794,7 +824,9 @@ auth_sdk_m8/
 │   ├── base.py          # AuthProviderType, RoleType, Period, response models
 │   ├── shared.py        # ValidationConstants (regex patterns)
 │   ├── user.py          # UserModel, SessionModel
-│   └── user_events.py   # UserDeletedEvent
+│   └── user_events.py   # UserDeletedEvent, SessionRevokedEvent
+├── events/              # fa-auth SSE bridge client (pip install "auth-sdk-m8[events]")
+│   └── stream_client.py # AuthEventStreamClient, AuthStreamEvent, derive_stream_url
 ├── core/
 │   ├── config.py        # CommonSettings, SecretProvider (re-exports check_config_health)
 │   ├── config_health.py # check_config_health — startup validation checks
@@ -818,11 +850,11 @@ auth_sdk_m8/
 │   ├── metrics.py        # setup(), get(), render()
 │   ├── middleware.py     # MetricsMiddleware
 │   └── settings.py       # ObservabilitySettingsMixin
-├── redis_events/
-│   ├── event_bus.py      # EventBus (typed pub/sub)
-│   ├── publisher.py      # EventPublisher
-│   ├── subscriber.py     # EventSubscriber
-│   └── _signing.py       # canonical-JSON HMAC-SHA256 sign/verify
+├── redis_events/        # deprecated — use events/ instead; removed in 2.0.0
+│   ├── event_bus.py      # EventBus (deprecated)
+│   ├── publisher.py      # EventPublisher (deprecated)
+│   ├── subscriber.py     # EventSubscriber (deprecated)
+│   └── _signing.py       # canonical-JSON HMAC-SHA256 sign/verify (NOT deprecated; reused)
 ├── controllers/
 │   └── base.py           # BaseController: exception → JSONResponse
 ├── models/

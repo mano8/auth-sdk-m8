@@ -13,6 +13,11 @@ from auth_sdk_m8.core.config import CommonSettings
 VALID_KEY = "Abcdef-1234_XYZ-abcdef-ghijkl-mnopqr-stuvwx"
 # Different 46-char key used to produce tokens with an invalid signature
 WRONG_KEY = "Zyxwvu-9876_ABC-zyxwvu-tsrqpo-nmlkji-hgfedc"
+# Production-safe test key — not in CommonSettings._dev_placeholder_keys.
+# Use this (not VALID_KEY) when constructing IsolatedSettings with
+# ENVIRONMENT="production" or STRICT_PRODUCTION_MODE=True so the
+# placeholder-guard validator does not reject the config.
+PROD_VALID_KEY = "ProdKy-5678_ZAB-prodky-nopqrs-tuvwxy-zabcde"
 
 # 2048-bit RSA keypair generated for tests only — never use in production.
 RSA_PRIVATE_PEM = """-----BEGIN RSA PRIVATE KEY-----

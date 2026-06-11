@@ -9,7 +9,7 @@ from auth_sdk_m8.security.headers import (
     build_security_headers,
 )
 
-from .conftest import VALID_SETTINGS_KWARGS, IsolatedSettings
+from .conftest import PROD_VALID_KEY, VALID_SETTINGS_KWARGS, IsolatedSettings
 
 _HARDENING_HEADERS = (
     "content-security-policy",
@@ -22,7 +22,15 @@ _HARDENING_HEADERS = (
 
 
 def _settings(**overrides) -> IsolatedSettings:
-    return IsolatedSettings(**{**VALID_SETTINGS_KWARGS, **overrides})
+    kwargs = {**VALID_SETTINGS_KWARGS, **overrides}
+    # Production mode rejects VALID_KEY (a known dev placeholder); use prod-safe key.
+    if kwargs.get("ENVIRONMENT") == "production" or kwargs.get(
+        "STRICT_PRODUCTION_MODE"
+    ):
+        for field in ("ACCESS_SECRET_KEY", "REFRESH_SECRET_KEY", "EVENT_SIGNING_KEY"):
+            if field not in overrides:
+                kwargs[field] = PROD_VALID_KEY
+    return IsolatedSettings(**kwargs)
 
 
 def _client(settings) -> TestClient:
