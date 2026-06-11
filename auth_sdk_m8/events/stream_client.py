@@ -156,7 +156,9 @@ class AuthEventStreamClient:
                     exc,
                     backoff,
                 )
-            jitter = backoff * _BACKOFF_JITTER * (secrets.randbelow(2001) / 1000.0 - 1.0)
+            jitter = (
+                backoff * _BACKOFF_JITTER * (secrets.randbelow(2001) / 1000.0 - 1.0)
+            )
             await asyncio.sleep(max(0.1, backoff + jitter))
             backoff = min(backoff * 2, _BACKOFF_CAP)
 
