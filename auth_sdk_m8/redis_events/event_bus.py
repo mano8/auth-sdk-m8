@@ -1,10 +1,17 @@
 """Typed Redis Pub/Sub event bus.
 
+.. deprecated::
+    The Redis Pub/Sub transport is not the chosen transport for auth-state
+    events in the m8 fleet. Use :class:`auth_sdk_m8.events.AuthEventStreamClient`
+    (the fa-auth SSE bridge) instead. These classes will be removed in 2.0.0.
+    ``_signing.py`` is exempt — the SSE bridge reuses it.
+
 Requires the `redis` extra:  pip install "auth-sdk-m8[redis]"
 """
 
 import asyncio
 import logging
+import warnings
 from typing import Awaitable, Callable, Optional, Type
 
 import redis.asyncio as redis
@@ -13,6 +20,12 @@ from auth_sdk_m8.redis_events._signing import deserialize, serialize
 from auth_sdk_m8.schemas.redis_events import EventBase
 
 logger = logging.getLogger(__name__)
+
+_DEPRECATION_MSG = (
+    "{cls} is deprecated and will be removed in auth-sdk-m8 2.0.0. "
+    "Use AuthEventStreamClient (auth_sdk_m8.events) — the fa-auth SSE bridge "
+    "is the chosen transport for auth-state events."
+)
 
 
 class EventBus:
@@ -41,6 +54,11 @@ class EventBus:
         signing_key: Optional[str] = None,
         accept_unsigned: bool = False,
     ) -> None:
+        warnings.warn(
+            _DEPRECATION_MSG.format(cls="EventBus"),
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.redis = redis.from_url(redis_url, decode_responses=True)
         self.pubsub = self.redis.pubsub()
         self.task: asyncio.Task | None = None

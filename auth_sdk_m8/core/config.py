@@ -231,6 +231,15 @@ class CommonSettings(BaseSettings):
         "ACCESS_SECRET_KEY",
         "REFRESH_SECRET_KEY",
     ]
+    # Published dev/test keys from this repo's own examples and test suite.
+    # Any of these appearing in a production config is a copy-paste mistake.
+    _dev_placeholder_keys: ClassVar[frozenset[str]] = frozenset(
+        {
+            # conftest.py VALID_KEY / WRONG_KEY (public in git, pass SECRET_KEY_REGEX)
+            "Abcdef-1234_XYZ-abcdef-ghijkl-mnopqr-stuvwx",
+            "Zyxwvu-9876_ABC-zyxwvu-tsrqpo-nmlkji-hgfedc",
+        }
+    )
 
     # ── Core ──────────────────────────────────────────────────────────────────
     DOMAIN: str = Field(..., pattern=ValidationConstants.HOST_REGEX.pattern)
@@ -800,6 +809,31 @@ class CommonSettings(BaseSettings):
                 raise ValueError(
                     f"Insecure default value for '{field_item}'. "
                     "Set a strong unique value."
+                )
+        return self
+
+    @model_validator(mode="after")
+    def _guard_production_placeholder_keys(self) -> "CommonSettings":
+        """Reject published dev/test keys in production.
+
+        Any key from ``_dev_placeholder_keys`` that passes strength checks is
+        still forbidden in production — it indicates a copy-paste from the
+        repo's own examples or test suite rather than a genuine secret.
+        Gated on the same ``is_production`` idiom used by ``_docs_gated``.
+        """
+        is_production = self.ENVIRONMENT == "production" or self.STRICT_PRODUCTION_MODE
+        if not is_production:
+            return self
+        fields_to_check = list(self.secret_keys) + ["EVENT_SIGNING_KEY"]
+        for field_name in fields_to_check:
+            val = getattr(self, field_name, None)
+            if val is None:
+                continue
+            raw = val.get_secret_value() if hasattr(val, "get_secret_value") else val
+            if isinstance(raw, str) and raw.strip() in self._dev_placeholder_keys:
+                raise ValueError(
+                    f"'{field_name}' contains a well-known development key. "
+                    "Generate a unique secret for production."
                 )
         return self
 
