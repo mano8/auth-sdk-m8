@@ -72,25 +72,39 @@ def build_security_headers(
     return headers
 
 
+_BASIC_SECURITY_HEADERS: list[tuple[str, str]] = [
+    ("x-content-type-options", "nosniff"),
+    ("x-frame-options", "DENY"),
+]
+
+
 def add_security_headers_middleware(
     app: FastAPI, settings: SecurityHeadersSettings
 ) -> None:
-    """Attach production/staging response-hardening headers to *app*.
+    """Attach response-hardening headers to *app*.
 
-    Gated on ``ENVIRONMENT == "production" or STRICT_PRODUCTION_MODE`` — the same
-    gate used for docs hiding — so local/dev (and Swagger/ReDoc/HMR) is left
-    unrestricted. A no-op when the gate is not met or
-    ``SECURITY_HEADERS_ENABLED`` is False. Implemented as an HTTP middleware so
-    headers land on every response, including error responses raised before the
-    route handler.
+    Always applies the safe minimal subset (``X-Content-Type-Options``,
+    ``X-Frame-Options``) when ``SECURITY_HEADERS_ENABLED`` is True — these
+    are harmless in every environment and safe to apply unconditionally.
+
+    The full production set (HSTS, CSP, Referrer-Policy, Permissions-Policy)
+    is additionally applied only when ``ENVIRONMENT == "production"`` or
+    ``STRICT_PRODUCTION_MODE`` — the same gate used for docs hiding — so
+    Swagger/ReDoc/HMR keep working in local/dev.
+
+    A no-op when ``SECURITY_HEADERS_ENABLED`` is False. Implemented as an
+    HTTP middleware so headers land on every response, including errors raised
+    before the route handler.
     """
+    if not settings.SECURITY_HEADERS_ENABLED:
+        return
+
     is_production = (
         settings.ENVIRONMENT == "production" or settings.STRICT_PRODUCTION_MODE
     )
-    if not (is_production and settings.SECURITY_HEADERS_ENABLED):
-        return
-
-    security_headers = build_security_headers(settings)
+    security_headers = (
+        build_security_headers(settings) if is_production else _BASIC_SECURITY_HEADERS
+    )
 
     @app.middleware("http")
     async def _security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]

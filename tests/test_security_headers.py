@@ -44,10 +44,19 @@ def _client(settings) -> TestClient:
     return TestClient(app, raise_server_exceptions=False)
 
 
-def test_headers_absent_in_local() -> None:
-    """Local/dev is left unrestricted so Swagger/ReDoc/HMR keep working."""
+def test_headers_minimal_in_local() -> None:
+    """Local/dev gets only the safe minimal subset; CSP/HSTS/Referrer/Permissions stay off."""
     resp = _client(_settings(ENVIRONMENT="local")).get("/ping")
-    for header in _HARDENING_HEADERS:
+    # Always-on: harmless in any environment
+    assert resp.headers["x-content-type-options"] == "nosniff"
+    assert resp.headers["x-frame-options"] == "DENY"
+    # Production-only: would break Swagger/ReDoc/HMR in dev
+    for header in (
+        "content-security-policy",
+        "strict-transport-security",
+        "referrer-policy",
+        "permissions-policy",
+    ):
         assert header not in resp.headers
 
 
