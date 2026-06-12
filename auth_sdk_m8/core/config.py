@@ -436,23 +436,33 @@ class CommonSettings(BaseSettings):
     # https_only parameter).  Defaults True; only set False in local/dev.
     SESSION_COOKIE_SECURE: bool = True
 
-    # ── Response security headers (production/staging only) ────────────────────
-    # The hardening header layer (HSTS + CSP + Referrer/Permissions policy) is
-    # applied ONLY when ENVIRONMENT=="production" or STRICT_PRODUCTION_MODE — the
-    # same gate as docs hiding and TrustedHostMiddleware. Local/dev stays
-    # unrestricted so Swagger/ReDoc and tooling keep working. The layer is wired
-    # by auth_sdk_m8.security.headers.add_security_headers_middleware (shared by
-    # consumer services via fastapi_m8.create_app and by fa-auth's own app). Set
-    # SECURITY_HEADERS_ENABLED=false to opt out even in production.
+    # ── Response security headers (tiered) ─────────────────────────────────────
+    # Wired by auth_sdk_m8.security.headers.add_security_headers_middleware
+    # (shared by consumer services via fastapi_m8.create_app and by fa-auth's own
+    # app). Three tiers:
+    #   1. Always-on: X-Content-Type-Options, X-Frame-Options.
+    #   2. Production-gated (ENVIRONMENT=="production" or STRICT_PRODUCTION_MODE):
+    #      Referrer-Policy, Permissions-Policy.
+    #   3. Express opt-in only (HSTS_ENABLED / CONTENT_SECURITY_POLICY_ENABLED):
+    #      HSTS and CSP. These are browser-persisted and hard to reverse, so they
+    #      are NEVER inferred from the production gate and NEVER emitted when
+    #      ENVIRONMENT=="local" even if opted in.
+    # Set SECURITY_HEADERS_ENABLED=false to suppress the whole layer.
     SECURITY_HEADERS_ENABLED: bool = True
-    # HSTS max-age in seconds (0 disables the Strict-Transport-Security header).
-    # Browsers ignore HSTS over plain HTTP, so emitting it behind a TLS-
-    # terminating proxy is safe; set to 0 if TLS is not terminated upstream.
+    # HSTS — express opt-in. Browser-persisted: enabling it on a host reached over
+    # plain HTTP (or on localhost) poisons the HTTPS cache for HSTS_MAX_AGE
+    # seconds. Only enable behind a TLS-terminating proxy. Never emitted locally.
+    HSTS_ENABLED: bool = False
+    # HSTS max-age in seconds (0 also disables the header). Only applies when
+    # HSTS_ENABLED is True.
     HSTS_MAX_AGE: int = 31536000  # 1 year
     HSTS_INCLUDE_SUBDOMAINS: bool = True
-    # Content-Security-Policy value. None → a tight default suitable for a JSON
-    # API (`default-src 'none'; frame-ancestors 'none'; base-uri 'none';
-    # form-action 'none'`). Override for services that serve HTML in production.
+    # CSP — express opt-in. Can silently break pages/tooling, so off by default.
+    CONTENT_SECURITY_POLICY_ENABLED: bool = False
+    # Content-Security-Policy value used when CONTENT_SECURITY_POLICY_ENABLED is
+    # True. None → a tight default suitable for a JSON API (`default-src 'none';
+    # frame-ancestors 'none'; base-uri 'none'; form-action 'none'`). Override for
+    # services that serve HTML.
     CONTENT_SECURITY_POLICY: Optional[str] = None
     REFERRER_POLICY: str = "strict-origin-when-cross-origin"
     PERMISSIONS_POLICY: str = (

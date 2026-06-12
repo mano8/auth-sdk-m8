@@ -9,6 +9,33 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [1.2.1] — 2026-06-12 · Tiered security headers; HSTS/CSP express opt-in
+
+`add_security_headers_middleware` now applies headers in three tiers instead of the previous
+all-or-nothing production gate:
+
+- **Always-on** (every environment, when `SECURITY_HEADERS_ENABLED` is `True`):
+  `X-Content-Type-Options: nosniff` and `X-Frame-Options: DENY` — harmless everywhere.
+- **Production-gated** (`ENVIRONMENT == "production"` or `STRICT_PRODUCTION_MODE`):
+  `Referrer-Policy`, `Permissions-Policy`.
+- **Express opt-in only**: `Strict-Transport-Security` (new **`HSTS_ENABLED`**, default `False`)
+  and `Content-Security-Policy` (new **`CONTENT_SECURITY_POLICY_ENABLED`**, default `False`).
+  These browser-persisted headers are **no longer inferred from the production gate** and are
+  **never emitted when `ENVIRONMENT == "local"`** even when opted in — preventing HSTS from
+  poisoning the localhost HTTPS cache when a production-configured build is run locally. Otherwise
+  they apply independently of `ENVIRONMENT` (a TLS-terminated `staging` stack can opt in).
+
+**Behaviour change:** HSTS and CSP, which were emitted automatically in production in 1.1.0–1.2.0,
+are now **off until explicitly enabled**. Set `HSTS_ENABLED=true` and/or
+`CONTENT_SECURITY_POLICY_ENABLED=true` to restore them.
+
+- **`CommonSettings`** gains `HSTS_ENABLED` and `CONTENT_SECURITY_POLICY_ENABLED` (both default
+  `False`).
+- README: added the **Response security headers** section documenting the three tiers, the
+  opt-in rationale, and all settings.
+
+---
+
 ## [1.2.0] — 2026-06-11 · fa-auth SSE bridge client (SA)
 
 - **`auth_sdk_m8.events.AuthEventStreamClient`** — httpx-based SSE client for the fa-auth
@@ -34,11 +61,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [1.1.0] — 2026-06-10 · Shared response security-header layer (N2)
 
-- **`auth_sdk_m8.security.headers`** — env-gated response hardening (HSTS, CSP, `X-Frame-Options`,
+- **`auth_sdk_m8.security.headers`** — response hardening (HSTS, CSP, `X-Frame-Options`,
   `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`) shared by every m8 FastAPI app:
   `add_security_headers_middleware(app, settings)`, `build_security_headers(settings)`, and the
-  `SecurityHeadersSettings` protocol. Gated on `ENVIRONMENT == "production" or STRICT_PRODUCTION_MODE`;
-  requires the `fastapi` extra.
+  `SecurityHeadersSettings` protocol. Full set gated on `ENVIRONMENT == "production" or STRICT_PRODUCTION_MODE`;
+  requires the `fastapi` extra. *(Superseded by the tiered model in 1.2.1.)*
 - **`CommonSettings`** gains six header knobs (`SECURITY_HEADERS_ENABLED`, `HSTS_MAX_AGE`,
   `HSTS_INCLUDE_SUBDOMAINS`, `CONTENT_SECURITY_POLICY`, `REFERRER_POLICY`, `PERMISSIONS_POLICY`), moved
   up from `fastapi_m8.ConsumerServiceSettings`. Defaults unchanged — no migration needed.

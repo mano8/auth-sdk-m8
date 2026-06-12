@@ -27,6 +27,7 @@ Companion SDK to [fa-auth-m8](https://github.com/mano8/fa-auth-m8) — install i
 - [Startup config validation](#startup-config-validation)
 - [Service role](#service-role-auth_service_role)
 - [Asymmetric key-strength enforcement](#asymmetric-key-strength-enforcement)
+- [Response security headers](#response-security-headers)
 - [Strict production mode](#strict-production-mode)
 - [Token modes](#token-modes)
 - [Chrome extension / native-app OAuth support](#chrome-extension--native-app-oauth-support)
@@ -433,6 +434,65 @@ Both fields default to `None` (stateless mode). The `_require_introspection_for_
 
 This runs for both private keys (issuer) and public keys (consumer with `ACCESS_PUBLIC_KEY_FILE`).
 Consumer services using `JWKS_URI` skip this check — key strength is validated by the issuer.
+
+---
+
+## Response security headers
+
+`add_security_headers_middleware(app, settings)` attaches hardening headers to every response,
+including errors raised before the route handler. It lives in this platform SDK (not `fastapi-m8`),
+so the issuer (`fa-auth-m8`) can use it without importing the consumer-only package. It needs
+`fastapi` installed — already true for any FastAPI service; install `auth-sdk-m8[fastapi]` only if
+pulling it into a context without FastAPI.
+
+```python
+from fastapi import FastAPI
+from auth_sdk_m8.security.headers import add_security_headers_middleware
+from auth_sdk_m8.core.config import CommonSettings
+
+settings = CommonSettings()
+app = FastAPI(...)
+add_security_headers_middleware(app, settings)
+```
+
+Headers are applied in **three tiers** (the whole layer is suppressed when
+`SECURITY_HEADERS_ENABLED=false`):
+
+| Header | When applied |
+| --- | --- |
+| `X-Content-Type-Options: nosniff` | **Always** (every environment) |
+| `X-Frame-Options: DENY` | **Always** (every environment) |
+| `Referrer-Policy` | Production-gated: `ENVIRONMENT == "production"` or `STRICT_PRODUCTION_MODE` |
+| `Permissions-Policy` | Production-gated: `ENVIRONMENT == "production"` or `STRICT_PRODUCTION_MODE` |
+| `Strict-Transport-Security` | **Express opt-in only** (`HSTS_ENABLED=true`) — never on local |
+| `Content-Security-Policy` | **Express opt-in only** (`CONTENT_SECURITY_POLICY_ENABLED=true`) — never on local |
+
+**Why HSTS and CSP are opt-in, not production-gated.** Both are persisted by the browser and hard
+to reverse. HSTS in particular writes a long-lived (`HSTS_MAX_AGE`, default 1 year) HTTPS-only
+record for the host — enable it on a stack reachable over plain HTTP or on `localhost` (e.g. while
+testing a production-configured build locally) and the browser will force-upgrade `localhost` to
+HTTPS and break every local service on that host. So these two headers:
+
+- are **never** inferred from the production gate — you must set `HSTS_ENABLED` /
+  `CONTENT_SECURITY_POLICY_ENABLED` explicitly;
+- are **never** emitted when `ENVIRONMENT == "local"`, even if you opt in;
+- apply independently of `ENVIRONMENT` otherwise (so `staging` with TLS termination can opt in
+  without flipping to a production env name). Only enable them behind a TLS-terminating proxy.
+
+The always-on subset is safe everywhere and will not break Swagger/ReDoc or HMR.
+
+**Settings** (via `CommonSettings` or your concrete settings):
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `SECURITY_HEADERS_ENABLED` | `True` | Master switch for the whole layer |
+| `HSTS_ENABLED` | `False` | Express opt-in for `Strict-Transport-Security` |
+| `HSTS_MAX_AGE` | `31536000` | HSTS `max-age` in seconds (`0` also disables it) |
+| `HSTS_INCLUDE_SUBDOMAINS` | `True` | Adds `; includeSubDomains` |
+| `CONTENT_SECURITY_POLICY_ENABLED` | `False` | Express opt-in for `Content-Security-Policy` |
+| `CONTENT_SECURITY_POLICY` | `None` | CSP value; `None` → tight API default (`default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`) |
+| `REFERRER_POLICY` | `"strict-origin-when-cross-origin"` | Referrer policy (production-gated) |
+| `PERMISSIONS_POLICY` | `"accelerometer=(), camera=(), …"` | Permissions policy (production-gated) |
 
 ---
 

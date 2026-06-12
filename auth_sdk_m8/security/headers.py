@@ -1,15 +1,25 @@
 """Response security-header hardening for m8 FastAPI services.
 
-Requires the ``fastapi`` extra::
+Requires ``fastapi`` to be installed — already true for any m8 FastAPI service
+(consumer apps via ``fastapi_m8.create_app`` and the auth provider
+``fa-auth-m8``, which builds its own ``FastAPI()`` app). Install
+``auth-sdk-m8[fastapi]`` only if pulling this into a context without FastAPI.
+This module lives in the platform SDK, not ``fastapi-m8``, so the issuer can use
+it without importing the consumer-only package.
 
-    pip install "auth-sdk-m8[fastapi]"
+Headers are applied in three tiers:
 
-Shared by every m8 FastAPI app — consumer services (via
-``fastapi_m8.create_app``) and the auth provider (``fa-auth-m8``), which builds
-its own ``FastAPI()`` app.  The hardening layer is gated on the same
-``ENVIRONMENT == "production" or STRICT_PRODUCTION_MODE`` contract used for docs
-hiding and ``TrustedHostMiddleware``, so local/dev (and Swagger/ReDoc/HMR) stay
-unrestricted.
+1. **Always-on** (every environment): ``X-Content-Type-Options: nosniff`` and
+   ``X-Frame-Options: DENY`` — harmless everywhere, safe to apply
+   unconditionally.
+2. **Production-gated** (``ENVIRONMENT == "production" or
+   STRICT_PRODUCTION_MODE``): ``Referrer-Policy`` and ``Permissions-Policy`` —
+   the same gate used for docs hiding and ``TrustedHostMiddleware``.
+3. **Express opt-in only** (``HSTS_ENABLED`` / ``CONTENT_SECURITY_POLICY_ENABLED``):
+   HSTS and CSP. These are browser-persisted and can hard-break a host (HSTS
+   poisons the localhost HTTPS cache for ``max-age`` seconds), so they are
+   **never** inferred from the production gate and are **never** emitted when
+   ``ENVIRONMENT == "local"`` even if the operator opts in.
 
 The settings fields the layer reads live on
 :class:`auth_sdk_m8.core.config.CommonSettings`, so any service that subclasses
@@ -39,8 +49,10 @@ class SecurityHeadersSettings(Protocol):
     ENVIRONMENT: str
     STRICT_PRODUCTION_MODE: bool
     SECURITY_HEADERS_ENABLED: bool
+    HSTS_ENABLED: bool
     HSTS_MAX_AGE: int
     HSTS_INCLUDE_SUBDOMAINS: bool
+    CONTENT_SECURITY_POLICY_ENABLED: bool
     CONTENT_SECURITY_POLICY: str | None
     REFERRER_POLICY: str
     PERMISSIONS_POLICY: str
@@ -49,45 +61,60 @@ class SecurityHeadersSettings(Protocol):
 def build_security_headers(
     settings: SecurityHeadersSettings,
 ) -> list[tuple[str, str]]:
-    """Compute the static response-header list for the hardening layer.
+    """Compute the response-header list to emit for *settings*.
 
-    Mirrors the docs-gating / TrustedHost ``is_production`` contract: HSTS, CSP,
-    ``X-Frame-Options``, ``X-Content-Type-Options``, ``Referrer-Policy`` and
-    ``Permissions-Policy``. Swagger/ReDoc are gated off in production, so the
-    tight default CSP cannot break them.
+    Resolves all three tiers (see the module docstring):
+
+    - Always: ``X-Content-Type-Options``, ``X-Frame-Options``.
+    - Production-gated (``ENVIRONMENT == "production" or STRICT_PRODUCTION_MODE``):
+      ``Referrer-Policy``, ``Permissions-Policy``.
+    - Express opt-in, never on local: ``Strict-Transport-Security`` (when
+      ``HSTS_ENABLED`` and ``HSTS_MAX_AGE > 0``) and ``Content-Security-Policy``
+      (when ``CONTENT_SECURITY_POLICY_ENABLED``).
     """
-    csp = settings.CONTENT_SECURITY_POLICY or _DEFAULT_API_CSP
+    is_local = settings.ENVIRONMENT == "local"
+    is_production = (
+        settings.ENVIRONMENT == "production" or settings.STRICT_PRODUCTION_MODE
+    )
+
+    # Tier 1 — harmless in every environment.
     headers: list[tuple[str, str]] = [
-        ("content-security-policy", csp),
-        ("x-frame-options", "DENY"),
         ("x-content-type-options", "nosniff"),
-        ("referrer-policy", settings.REFERRER_POLICY),
-        ("permissions-policy", settings.PERMISSIONS_POLICY),
+        ("x-frame-options", "DENY"),
     ]
-    if settings.HSTS_MAX_AGE > 0:
-        hsts = f"max-age={settings.HSTS_MAX_AGE}"
-        if settings.HSTS_INCLUDE_SUBDOMAINS:
-            hsts += "; includeSubDomains"
-        headers.append(("strict-transport-security", hsts))
+
+    # Tier 2 — production hardening that cannot break local tooling.
+    if is_production:
+        headers.append(("referrer-policy", settings.REFERRER_POLICY))
+        headers.append(("permissions-policy", settings.PERMISSIONS_POLICY))
+
+    # Tier 3 — browser-persisted, hard-to-reverse headers. Express opt-in only,
+    # decoupled from the production gate, and NEVER on a local stack even if the
+    # operator opts in (HSTS would poison the localhost HTTPS cache).
+    if not is_local:
+        if settings.HSTS_ENABLED and settings.HSTS_MAX_AGE > 0:
+            hsts = f"max-age={settings.HSTS_MAX_AGE}"
+            if settings.HSTS_INCLUDE_SUBDOMAINS:
+                hsts += "; includeSubDomains"
+            headers.append(("strict-transport-security", hsts))
+        if settings.CONTENT_SECURITY_POLICY_ENABLED:
+            csp = settings.CONTENT_SECURITY_POLICY or _DEFAULT_API_CSP
+            headers.append(("content-security-policy", csp))
+
     return headers
 
 
 def add_security_headers_middleware(
     app: FastAPI, settings: SecurityHeadersSettings
 ) -> None:
-    """Attach production/staging response-hardening headers to *app*.
+    """Attach response-hardening headers to *app*.
 
-    Gated on ``ENVIRONMENT == "production" or STRICT_PRODUCTION_MODE`` — the same
-    gate used for docs hiding — so local/dev (and Swagger/ReDoc/HMR) is left
-    unrestricted. A no-op when the gate is not met or
-    ``SECURITY_HEADERS_ENABLED`` is False. Implemented as an HTTP middleware so
-    headers land on every response, including error responses raised before the
-    route handler.
+    A no-op when ``SECURITY_HEADERS_ENABLED`` is False. Otherwise emits the
+    tiered set computed by :func:`build_security_headers` on every response,
+    including error responses raised before the route handler. See the module
+    docstring for the tier definitions and the HSTS/CSP opt-in contract.
     """
-    is_production = (
-        settings.ENVIRONMENT == "production" or settings.STRICT_PRODUCTION_MODE
-    )
-    if not (is_production and settings.SECURITY_HEADERS_ENABLED):
+    if not settings.SECURITY_HEADERS_ENABLED:
         return
 
     security_headers = build_security_headers(settings)
