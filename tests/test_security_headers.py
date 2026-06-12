@@ -44,13 +44,19 @@ def _client(settings) -> TestClient:
     return TestClient(app, raise_server_exceptions=False)
 
 
-def test_headers_minimal_in_local() -> None:
-    """Local/dev gets only the safe minimal subset; CSP/HSTS/Referrer/Permissions stay off."""
-    resp = _client(_settings(ENVIRONMENT="local")).get("/ping")
+def test_headers_minimal_in_local_even_with_optin() -> None:
+    """Local gets only the safe subset — HSTS/CSP are blocked even when opted in."""
+    resp = _client(
+        _settings(
+            ENVIRONMENT="local",
+            HSTS_ENABLED=True,
+            CONTENT_SECURITY_POLICY_ENABLED=True,
+        )
+    ).get("/ping")
     # Always-on: harmless in any environment
     assert resp.headers["x-content-type-options"] == "nosniff"
     assert resp.headers["x-frame-options"] == "DENY"
-    # Production-only: would break Swagger/ReDoc/HMR in dev
+    # Never on local — even though both opt-ins are True
     for header in (
         "content-security-policy",
         "strict-transport-security",
@@ -64,36 +70,83 @@ def test_headers_minimal_in_local() -> None:
     "overrides",
     [{"ENVIRONMENT": "production"}, {"STRICT_PRODUCTION_MODE": True}],
 )
-def test_headers_applied_in_production(overrides: dict) -> None:
-    """ENVIRONMENT==production or STRICT_PRODUCTION_MODE emits the hardening set."""
+def test_production_without_optin_omits_hsts_and_csp(overrides: dict) -> None:
+    """Production emits the policy headers but NOT HSTS/CSP without express opt-in."""
     resp = _client(_settings(**overrides)).get("/ping")
+    # Always-on + production-gated
     assert resp.headers["x-frame-options"] == "DENY"
     assert resp.headers["x-content-type-options"] == "nosniff"
-    assert "frame-ancestors 'none'" in resp.headers["content-security-policy"]
     assert resp.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert "permissions-policy" in resp.headers
+    # Express opt-in — off by default even in production
+    assert "strict-transport-security" not in resp.headers
+    assert "content-security-policy" not in resp.headers
+
+
+def test_production_with_hsts_and_csp_optin() -> None:
+    """Opting in to HSTS and CSP in production emits the full hardening set."""
+    resp = _client(
+        _settings(
+            ENVIRONMENT="production",
+            HSTS_ENABLED=True,
+            CONTENT_SECURITY_POLICY_ENABLED=True,
+        )
+    ).get("/ping")
+    assert "frame-ancestors 'none'" in resp.headers["content-security-policy"]
     assert "max-age=31536000" in resp.headers["strict-transport-security"]
     assert "includeSubDomains" in resp.headers["strict-transport-security"]
 
 
-def test_opt_out_in_production() -> None:
-    """SECURITY_HEADERS_ENABLED=False suppresses the layer even in production."""
+def test_hsts_csp_optin_decoupled_from_production_gate() -> None:
+    """HSTS/CSP apply on a non-local, non-production stack when expressly enabled.
+
+    The policy headers (Referrer/Permissions) stay off since they are
+    production-gated — proving the two tiers are independent.
+    """
     resp = _client(
-        _settings(ENVIRONMENT="production", SECURITY_HEADERS_ENABLED=False)
+        _settings(
+            ENVIRONMENT="staging",
+            HSTS_ENABLED=True,
+            CONTENT_SECURITY_POLICY_ENABLED=True,
+        )
+    ).get("/ping")
+    assert "strict-transport-security" in resp.headers
+    assert "content-security-policy" in resp.headers
+    # production-gated tier is independent of the opt-in tier
+    assert "referrer-policy" not in resp.headers
+    assert "permissions-policy" not in resp.headers
+
+
+def test_opt_out_suppresses_everything() -> None:
+    """SECURITY_HEADERS_ENABLED=False suppresses the whole layer, opt-ins included."""
+    resp = _client(
+        _settings(
+            ENVIRONMENT="production",
+            SECURITY_HEADERS_ENABLED=False,
+            HSTS_ENABLED=True,
+            CONTENT_SECURITY_POLICY_ENABLED=True,
+        )
     ).get("/ping")
     assert "content-security-policy" not in resp.headers
+    assert "x-content-type-options" not in resp.headers
 
 
-def test_hsts_disabled_when_max_age_zero() -> None:
-    """HSTS_MAX_AGE=0 drops only the Strict-Transport-Security header."""
-    resp = _client(_settings(ENVIRONMENT="production", HSTS_MAX_AGE=0)).get("/ping")
+def test_hsts_optin_but_max_age_zero() -> None:
+    """HSTS_ENABLED with HSTS_MAX_AGE=0 still drops the Strict-Transport-Security header."""
+    resp = _client(
+        _settings(ENVIRONMENT="production", HSTS_ENABLED=True, HSTS_MAX_AGE=0)
+    ).get("/ping")
     assert "strict-transport-security" not in resp.headers
-    assert "content-security-policy" in resp.headers
 
 
 def test_hsts_without_subdomains() -> None:
     """HSTS_INCLUDE_SUBDOMAINS=False omits the includeSubDomains directive."""
     resp = _client(
-        _settings(ENVIRONMENT="production", HSTS_INCLUDE_SUBDOMAINS=False)
+        _settings(
+            ENVIRONMENT="production",
+            HSTS_ENABLED=True,
+            HSTS_INCLUDE_SUBDOMAINS=False,
+        )
     ).get("/ping")
     assert resp.headers["strict-transport-security"] == "max-age=31536000"
 
@@ -102,14 +155,26 @@ def test_custom_csp_override() -> None:
     """A configured CONTENT_SECURITY_POLICY overrides the tight API default."""
     custom = "default-src 'self'; frame-ancestors 'none'"
     resp = _client(
-        _settings(ENVIRONMENT="production", CONTENT_SECURITY_POLICY=custom)
+        _settings(
+            ENVIRONMENT="production",
+            CONTENT_SECURITY_POLICY_ENABLED=True,
+            CONTENT_SECURITY_POLICY=custom,
+        )
     ).get("/ping")
     assert resp.headers["content-security-policy"] == custom
 
 
 def test_build_security_headers_direct() -> None:
-    """build_security_headers returns the full set keyed lowercase."""
-    headers = dict(build_security_headers(_settings(ENVIRONMENT="production")))
+    """build_security_headers returns the full set keyed lowercase when fully opted in."""
+    headers = dict(
+        build_security_headers(
+            _settings(
+                ENVIRONMENT="production",
+                HSTS_ENABLED=True,
+                CONTENT_SECURITY_POLICY_ENABLED=True,
+            )
+        )
+    )
     assert set(headers) == set(_HARDENING_HEADERS)
 
 
