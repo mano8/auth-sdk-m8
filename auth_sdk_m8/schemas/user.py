@@ -28,6 +28,7 @@ class UserModel(BaseModel):
     email_verified: bool = False
     is_superuser: bool = False
     role: RoleType = RoleType.USER
+    tenant_id: Optional[uuid.UUID] = None  # coerced from the token's string claim
 
 
 class SessionModel(BaseModel):

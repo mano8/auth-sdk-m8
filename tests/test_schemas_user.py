@@ -47,6 +47,18 @@ def test_user_model_with_all_fields() -> None:
     assert user.role == RoleType.ADMIN
 
 
+def test_user_model_tenant_id_defaults_none() -> None:
+    user = UserModel(id=uuid.uuid4(), email="a@b.com")
+    assert user.tenant_id is None
+
+
+def test_user_model_tenant_id_coerced_from_string() -> None:
+    tenant = uuid.uuid4()
+    user = UserModel(id=uuid.uuid4(), email="a@b.com", tenant_id=str(tenant))
+    assert isinstance(user.tenant_id, uuid.UUID)
+    assert user.tenant_id == tenant
+
+
 def test_session_model() -> None:
     now = datetime.now(timezone.utc)
     sid = uuid.uuid4()

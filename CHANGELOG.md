@@ -9,6 +9,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [1.3.0] — 2026-06-13 · Optional `tenant_id` claim through the auth chain
+
+Backward-compatible feature: a nullable `tenant_id` claim now flows through the shared token
+schemas so consuming services can read `current_user.tenant_id`. The base of the M8 auth chain —
+fa-auth issues it and fastapi-m8 forwards it untouched.
+
+- **`UserPayloadData`** (`schemas/auth.py`, inherited by `TokenAccessData` and `TokenUserData`)
+  gains `tenant_id: Optional[str] = None`. Kept a **string**, not `uuid.UUID`, so the claim stays
+  JSON-serialisable through `model_dump()` → `jwt.encode`.
+- **`UserModel`** (`schemas/user.py`) gains `tenant_id: Optional[uuid.UUID] = None`; Pydantic
+  coerces the token's string claim to a `UUID` on construction.
+
+**Backward compatibility:** the field is optional with a `None` default — old tokens parse
+unchanged (absent claim → `None`), and old consumers ignore the extra claim. Only *exposing*
+`UserModel.tenant_id` requires upgrading to 1.3.0.
+
+---
+
 ## [1.2.1] — 2026-06-12 · Tiered security headers; HSTS/CSP express opt-in
 
 `add_security_headers_middleware` now applies headers in three tiers instead of the previous

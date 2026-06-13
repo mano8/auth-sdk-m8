@@ -156,3 +156,36 @@ class TestJwtCrossServiceContract:
         token, _ = _issue_token()
         payload = validator.validate_access_token(token)
         assert payload.email == _EMAIL
+
+    def test_tenant_id_claim_round_trips(self) -> None:
+        """A token carrying tenant_id parses into TokenUserData.tenant_id (as string)."""
+        tenant = str(uuid.uuid4())
+        data = TokenAccessData(
+            sub=_USER_ID,
+            email=_EMAIL,
+            role=_ROLE,
+            tenant_id=tenant,
+        )
+        payload = data.model_dump()
+        payload.update(
+            {
+                "exp": datetime.now(timezone.utc) + timedelta(minutes=30),
+                "jti": str(uuid.uuid4()),
+                "type": "access",
+            }
+        )
+        token = jwt.encode(payload, VALID_KEY, algorithm="HS256")
+
+        decoded = _consumer_validator().validate_access_token(token)
+        assert decoded.tenant_id == tenant
+        # And it coerces into UserModel.tenant_id as a UUID.
+        user = UserModel(
+            id=decoded.sub, email=decoded.email, tenant_id=decoded.tenant_id
+        )
+        assert user.tenant_id == uuid.UUID(tenant)
+
+    def test_token_without_tenant_id_still_validates(self) -> None:
+        """Backward compatibility: an old token with no tenant_id parses → None."""
+        token, _ = _issue_token()
+        decoded = _consumer_validator().validate_access_token(token)
+        assert decoded.tenant_id is None
