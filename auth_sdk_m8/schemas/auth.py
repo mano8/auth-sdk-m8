@@ -76,6 +76,8 @@ class UserPayloadData(BaseModel):
     email_verified: bool = False
     is_superuser: bool = False
     role: RoleType = RoleType.USER
+    # UUID as string; JWT payload must be JSON-serialisable
+    tenant_id: Optional[str] = None
 
 
 class TokenMinimalData(TokenSubData):
