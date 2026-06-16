@@ -24,6 +24,7 @@ Companion SDK to [fa-auth-m8](https://github.com/mano8/fa-auth-m8) — install i
   - [RS256 — consumer offline](#rs256--asymmetric-consumer-offline-static-public-key-file)
   - [ES256 — ECDSA](#es256--ecdsa-drop-in-for-rs256)
 - [FastAPI integration](#fastapi-integration)
+- [Service metadata & liveness routes](#service-metadata--liveness-routes-meta--ping)
 - [Startup config validation](#startup-config-validation)
 - [Service role](#service-role-auth_service_role)
 - [Asymmetric key-strength enforcement](#asymmetric-key-strength-enforcement)
@@ -329,6 +330,70 @@ Checks performed:
 | `AUTH_SERVICE_ROLE=consumer` + `TOKEN_MODE=stateless` + `DB_HOST` set | warning |
 | `STRICT_PRODUCTION_MODE=true` with wildcard `*` in `ALLOWED_ORIGINS` | **fatal** |
 | `STRICT_PRODUCTION_MODE=true` with `SESSION_COOKIE_SECURE=false` outside `local` | **fatal** |
+
+---
+
+## Service metadata & liveness routes (`/meta` + `/ping`)
+
+`mount_service_meta` mounts the two standard routes every m8 service should expose, with an
+identical shape across the issuer (`fa-auth-m8`) and every consumer. It lives in this platform SDK
+because it is the only common dependency of both the issuer and the consumer framework
+(`fastapi-m8`). Needs the `fastapi` extra.
+
+| Route | Question | Touches deps? | Cacheable |
+| --- | --- | --- | --- |
+| `{prefix}/meta` | what version/contract is this service? | no | yes (`Cache-Control`) |
+| `/ping` | is the process up & serving? | **no** (liveness) | no |
+
+`/meta` is read by clients **pre-auth** to assert compatibility before they do anything else; it
+exposes only `service` / `version` / `api_version` / `contract` — never build paths, hostnames,
+dependency internals, or secrets. `/ping` is a pure liveness probe and is mounted
+**prefix-independently** so liveness never depends on app routing/prefix config — keep it separate
+from a dependency-aware `/health` readiness probe so a transient DB/Redis blip cannot trigger a
+restart.
+
+```python
+from fastapi import FastAPI
+from auth_sdk_m8.controllers.meta import mount_service_meta
+from auth_sdk_m8.schemas.meta import ServiceContract, ServiceMeta
+
+app = FastAPI()
+mount_service_meta(
+    app,
+    ServiceMeta(
+        service="media-service-m8",
+        version="1.0.0",
+        api_version="v1",
+        contract=ServiceContract(
+            name="media-service-m8", version="1.0", range=">=1.0.0 <2.0.0"
+        ),
+    ),
+    prefix=settings.API_PREFIX,  # e.g. "/media" → GET /media/meta; "" → GET /meta
+)
+```
+
+```jsonc
+// GET {API_PREFIX}/meta  → 200
+{
+  "service": "media-service-m8",
+  "version": "1.0.0",
+  "api_version": "v1",
+  "contract": { "name": "media-service-m8", "version": "1.0", "range": ">=1.0.0 <2.0.0" }
+}
+
+// GET /ping  → 200
+{ "status": "ok" }
+```
+
+**`meta` is a required argument** — a service literally cannot mount the routes without supplying
+valid values (provide-or-fail at the call site). Every `ServiceMeta` / `ServiceContract` field is
+non-empty (`min_length=1`), so blank values fail validation at construction. The model is pure
+Pydantic (no FastAPI import), so non-web SDK users can build/validate meta without the `fastapi`
+extra; only `mount_service_meta` needs FastAPI.
+
+> Consumers built on `fastapi-m8` get both routes wired automatically inside `create_app` (sourced
+> from `ConsumerServiceSettings`); the issuer `fa-auth-m8` calls `mount_service_meta` directly since
+> it does not use the consumer app factory.
 
 ---
 
@@ -884,6 +949,7 @@ auth_sdk_m8/
 │   ├── auth.py          # TokenUserData, TokenAccessData, TokenSecret, ASYMMETRIC_ALGORITHMS
 │   ├── base.py          # AuthProviderType, RoleType, Period, response models
 │   ├── shared.py        # ValidationConstants (regex patterns)
+│   ├── meta.py          # ServiceMeta, ServiceContract (pure Pydantic, no FastAPI)
 │   ├── user.py          # UserModel, SessionModel
 │   └── user_events.py   # UserDeletedEvent, SessionRevokedEvent
 ├── events/              # fa-auth SSE bridge client (pip install "auth-sdk-m8[events]")
@@ -917,7 +983,8 @@ auth_sdk_m8/
 │   ├── subscriber.py     # EventSubscriber (deprecated)
 │   └── _signing.py       # canonical-JSON HMAC-SHA256 sign/verify (NOT deprecated; reused)
 ├── controllers/
-│   └── base.py           # BaseController: exception → JSONResponse
+│   ├── base.py           # BaseController: exception → JSONResponse
+│   └── meta.py           # mount_service_meta — /meta + /ping routes
 ├── models/
 │   └── shared.py         # TimestampMixin, Message, Token, TokenPayload
 └── utils/

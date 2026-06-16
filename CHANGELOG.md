@@ -9,6 +9,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [1.4.0] — 2026-06-16 · Standard `/meta` + `/ping` service routes
+
+Adds the shared building blocks for the standard m8 service triad so clients can
+assert compatibility (`/meta`) and orchestrators can probe liveness (`/ping`)
+with an identical shape across the issuer and every consumer. auth-sdk-m8 owns
+these because it is the only common dependency of both fa-auth-m8 (issuer) and
+fastapi-m8 (consumer framework).
+
+- **`ServiceMeta` / `ServiceContract`** (`schemas/meta.py`) — pure-Pydantic,
+  minimal public identity: `service`, `version`, `api_version`, and a nested
+  `contract` (`name`/`version`/`range`). Every field is non-empty
+  (`min_length=1`). No FastAPI import, so non-web SDK users can build/validate
+  meta without the `fastapi` extra.
+- **`mount_service_meta(app, meta, *, prefix="")`** (`controllers/meta.py`,
+  `[fastapi]` extra) — mounts `{prefix}/meta` (cacheable via `Cache-Control`,
+  no dependency I/O) and a prefix-independent `/ping` liveness route
+  (`{"status": "ok"}`). `meta` is a **required** argument: a service cannot
+  mount the routes without supplying valid values (provide-or-fail at the call
+  site; empty fields fail validation).
+
+**Backward compatibility:** purely additive — new modules and a new optional
+helper; no existing schema, route, or signature changes.
+
+---
+
 ## [1.3.0] — 2026-06-13 · Optional `tenant_id` claim through the auth chain
 
 Backward-compatible feature: a nullable `tenant_id` claim now flows through the shared token
