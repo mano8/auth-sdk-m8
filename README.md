@@ -343,14 +343,18 @@ because it is the only common dependency of both the issuer and the consumer fra
 | Route | Question | Touches deps? | Cacheable |
 | --- | --- | --- | --- |
 | `{prefix}/meta` | what version/contract is this service? | no | yes (`Cache-Control`) |
-| `/ping` | is the process up & serving? | **no** (liveness) | no |
+| `/ping` **and** `{prefix}/ping` | is the process up & serving? | **no** (liveness) | no |
 
 `/meta` is read by clients **pre-auth** to assert compatibility before they do anything else; it
 exposes only `service` / `version` / `api_version` / `contract` — never build paths, hostnames,
-dependency internals, or secrets. `/ping` is a pure liveness probe and is mounted
-**prefix-independently** so liveness never depends on app routing/prefix config — keep it separate
-from a dependency-aware `/health` readiness probe so a transient DB/Redis blip cannot trigger a
-restart.
+dependency internals, or secrets. `/ping` is a pure liveness probe — keep it separate from a
+dependency-aware `/health` readiness probe so a transient DB/Redis blip cannot trigger a restart.
+
+`/ping` is mounted at **both** the root and `{prefix}/ping`: the root copy lets a direct
+container/sidecar probe stay independent of the app's prefix config, while the prefixed copy stays
+reachable behind a prefix-routing reverse proxy (e.g. Traefik forwards only `PathPrefix({prefix})`,
+so a root-only `/ping` 404s at the gateway). The prefixed copy is hidden from the OpenAPI schema so
+the document still carries a single `ping` operation.
 
 ```python
 from fastapi import FastAPI
@@ -381,7 +385,7 @@ mount_service_meta(
   "contract": { "name": "media-service-m8", "version": "1.0", "range": ">=1.0.0 <2.0.0" }
 }
 
-// GET /ping  → 200
+// GET /ping  → 200   (also GET {API_PREFIX}/ping → 200, e.g. /media/ping)
 { "status": "ok" }
 ```
 

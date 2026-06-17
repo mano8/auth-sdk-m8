@@ -4,8 +4,11 @@ Requires the ``fastapi`` extra:  pip install "auth-sdk-m8[fastapi]"
 
 - ``{prefix}/meta`` — static service/version/contract identity for client
   compatibility checks (cacheable, no dependency I/O).
-- ``/ping`` — dependency-free liveness probe, mounted prefix-independently so
-  liveness never depends on app routing/prefix config.
+- ``/ping`` + ``{prefix}/ping`` — dependency-free liveness probe, mounted at
+  **both** the root (so direct container/sidecar probes never depend on app
+  routing/prefix config) and under ``{prefix}`` (so it stays reachable through a
+  prefix-routing reverse proxy such as Traefik, which only forwards
+  ``PathPrefix({prefix})`` — a root-only ``/ping`` 404s at the gateway).
 
 The shared building block lives here because auth-sdk-m8 is the only common
 dependency of both the issuer (fa-auth-m8) and the consumer framework
@@ -37,11 +40,11 @@ def _build_meta_router(meta: ServiceMeta, prefix: str) -> APIRouter:
     return router
 
 
-def _build_ping_router() -> APIRouter:
-    """Build the prefix-independent ``/ping`` liveness router."""
-    router = APIRouter(tags=["meta"])
+def _build_ping_router(prefix: str = "", *, in_schema: bool = True) -> APIRouter:
+    """Build a ``{prefix}/ping`` liveness router (root when *prefix* is empty)."""
+    router = APIRouter(prefix=prefix, tags=["meta"])
 
-    @router.get("/ping")
+    @router.get("/ping", include_in_schema=in_schema)
     def get_ping() -> dict[str, str]:
         """Return a dependency-free liveness response."""
         return PING_RESPONSE
@@ -63,8 +66,13 @@ def mount_service_meta(
             is mandatory — a service cannot mount the routes without valid values
             (provide-or-fail at the call site; empty fields fail ``ServiceMeta``
             validation).
-        prefix: Optional API prefix for ``/meta``. ``/ping`` is always mounted
-            prefix-independently for liveness probes.
+        prefix: Optional API prefix for ``/meta`` and the proxy-routable copy of
+            ``/ping``. ``/ping`` is always mounted at the root for direct
+            liveness probes; when *prefix* is non-empty it is **also** mounted at
+            ``{prefix}/ping`` (hidden from the schema to avoid a duplicate
+            operation) so it remains reachable behind a prefix-routing proxy.
     """
     app.include_router(_build_meta_router(meta, prefix))
     app.include_router(_build_ping_router())
+    if prefix:
+        app.include_router(_build_ping_router(prefix, in_schema=False))

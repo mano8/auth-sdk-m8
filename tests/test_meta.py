@@ -90,7 +90,29 @@ def test_ping_route_returns_ok() -> None:
     assert resp.json() == PING_RESPONSE
 
 
-def test_ping_is_prefix_independent() -> None:
+def test_ping_is_served_at_root_even_with_prefix() -> None:
+    # Root /ping stays available for direct container/sidecar liveness probes
+    # that do not know the API prefix.
     resp = _client(prefix="/media").get("/ping")
     assert resp.status_code == 200
     assert resp.json() == PING_RESPONSE
+
+
+def test_ping_is_also_served_under_prefix() -> None:
+    # Reachable through a prefix-routing proxy (Traefik forwards PathPrefix).
+    resp = _client(prefix="/media").get("/media/ping")
+    assert resp.status_code == 200
+    assert resp.json() == PING_RESPONSE
+
+
+def test_prefixed_ping_hidden_from_schema() -> None:
+    # Only the root /ping is published; the prefixed copy is in_schema=False so
+    # the OpenAPI document carries a single ping operation.
+    schema = _client(prefix="/media").get("/openapi.json").json()
+    ping_paths = [p for p in schema["paths"] if p.endswith("/ping")]
+    assert ping_paths == ["/ping"]
+
+
+def test_no_prefixed_ping_when_prefix_empty() -> None:
+    # Empty prefix mounts the root ping only (no duplicate route).
+    assert _client().get("/media/ping").status_code == 404
