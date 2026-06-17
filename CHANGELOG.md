@@ -9,6 +9,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [1.5.0] — 2026-06-17 · `/ping` reachable behind a prefix-routing proxy
+
+Fixes liveness probing for any service mounted behind a prefix-routing reverse
+proxy (e.g. Traefik). `1.4.0` mounted `/ping` only at the root, but such proxies
+forward only `PathPrefix({API_PREFIX})`, so a root-only `/ping` 404s at the
+gateway while `{prefix}/meta` resolves — observed across the compose examples
+where every service carries an `API_PREFIX` (`/user`, `/media`, …).
+
+- **`mount_service_meta` now dual-mounts `/ping`** (`controllers/meta.py`) — the
+  root `/ping` is unchanged (direct container/sidecar probes stay
+  prefix-independent), and when `prefix` is non-empty the route is **also**
+  mounted at `{prefix}/ping` so it is reachable through the proxy, exactly like
+  `{prefix}/meta`. The prefixed copy is `include_in_schema=False`, so the OpenAPI
+  document still carries a single `ping` operation.
+
+**Backward compatibility:** purely additive — the root `/ping` behaviour and the
+`mount_service_meta` signature are unchanged; an empty `prefix` mounts the root
+route only (no new path). Consumers on `fastapi-m8` and the issuer `fa-auth-m8`
+pick up `{API_PREFIX}/ping` automatically on upgrade with no call-site change.
+
+---
+
 ## [1.4.0] — 2026-06-16 · Standard `/meta` + `/ping` service routes
 
 Adds the shared building blocks for the standard m8 service triad so clients can
