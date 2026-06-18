@@ -225,6 +225,40 @@ def _check_token_boundary_config(
     return fatal, warnings
 
 
+def _check_allowed_hosts_config(
+    settings: _SettingsProto,
+    environment: str,
+    strict: bool,
+) -> tuple[list[str], list[str]]:
+    """Gate ALLOWED_HOSTS for production/strict environments.
+
+    Rules:
+    - Settings type without the attribute → no-op (backward-compatible).
+    - local + not strict → no-op regardless of value.
+    - prod + empty/None → warning (operator should restrict Host headers).
+    - strict + empty/None → fatal.
+    - strict + ``"*"`` in list → fatal (wildcard defeats the control).
+    """
+    if not hasattr(settings, "ALLOWED_HOSTS"):
+        return [], []
+    hosts: list[str] = getattr(settings, "ALLOWED_HOSTS") or []
+    fatal: list[str] = []
+    warnings: list[str] = []
+    is_prod = environment == "production"
+    if strict and "*" in hosts:
+        fatal.append(
+            "CONFIG: ALLOWED_HOSTS contains a wildcard ('*') under "
+            "STRICT_PRODUCTION_MODE — specify explicit host names instead."
+        )
+    if not hosts and (strict or is_prod):
+        msg = (
+            "CONFIG: ALLOWED_HOSTS is not configured — "
+            "set ALLOWED_HOSTS to restrict accepted Host headers in production."
+        )
+        (fatal if strict else warnings).append(msg)
+    return fatal, warnings
+
+
 def _check_rate_limit_config(settings: _SettingsProto) -> list[str]:
     warnings: list[str] = []
     for control, threshold in _RATE_LIMIT_WARNING_RPM.items():
@@ -269,6 +303,8 @@ def check_config_health(
     - ENVIRONMENT=production with TOKEN_ISSUER or TOKEN_AUDIENCE unset (warning / fatal under STRICT)
     - STRICT_PRODUCTION_MODE: wildcard in ALLOWED_ORIGINS (fatal)
     - STRICT_PRODUCTION_MODE: SESSION_COOKIE_SECURE=false outside local (fatal)
+    - ALLOWED_HOSTS empty/unset in production (warning) or strict mode (fatal)
+    - ALLOWED_HOSTS wildcard '*' under strict mode (fatal)
     """
     strict: bool = getattr(settings, "STRICT_PRODUCTION_MODE", False)
     algo = settings.ACCESS_TOKEN_ALGORITHM
@@ -288,6 +324,7 @@ def check_config_health(
     f5 = _check_strict_mode(settings, environment)
     w6 = _check_rate_limit_config(settings)
     f7, w7 = _check_token_boundary_config(settings, environment, strict)
+    f8, w8 = _check_allowed_hosts_config(settings, environment, strict)
 
     warnings: list[str] = []
     warnings.extend(w1)
@@ -295,7 +332,8 @@ def check_config_health(
     warnings.extend(w4)
     warnings.extend(w6)
     warnings.extend(w7)
-    fatal_errors = f1 + f2 + f3 + f4 + f5 + f7
+    warnings.extend(w8)
+    fatal_errors = f1 + f2 + f3 + f4 + f5 + f7 + f8
 
     for warning in warnings:
         logger.warning(warning)

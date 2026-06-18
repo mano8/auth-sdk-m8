@@ -294,6 +294,25 @@ class CommonSettings(BaseSettings):
     # Only chrome-extension:// is supported; custom schemes require custom impl.
     CORS_ALLOWED_ORIGIN_SCHEMES: List[str] = []
 
+    # ── Trusted hosts ─────────────────────────────────────────────────────────
+    # Allowlist of Host header values accepted by Starlette's
+    # TrustedHostMiddleware.  None (default) disables host checking — operators
+    # must set this in production.  Comma-separated when sourced from env.
+    # Examples: "example.com,www.example.com" (prod), "localhost" (local),
+    # "testserver" (test client).
+    ALLOWED_HOSTS: Optional[List[str]] = None
+
+    @field_validator("ALLOWED_HOSTS", mode="before")
+    @classmethod
+    def parse_allowed_hosts(cls, v: object) -> Optional[List[str]]:
+        """Parse comma-separated allowed hosts from env."""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            hosts = [h.strip() for h in v.split(",") if h.strip()]
+            return hosts if hosts else None
+        return list(v) if v else None  # type: ignore[call-overload]
+
     @field_validator("CORS_ALLOWED_ORIGIN_SCHEMES", mode="before")
     @classmethod
     def parse_cors_origin_schemes(cls, v: object) -> List[str]:
