@@ -299,6 +299,45 @@ def _check_allowed_hosts_config(
     return fatal, warnings
 
 
+def _check_event_signing_config(
+    settings: _SettingsProto,
+    environment: str,
+    strict: bool,
+) -> tuple[list[str], list[str]]:
+    """Gate event-signing rollout flags.
+
+    Rules:
+    - Settings without EVENT_SIGNING_ENABLED → no-op (backward-compatible).
+    - EVENT_SIGNING_ENABLED=false + strict → fatal.
+    - EVENT_SIGNING_ENABLED=false + non-strict → warning.
+    - EVENT_SIGNING_ACCEPT_UNSIGNED=true + production or strict → fatal.
+    - EVENT_SIGNING_ACCEPT_UNSIGNED=true + non-prod/non-strict → warning.
+    """
+    if not hasattr(settings, "EVENT_SIGNING_ENABLED"):
+        return [], []
+    signing_enabled: bool = getattr(settings, "EVENT_SIGNING_ENABLED", True)
+    accept_unsigned: bool = getattr(settings, "EVENT_SIGNING_ACCEPT_UNSIGNED", False)
+    fatal: list[str] = []
+    warnings: list[str] = []
+    if not signing_enabled:
+        msg = (
+            "CONFIG: EVENT_SIGNING_ENABLED=false — "
+            "event payloads are not authenticated; any subscriber can inject "
+            "or replay arbitrary events. "
+            "Enable signing for all production deployments."
+        )
+        (fatal if strict else warnings).append(msg)
+    if accept_unsigned:
+        is_prod = environment == "production"
+        msg = (
+            "CONFIG: EVENT_SIGNING_ACCEPT_UNSIGNED=true — "
+            "unsigned events are accepted; this is a transitional rollout flag "
+            "and must not be left enabled in production."
+        )
+        (fatal if (strict or is_prod) else warnings).append(msg)
+    return fatal, warnings
+
+
 def _check_rate_limit_config(settings: _SettingsProto) -> list[str]:
     warnings: list[str] = []
     for control, threshold in _RATE_LIMIT_WARNING_RPM.items():
@@ -346,6 +385,8 @@ def check_config_health(
     - ALLOWED_HOSTS empty/unset in production (warning) or strict mode (fatal)
     - ALLOWED_HOSTS wildcard '*' under strict mode (fatal)
     - JWKS_URI / INTROSPECTION_URL using http:// in prod/strict (warning/fatal)
+    - EVENT_SIGNING_ENABLED=false (warning / fatal under STRICT)
+    - EVENT_SIGNING_ACCEPT_UNSIGNED=true in production or strict (warning / fatal)
     """
     strict: bool = getattr(settings, "STRICT_PRODUCTION_MODE", False)
     algo = settings.ACCESS_TOKEN_ALGORITHM
@@ -367,6 +408,7 @@ def check_config_health(
     f7, w7 = _check_token_boundary_config(settings, environment, strict)
     f8, w8 = _check_allowed_hosts_config(settings, environment, strict)
     f9, w9 = _check_internal_url_config(settings, environment, strict)
+    f10, w10 = _check_event_signing_config(settings, environment, strict)
 
     warnings: list[str] = []
     warnings.extend(w1)
@@ -376,7 +418,8 @@ def check_config_health(
     warnings.extend(w7)
     warnings.extend(w8)
     warnings.extend(w9)
-    fatal_errors = f1 + f2 + f3 + f4 + f5 + f7 + f8 + f9
+    warnings.extend(w10)
+    fatal_errors = f1 + f2 + f3 + f4 + f5 + f7 + f8 + f9 + f10
 
     for warning in warnings:
         logger.warning(warning)
