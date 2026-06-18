@@ -6,10 +6,13 @@ Covers:
 - check_config_health() integration: allowed_hosts warnings/fatals flow through
 """
 
+from typing import cast
+
 import pytest
 
 from auth_sdk_m8.core.config_health import (
     _check_allowed_hosts_config,
+    _SettingsProto,
     check_config_health,
 )
 from auth_sdk_m8.core.exceptions import ConfigurationError
@@ -100,7 +103,9 @@ def test_no_attr_is_noop() -> None:
     class _NoAttr:
         pass
 
-    fatal, warnings = _check_allowed_hosts_config(_NoAttr(), "production", True)
+    fatal, warnings = _check_allowed_hosts_config(
+        cast("_SettingsProto", _NoAttr()), "production", True
+    )
     assert fatal == []
     assert warnings == []
 
@@ -172,7 +177,7 @@ def test_valid_hosts_strict_no_warning() -> None:
 
 
 class _MinimalLogger:
-    def __init__(self):
+    def __init__(self) -> None:
         self.warnings: list[str] = []
         self.criticals: list[str] = []
 

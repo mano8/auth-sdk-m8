@@ -328,6 +328,7 @@ def test_guard_skips_in_non_production() -> None:
 
     kwargs = {**VALID_SETTINGS_KWARGS, "ENVIRONMENT": "local"}
     s = IsolatedSettings(**kwargs)
+    assert s.ACCESS_SECRET_KEY is not None
     assert s.ACCESS_SECRET_KEY.get_secret_value() == VALID_KEY
 
 

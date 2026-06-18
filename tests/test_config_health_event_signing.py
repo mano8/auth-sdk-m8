@@ -5,10 +5,13 @@ Covers:
 - check_config_health() integration: event-signing warnings/fatals flow through
 """
 
+from typing import cast
+
 import pytest
 
 from auth_sdk_m8.core.config_health import (
     _check_event_signing_config,
+    _SettingsProto,
     check_config_health,
 )
 from auth_sdk_m8.core.exceptions import ConfigurationError
@@ -56,7 +59,9 @@ def test_no_event_signing_attr_is_noop() -> None:
     class _NoAttr:
         pass
 
-    fatal, warnings = _check_event_signing_config(_NoAttr(), "production", True)
+    fatal, warnings = _check_event_signing_config(
+        cast("_SettingsProto", _NoAttr()), "production", True
+    )
     assert fatal == []
     assert warnings == []
 

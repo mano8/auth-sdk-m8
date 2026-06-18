@@ -179,8 +179,12 @@ class TestJwtCrossServiceContract:
         decoded = _consumer_validator().validate_access_token(token)
         assert decoded.tenant_id == tenant
         # And it coerces into UserModel.tenant_id as a UUID.
-        user = UserModel(
-            id=decoded.sub, email=decoded.email, tenant_id=decoded.tenant_id
+        user = UserModel.model_validate(
+            {
+                "id": decoded.sub,
+                "email": decoded.email,
+                "tenant_id": decoded.tenant_id,
+            }
         )
         assert user.tenant_id == uuid.UUID(tenant)
 

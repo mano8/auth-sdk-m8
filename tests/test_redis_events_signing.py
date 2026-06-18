@@ -104,7 +104,9 @@ async def test_event_bus_signs_published_payload() -> None:
         raw = mock_redis.publish.call_args[0][1]
         env = json.loads(raw)
         assert set(env) == {"payload", "sig"}
-        assert deserialize(raw, KEY)["user_id"] == "u1"
+        decoded = deserialize(raw, KEY)
+        assert decoded is not None
+        assert decoded["user_id"] == "u1"
 
 
 async def test_event_publisher_signs_published_payload() -> None:
@@ -131,6 +133,7 @@ async def test_event_bus_fires_handler_on_valid_signature() -> None:
         handler = AsyncMock()
         bus = EventBus(_REDIS_URL, signing_key=KEY)
         await bus.subscribe("user.deleted", UserDeletedEvent, handler)
+        assert bus.task is not None
         await bus.task
 
         handler.assert_called_once()
@@ -152,6 +155,7 @@ async def test_event_bus_drops_tampered_message() -> None:
         handler = AsyncMock()
         bus = EventBus(_REDIS_URL, signing_key=KEY)
         await bus.subscribe("user.deleted", UserDeletedEvent, handler)
+        assert bus.task is not None
         await bus.task
 
         handler.assert_not_called()
@@ -169,6 +173,7 @@ async def test_event_subscriber_fires_handler_on_valid_signature() -> None:
         handler = AsyncMock()
         subscriber = EventSubscriber(_REDIS_URL, signing_key=KEY)
         await subscriber.subscribe("ch", handler)
+        assert subscriber.task is not None
         await subscriber.task
 
         handler.assert_called_once_with({"user_id": "ok"})
@@ -183,6 +188,7 @@ async def test_event_subscriber_drops_unsigned_when_required() -> None:
         handler = AsyncMock()
         subscriber = EventSubscriber(_REDIS_URL, signing_key=KEY)
         await subscriber.subscribe("ch", handler)
+        assert subscriber.task is not None
         await subscriber.task
 
         handler.assert_not_called()
@@ -197,6 +203,7 @@ async def test_event_subscriber_accepts_unsigned_in_transitional_mode() -> None:
         handler = AsyncMock()
         subscriber = EventSubscriber(_REDIS_URL, signing_key=KEY, accept_unsigned=True)
         await subscriber.subscribe("ch", handler)
+        assert subscriber.task is not None
         await subscriber.task
 
         handler.assert_called_once_with({"user_id": "legacy"})

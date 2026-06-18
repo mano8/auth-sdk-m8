@@ -54,7 +54,9 @@ def test_user_model_tenant_id_defaults_none() -> None:
 
 def test_user_model_tenant_id_coerced_from_string() -> None:
     tenant = uuid.uuid4()
-    user = UserModel(id=uuid.uuid4(), email="a@b.com", tenant_id=str(tenant))
+    user = UserModel.model_validate(
+        {"id": uuid.uuid4(), "email": "a@b.com", "tenant_id": str(tenant)}
+    )
     assert isinstance(user.tenant_id, uuid.UUID)
     assert user.tenant_id == tenant
 

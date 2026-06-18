@@ -153,6 +153,24 @@ init/dotenv/env/Vault chain is unchanged.
 - **Duplicate `CommonSettings.ALLOW_INTERNAL_HTTP` field definition** (introduced
   in Phase 1.3) collapsed to a single declaration — it tripped a `mypy`
   `no-redef` error. Behaviour is unchanged (same field, same `False` default).
+- **`SecurityHeadersSettings.ENVIRONMENT`** is now a read-only `@property` in the
+  structural protocol instead of a mutable attribute, so concrete settings whose
+  `ENVIRONMENT` is a `Literal[...]` subtype of `str` (e.g. `CommonSettings`)
+  satisfy it without a `mypy` attribute-variance conflict. Read-only; no runtime
+  or API change.
+- **Test suite is `mypy`-clean across `auth_sdk_m8` *and* `tests`** (previously
+  only the package was gated): added `None`/`Optional` narrowing for awaited
+  background tasks and `deserialize()`/secret accessors, switched UUID-coercion
+  tests to `UserModel.model_validate`, and `cast` the deliberately non-conforming
+  backward-compat stubs to the settings protocol.
+
+### Security
+
+- **Dependency security floors** (clears `pip-audit`):
+  - `cryptography>=48.0.1` (was `>=48.0.0`) — GHSA-537c-gmf6-5ccf.
+  - Added a `starlette>=1.3.1` floor to the `fastapi` / `observability` / `all`
+    extras — `fastapi` permits the vulnerable `>=0.46.0` transitively; excludes
+    CVE-2026-54282 / CVE-2026-54283. (Minimum floor only, no upper pin.)
 
 ---
 
