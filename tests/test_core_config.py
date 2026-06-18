@@ -6,13 +6,16 @@ from typing import ClassVar, Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic_settings import SettingsConfigDict
 
 from auth_sdk_m8.core.config import (
     CommonSettings,
     EnvProvider,
     SecretProvider,
     VaultProvider,
+    _build_file_secret_source,
     _build_vault_source,
+    _read_secret_file,
     check_config_health,
     parse_cors,
     settings_customise_sources,
@@ -22,6 +25,7 @@ from tests.conftest import (
     PROD_VALID_KEY,
     RSA_PRIVATE_PEM,
     RSA_PUBLIC_PEM,
+    VALID_PASSWORD,
     VALID_SETTINGS_KWARGS,
     IsolatedSettings,
 )
@@ -1373,6 +1377,89 @@ def test_build_vault_source_returns_callable() -> None:
     assert "ACCESS_SECRET_KEY" in result
 
 
+# ── *_FILE secret source (_read_secret_file / _build_file_secret_source) ───────
+
+
+def test_read_secret_file_returns_stripped_contents(tmp_path: Path) -> None:
+    secret = tmp_path / "db_password"
+    secret.write_text("  s3cret-value\n", encoding="utf-8")
+    assert _read_secret_file(str(secret), "DB_PASSWORD") == "s3cret-value"
+
+
+def test_read_secret_file_missing_raises(tmp_path: Path) -> None:
+    missing = tmp_path / "absent"
+    with pytest.raises(ValueError, match="DB_PASSWORD_FILE points to a missing file"):
+        _read_secret_file(str(missing), "DB_PASSWORD")
+
+
+def test_file_secret_source_maps_file_env_to_field(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    secret = tmp_path / "secret"
+    secret.write_text("file-sourced\n", encoding="utf-8")
+    monkeypatch.setenv("DB_PASSWORD_FILE", str(secret))
+    source = _build_file_secret_source(CommonSettings)
+    assert source() == {"DB_PASSWORD": "file-sourced"}
+
+
+def test_file_secret_source_empty_when_no_file_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DB_PASSWORD_FILE", raising=False)
+    source = _build_file_secret_source(CommonSettings)
+    assert source() == {}
+
+
+def test_file_secret_source_ignores_unknown_fields(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    secret = tmp_path / "secret"
+    secret.write_text("nope", encoding="utf-8")
+    monkeypatch.setenv("NOT_A_FIELD_FILE", str(secret))
+    source = _build_file_secret_source(CommonSettings)
+    assert source() == {}
+
+
+def test_file_secret_source_end_to_end_overrides_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A `*_FILE` mount overrides a plaintext env value for the same field."""
+    secret = tmp_path / "redis_password"
+    secret.write_text(f"{VALID_PASSWORD}\n", encoding="utf-8")
+
+    class FileSettings(CommonSettings):
+        model_config = SettingsConfigDict(env_file=None)
+
+    env = {**VALID_SETTINGS_KWARGS, "REDIS_PASSWORD": "WrongPlain1!"}
+    for key, value in env.items():
+        monkeypatch.setenv(key, str(value))
+    monkeypatch.setenv("REDIS_PASSWORD_FILE", str(secret))
+    monkeypatch.delenv("SECRET_PROVIDER", raising=False)
+
+    settings = FileSettings()  # type: ignore[call-arg]
+    assert settings.REDIS_PASSWORD is not None
+    assert settings.REDIS_PASSWORD.get_secret_value() == VALID_PASSWORD
+
+
+def test_file_secret_source_missing_file_fails_construction(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Pointing `*_FILE` at an absent file fails closed at settings construction."""
+
+    class FileSettings(CommonSettings):
+        model_config = SettingsConfigDict(env_file=None)
+
+    for key, value in VALID_SETTINGS_KWARGS.items():
+        monkeypatch.setenv(key, str(value))
+    monkeypatch.setenv("REDIS_PASSWORD_FILE", str(tmp_path / "absent"))
+    monkeypatch.delenv("SECRET_PROVIDER", raising=False)
+
+    with pytest.raises(
+        ValueError, match="REDIS_PASSWORD_FILE points to a missing file"
+    ):
+        FileSettings()  # type: ignore[call-arg]
+
+
 # ── CommonSettings.settings_customise_sources ─────────────────────────────────
 
 
@@ -1390,7 +1477,7 @@ def test_common_settings_customise_sources_no_vault(
         MagicMock(),
     )
 
-    assert len(sources) == 4
+    assert len(sources) == 5
 
 
 def test_common_settings_customise_sources_vault(
@@ -1413,7 +1500,7 @@ def test_common_settings_customise_sources_vault(
             MagicMock(),
         )
 
-    assert len(sources) == 5
+    assert len(sources) == 6
 
 
 def test_common_settings_customise_sources_vault_token_from_file(
@@ -1444,7 +1531,7 @@ def test_common_settings_customise_sources_vault_token_from_file(
             MagicMock(),
         )
 
-    assert len(sources) == 5
+    assert len(sources) == 6
 
 
 def test_common_settings_customise_sources_vault_no_addr(
@@ -1464,7 +1551,7 @@ def test_common_settings_customise_sources_vault_no_addr(
         MagicMock(),
     )
 
-    assert len(sources) == 4
+    assert len(sources) == 5
 
 
 # ── new OAuth / CORS validator string-parsing branches ───────────────────────

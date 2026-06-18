@@ -119,6 +119,35 @@ the live cache-invalidation path without ever exposing secrets.
 **Backward compatibility:** purely additive — no API or signature changes; the
 event-stream client works unchanged with or without the `observability` extra.
 
+### Secret-file (`*_FILE`) source support (Phase 6.1)
+
+`CommonSettings` now resolves the Docker/K8s `*_FILE` secret convention, so the
+production overlay can source runtime secrets from mounted files (Docker secrets
+/ SOPS / Vault agent / K8s) instead of inlining plaintext values into env files:
+
+- **`_build_file_secret_source(settings_cls)`** — a settings source wired into
+  `CommonSettings.settings_customise_sources`. For *any* declared field `FOO`,
+  if the environment defines `FOO_FILE` pointing at a readable file, the file's
+  stripped contents become the value of `FOO`. Field names are resolved from the
+  concrete settings subclass, so every secret a service declares
+  (`DB_PASSWORD_FILE`, `REDIS_PASSWORD_FILE`, `EVENT_SIGNING_KEY_FILE`, and any
+  service-specific secret such as `PRIVATE_API_SECRET_FILE`,
+  `SESSION_SECRET_FILE`, `TOKENS_ENCRYPTION_KEY_FILE`,
+  `MEDIA_INTERNAL_SERVICE_TOKEN_FILE`, …) is covered with no explicit allowlist.
+- **`_read_secret_file(path, field_name)`** — reads and strips the mounted file.
+  Fail-closed: a `*_FILE` variable pointing at a missing file raises at settings
+  construction (`<FIELD>_FILE points to a missing file`) rather than silently
+  falling back to a plaintext value. File contents are never logged.
+- **Source priority:** init kwargs > `*_FILE` secrets > `.env` > env vars >
+  pydantic secrets-dir > Vault. A mounted secret file therefore overrides a
+  plaintext value in `.env` or the process environment, while explicit
+  constructor kwargs still win (so tests and programmatic overrides are
+  unaffected).
+
+**Backward compatibility:** purely additive — services that set no `*_FILE`
+variables are unaffected; the new source returns nothing and the existing
+init/dotenv/env/Vault chain is unchanged.
+
 ### Fixed
 
 - **Duplicate `CommonSettings.ALLOW_INTERNAL_HTTP` field definition** (introduced

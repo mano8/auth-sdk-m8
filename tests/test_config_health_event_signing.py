@@ -14,7 +14,6 @@ from auth_sdk_m8.core.config_health import (
 from auth_sdk_m8.core.exceptions import ConfigurationError
 from tests.conftest import VALID_SETTINGS_KWARGS, IsolatedSettings
 
-
 # ── CommonSettings event-signing fields ──────────────────────────────────────
 
 

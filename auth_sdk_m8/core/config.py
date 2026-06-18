@@ -126,6 +126,51 @@ def _build_vault_source(vault_addr: str, vault_token: str) -> Any:
     return _vault_source
 
 
+def _read_secret_file(path_str: str, field_name: str) -> str:
+    """Return the stripped contents of a `*_FILE` secret mount.
+
+    Args:
+        path_str: Filesystem path taken from the ``<FIELD>_FILE`` env var.
+        field_name: Owning settings field, used only for error messages.
+
+    Raises:
+        ValueError: The path does not point at a readable file (fail-closed —
+            a missing secret file is a deployment misconfiguration, never a
+            silent fallback to a plaintext value).
+    """
+    path = Path(path_str)
+    if not path.is_file():
+        raise ValueError(
+            f"{field_name}_FILE points to a missing file: {path}. "
+            "Mount the secret file or unset the *_FILE variable."
+        )
+    return path.read_text(encoding="utf-8").strip()
+
+
+def _build_file_secret_source(settings_cls: type[BaseSettings]) -> Any:
+    """Return a settings source implementing the Docker/K8s `*_FILE` convention.
+
+    For any model field ``FOO``, if the environment defines ``FOO_FILE`` pointing
+    at a readable file, the file's stripped contents become the value of ``FOO``.
+    This lets the production overlay mount secrets under ``/run/secrets/*`` (Docker
+    secrets / SOPS / Vault agent / K8s) instead of inlining plaintext values into
+    env files. Field names are resolved once from the concrete settings subclass,
+    so every secret declared by a service is covered without an explicit allowlist.
+    File contents are never logged.
+    """
+    field_names = frozenset(settings_cls.model_fields)
+
+    def _file_secret_source(_settings: Any = None) -> Dict[str, Any]:
+        values: Dict[str, Any] = {}
+        for field_name in field_names:
+            path_str = getenv(f"{field_name}_FILE")
+            if path_str:
+                values[field_name] = _read_secret_file(path_str, field_name)
+        return values
+
+    return _file_secret_source
+
+
 def parse_cors(value: str) -> List[str]:
     """Parse a comma-separated CORS origins string into a validated list.
 
@@ -882,9 +927,16 @@ class CommonSettings(BaseSettings):
         dotenv_settings: Any,
         file_secret_settings: Any,
     ) -> "Tuple[Any, ...]":
-        """Source priority: init kwargs > .env file > env vars > Docker secrets > Vault."""
+        """Source priority: init kwargs > *_FILE secrets > .env > env > secrets-dir > Vault.
+
+        The ``*_FILE`` source is placed directly below init kwargs so a mounted
+        secret file overrides a plaintext value in ``.env`` or the process
+        environment — the production overlay sources secrets from files, not from
+        inlined env values — while explicit constructor kwargs (tests) still win.
+        """
         sources: list[Any] = [
             init_settings,
+            _build_file_secret_source(_settings_cls),
             dotenv_settings,
             env_settings,
             file_secret_settings,
