@@ -7,6 +7,59 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 
+### Security hardening — startup config health checks (Phases 1.0, 1.2, 1.3)
+
+**Phase 1.0 — baseline security-validator regression tests**
+
+Codifies the existing security invariants in `CommonSettings` as an explicit
+regression suite (`tests/test_validator_baselines.py`) so they cannot silently
+regress across future changes:
+
+- All `secret_fields` reject the literal `changethis` placeholder at validation
+  time.
+- Password fields (`DB_PASSWORD`, `REDIS_PASSWORD`) enforce `PASSWORD_REGEX`
+  (8+ chars, upper, lower, digit, special, no spaces).
+- Secret-key fields (`ACCESS_SECRET_KEY`, `REFRESH_SECRET_KEY`) enforce
+  `SECRET_KEY_REGEX` (32+ chars, upper, lower, digit, non-alphanumeric).
+- `EVENT_SIGNING_ENABLED=true` requires a strong `EVENT_SIGNING_KEY` at boot.
+- `TOKEN_STRICT_VALIDATION=true` requires both `TOKEN_ISSUER` and
+  `TOKEN_AUDIENCE` at boot (fail-closed; missing either raises at model
+  validation time).
+- Error messages are operator-actionable: they name the failing field and state
+  the fix.
+
+No production code changes in this phase.
+
+**Phase 1.2 — `ALLOWED_HOSTS` field and production host-header gate**
+
+- **`CommonSettings.ALLOWED_HOSTS`** (`Optional[List[str]]`, default `None`) —
+  comma-separated or list-valued; intended as the allowlist for Starlette
+  `TrustedHostMiddleware`. An empty string or empty list normalises to `None`.
+- **`_check_allowed_hosts_config()`** in `config_health.py` — called by
+  `check_config_health()` at startup:
+  - `ALLOWED_HOSTS` not configured in production: warning (operators should
+    restrict Host headers).
+  - `ALLOWED_HOSTS` not configured under `STRICT_PRODUCTION_MODE`: fatal
+    (`ConfigurationError`).
+  - `ALLOWED_HOSTS` contains `'*'` under `STRICT_PRODUCTION_MODE`: fatal.
+  - Non-prod, non-strict, or explicitly configured hosts: no-op.
+  - Settings type without the attribute is a no-op (backward-compatible).
+
+**Phase 1.3 — `ALLOW_INTERNAL_HTTP` field and inter-service http:// URL gate**
+
+- **`CommonSettings.ALLOW_INTERNAL_HTTP`** (`bool`, default `False`) —
+  break-glass opt-in for services where `JWKS_URI` / `INTROSPECTION_URL` point
+  at plain `http://` because all traffic is confined to a trusted internal
+  Docker network.
+- **`_check_internal_url_config()`** in `config_health.py` — called by
+  `check_config_health()` at startup for `JWKS_URI` and `INTROSPECTION_URL`:
+  - `local` / `development` environments: always allowed (Docker bridge).
+  - `ALLOW_INTERNAL_HTTP=true`: exempt regardless of environment.
+  - `staging` / `production` + `http://`: warning.
+  - `staging` / `production` + `http://` + `STRICT_PRODUCTION_MODE`: fatal
+    (`ConfigurationError`).
+  - `https://` or field not set: always passes.
+
 ---
 
 ## [1.5.0] — 2026-06-17 · `/ping` reachable behind a prefix-routing proxy
