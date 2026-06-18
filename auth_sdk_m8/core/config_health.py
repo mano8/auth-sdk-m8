@@ -225,6 +225,46 @@ def _check_token_boundary_config(
     return fatal, warnings
 
 
+_internal_url_fields: tuple[str, ...] = ("JWKS_URI", "INTROSPECTION_URL")
+
+
+def _check_internal_url_config(
+    settings: _SettingsProto,
+    environment: str,
+    strict: bool,
+) -> tuple[list[str], list[str]]:
+    """Warn or fail when inter-service URLs use plain http:// in production.
+
+    Rules (applied to JWKS_URI and INTROSPECTION_URL):
+    - local/development → always allowed (internal Docker bridge, no-op).
+    - ALLOW_INTERNAL_HTTP=true → break-glass opt-in; allowed in any env.
+    - staging/production + http:// → warning.
+    - staging/production + http:// + strict → fatal.
+    - https:// or field not set → always passes.
+    """
+    if environment not in {"staging", "production"}:
+        return [], []
+    if getattr(settings, "ALLOW_INTERNAL_HTTP", False):
+        return [], []
+    fatal: list[str] = []
+    warnings: list[str] = []
+    for field in _internal_url_fields:
+        val = getattr(settings, field, None)
+        if not val:
+            continue
+        url_str = str(val)
+        if not url_str.startswith("http://"):
+            continue
+        msg = (
+            f"CONFIG: {field}={url_str!r} uses plain http:// in "
+            f"ENVIRONMENT={environment!r} — use https:// for inter-service "
+            "calls, or set ALLOW_INTERNAL_HTTP=true if all traffic is "
+            "confined to a trusted internal Docker network."
+        )
+        (fatal if strict else warnings).append(msg)
+    return fatal, warnings
+
+
 def _check_allowed_hosts_config(
     settings: _SettingsProto,
     environment: str,
@@ -305,6 +345,7 @@ def check_config_health(
     - STRICT_PRODUCTION_MODE: SESSION_COOKIE_SECURE=false outside local (fatal)
     - ALLOWED_HOSTS empty/unset in production (warning) or strict mode (fatal)
     - ALLOWED_HOSTS wildcard '*' under strict mode (fatal)
+    - JWKS_URI / INTROSPECTION_URL using http:// in prod/strict (warning/fatal)
     """
     strict: bool = getattr(settings, "STRICT_PRODUCTION_MODE", False)
     algo = settings.ACCESS_TOKEN_ALGORITHM
@@ -325,6 +366,7 @@ def check_config_health(
     w6 = _check_rate_limit_config(settings)
     f7, w7 = _check_token_boundary_config(settings, environment, strict)
     f8, w8 = _check_allowed_hosts_config(settings, environment, strict)
+    f9, w9 = _check_internal_url_config(settings, environment, strict)
 
     warnings: list[str] = []
     warnings.extend(w1)
@@ -333,7 +375,8 @@ def check_config_health(
     warnings.extend(w6)
     warnings.extend(w7)
     warnings.extend(w8)
-    fatal_errors = f1 + f2 + f3 + f4 + f5 + f7 + f8
+    warnings.extend(w9)
+    fatal_errors = f1 + f2 + f3 + f4 + f5 + f7 + f8 + f9
 
     for warning in warnings:
         logger.warning(warning)

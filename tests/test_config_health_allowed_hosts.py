@@ -8,10 +8,12 @@ Covers:
 
 import pytest
 
-from auth_sdk_m8.core.config_health import _check_allowed_hosts_config, check_config_health
+from auth_sdk_m8.core.config_health import (
+    _check_allowed_hosts_config,
+    check_config_health,
+)
 from auth_sdk_m8.core.exceptions import ConfigurationError
 from tests.conftest import VALID_SETTINGS_KWARGS, IsolatedSettings
-
 
 # ── CommonSettings.ALLOWED_HOSTS field / parse_allowed_hosts ─────────────────
 

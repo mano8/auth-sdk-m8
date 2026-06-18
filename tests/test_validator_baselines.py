@@ -22,7 +22,6 @@ import pytest
 
 from tests.conftest import VALID_SETTINGS_KWARGS, IsolatedSettings
 
-
 # ── changethis / placeholder rejection ───────────────────────────────────────
 # All four secret_fields must refuse the insecure-default placeholder.  The
 # specific error message varies (regex check fires before the insecure-default
