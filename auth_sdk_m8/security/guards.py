@@ -41,7 +41,7 @@ from typing import Callable
 from fastapi import HTTPException, Request, status
 
 #: Default header the m8 trio uses for the inter-service shared secret.
-INTERNAL_TOKEN_HEADER = "X-Internal-Token"
+INTERNAL_TOKEN_HEADER = "X-Internal-Token"  # nosec B105 — header name, not a secret value
 #: Prefix (case-insensitive) of an ``Authorization: Bearer <token>`` header.
 _BEARER_PREFIX = "bearer "
 

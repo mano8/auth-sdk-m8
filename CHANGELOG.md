@@ -9,7 +9,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ### Security hardening — startup config health checks (Phases 1.0, 1.2, 1.3)
 
-**Phase 1.0 — baseline security-validator regression tests**
+#### Phase 1.0 — baseline security-validator regression tests
 
 Codifies the existing security invariants in `CommonSettings` as an explicit
 regression suite (`tests/test_validator_baselines.py`) so they cannot silently
@@ -30,7 +30,7 @@ regress across future changes:
 
 No production code changes in this phase.
 
-**Phase 1.2 — `ALLOWED_HOSTS` field and production host-header gate**
+#### Phase 1.2 — `ALLOWED_HOSTS` field and production host-header gate
 
 - **`CommonSettings.ALLOWED_HOSTS`** (`Optional[List[str]]`, default `None`) —
   comma-separated or list-valued; intended as the allowlist for Starlette
@@ -45,7 +45,7 @@ No production code changes in this phase.
   - Non-prod, non-strict, or explicitly configured hosts: no-op.
   - Settings type without the attribute is a no-op (backward-compatible).
 
-**Phase 1.3 — `ALLOW_INTERNAL_HTTP` field and inter-service http:// URL gate**
+#### Phase 1.3 — `ALLOW_INTERNAL_HTTP` field and inter-service http:// URL gate
 
 - **`CommonSettings.ALLOW_INTERNAL_HTTP`** (`bool`, default `False`) —
   break-glass opt-in for services where `JWKS_URI` / `INTROSPECTION_URL` point
@@ -60,7 +60,7 @@ No production code changes in this phase.
     (`ConfigurationError`).
   - `https://` or field not set: always passes.
 
-**Phase 1.4 — shared app-layer guards for `/metrics` and deep `/health`**
+#### Phase 1.4 — shared app-layer guards for `/metrics` and deep `/health`
 
 New `auth_sdk_m8.security.guards` module (requires the `fastapi` extra, like
 `security.headers`). Provides proxy-independent app-layer primitives so the
