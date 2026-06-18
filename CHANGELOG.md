@@ -60,6 +60,41 @@ No production code changes in this phase.
     (`ConfigurationError`).
   - `https://` or field not set: always passes.
 
+**Phase 1.4 — shared app-layer guards for `/metrics` and deep `/health`**
+
+New `auth_sdk_m8.security.guards` module (requires the `fastapi` extra, like
+`security.headers`). Provides proxy-independent app-layer primitives so the
+guarantee for sensitive operational surfaces survives a reverse-proxy swap or
+misconfiguration — proxy route-hiding stays defense-in-depth, not the primary
+control. `fa-auth-m8` and `fastapi-m8` consume these instead of each
+re-deriving its own `X-Internal-Token` comparison:
+
+- **`compare_secret(provided, expected)`** — `None`/empty-safe, constant-time
+  secret comparison (`secrets.compare_digest`). A missing header or unset
+  secret yields `False` rather than a spurious empty-string match.
+- **`extract_bearer_token(request)`** — parses `Authorization: Bearer <token>`
+  (case-insensitive scheme); returns `None` when absent, wrong-scheme, or empty.
+- **`make_internal_token_authorizer(secret, *, header_name="X-Internal-Token")`**
+  — builds a `(Request) -> bool` **predicate** for *detail gating*: deep
+  `/health` answers shallow status to everyone and reveals the detail body only
+  when the predicate is `True`. Fail-closed — an unset secret never authorizes.
+- **`make_scrape_credential_guard(credential)`** — builds a `(Request) -> None`
+  FastAPI **dependency** for `/metrics`: when *credential* is unset the route is
+  network-gated only (no-op); when set, the request must present a matching
+  `Authorization: Bearer` credential or receive `401` with a
+  `WWW-Authenticate: Bearer` challenge. A deliberately long-lived static
+  credential (maps to Prometheus `authorization` in `scrape_configs`); short-TTL
+  tokens are not forced here.
+
+**Backward compatibility:** purely additive — a new optional-`fastapi` submodule;
+no existing import path or signature changes.
+
+### Fixed
+
+- **Duplicate `CommonSettings.ALLOW_INTERNAL_HTTP` field definition** (introduced
+  in Phase 1.3) collapsed to a single declaration — it tripped a `mypy`
+  `no-redef` error. Behaviour is unchanged (same field, same `False` default).
+
 ---
 
 ## [1.5.0] — 2026-06-17 · `/ping` reachable behind a prefix-routing proxy

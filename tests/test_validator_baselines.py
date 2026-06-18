@@ -75,12 +75,12 @@ def test_insecure_default_branch_is_operator_actionable() -> None:
 @pytest.mark.parametrize(
     "field,weak",
     [
-        ("DB_PASSWORD", "tooshort"),      # < 8 chars
+        ("DB_PASSWORD", "tooshort"),  # < 8 chars
         ("DB_PASSWORD", "alllowercase1!"),  # no upper
-        ("DB_PASSWORD", "ALLUPPER1!"),    # no lower
+        ("DB_PASSWORD", "ALLUPPER1!"),  # no lower
         ("DB_PASSWORD", "NoDigitHere!"),  # no digit
-        ("DB_PASSWORD", "NoSpecial1"),    # no special char
-        ("REDIS_PASSWORD", "weak"),       # fails on length too
+        ("DB_PASSWORD", "NoSpecial1"),  # no special char
+        ("REDIS_PASSWORD", "weak"),  # fails on length too
     ],
 )
 def test_weak_password_rejected(field: str, weak: str) -> None:
@@ -104,8 +104,11 @@ def test_password_error_mentions_requirements() -> None:
     "field,weak",
     [
         ("ACCESS_SECRET_KEY", "short"),
-        ("ACCESS_SECRET_KEY", "a" * 32),          # long but no upper/digit/special
-        ("ACCESS_SECRET_KEY", "MixedCase1234567890123456789012"),  # 31 chars, missing special
+        ("ACCESS_SECRET_KEY", "a" * 32),  # long but no upper/digit/special
+        (
+            "ACCESS_SECRET_KEY",
+            "MixedCase1234567890123456789012",
+        ),  # 31 chars, missing special
         ("REFRESH_SECRET_KEY", "short"),
         ("REFRESH_SECRET_KEY", "alllowercase1234567890no-special"),  # no upper/special
     ],

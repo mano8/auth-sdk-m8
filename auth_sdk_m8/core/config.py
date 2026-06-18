@@ -451,17 +451,12 @@ class CommonSettings(BaseSettings):
     # When true, warnings that indicate production security risks become fatal
     # errors, aborting startup.  Recommended for staging/production CI gates.
     STRICT_PRODUCTION_MODE: bool = False
-    # When true, service-to-service URLs (JWKS_URI, INTROSPECTION_URL) may use
-    # plain http:// even in production/strict mode.  Intended only for trusted
-    # internal networks (e.g. a single Docker host where all traffic stays on a
-    # private bridge network).  Defaults False: http:// URLs warn in prod and
-    # are fatal under STRICT unless this opt-in is set.
-    ALLOW_INTERNAL_HTTP: bool = False
     # Break-glass flag: allow plain http:// on inter-service URL fields (JWKS_URI,
-    # INTROSPECTION_URL) even in staging/production.  Intended for single-host
-    # Docker deployments where all traffic stays on an internal Docker network.
-    # Documenting that http:// is acceptable for your topology here opts the
-    # runtime health check out of the http:// warning.  Ignored in local/dev.
+    # INTROSPECTION_URL) even in staging/production.  Intended only for trusted
+    # single-host Docker deployments where all traffic stays on a private bridge
+    # network.  Defaults False: http:// URLs warn in prod and are fatal under
+    # STRICT unless this opt-in is set; setting it opts the runtime health check
+    # out of the http:// warning.  Ignored in local/dev (http:// always allowed).
     ALLOW_INTERNAL_HTTP: bool = False
     # Controls the Secure flag on session cookies (Starlette SessionMiddleware
     # https_only parameter).  Defaults True; only set False in local/dev.

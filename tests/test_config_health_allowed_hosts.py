@@ -96,8 +96,10 @@ class _H:
 
 def test_no_attr_is_noop() -> None:
     """Settings without ALLOWED_HOSTS attribute → no-op (backward-compat)."""
+
     class _NoAttr:
         pass
+
     fatal, warnings = _check_allowed_hosts_config(_NoAttr(), "production", True)
     assert fatal == []
     assert warnings == []
