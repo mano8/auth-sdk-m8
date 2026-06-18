@@ -46,7 +46,14 @@ class SecurityHeadersSettings(Protocol):
     concrete settings class.
     """
 
-    ENVIRONMENT: str
+    # Read-only property (not a plain attribute) so concrete settings whose
+    # ENVIRONMENT is a Literal subtype of str still satisfy the protocol — a
+    # mutable attribute is invariant and would reject the narrower type.
+    @property
+    def ENVIRONMENT(self) -> str:
+        """Deployment environment (e.g. ``local``, ``production``)."""
+        ...
+
     STRICT_PRODUCTION_MODE: bool
     SECURITY_HEADERS_ENABLED: bool
     HSTS_ENABLED: bool

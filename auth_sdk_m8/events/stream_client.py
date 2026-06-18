@@ -22,6 +22,21 @@ from auth_sdk_m8.redis_events._signing import deserialize
 
 logger = logging.getLogger(__name__)
 
+
+def _get_metrics():
+    """Return the observability metrics container, or ``None`` when unavailable.
+
+    Observability is an optional extra (``auth-sdk-m8[observability]``); the
+    event-stream client must keep working without it, so the import is guarded
+    and metric emission is best-effort. Never raises.
+    """
+    try:
+        from auth_sdk_m8.observability.metrics import get
+    except ImportError:  # observability extra not installed
+        return None
+    return get()
+
+
 # SSE stream endpoint suffix, appended to the private-API base URL.
 # INTROSPECTION_URL example: http://fa-auth:8000/private/v1/jti-status
 # → strip /jti-status → http://fa-auth:8000/private/v1 → + /events/stream
@@ -139,6 +154,36 @@ class AuthEventStreamClient:
                 pass
         self._task = None
 
+    # ── observability (best-effort; no secrets are ever logged or labelled) ────
+
+    def _set_connected(self, connected: bool) -> None:
+        """Record the SSE connection state (1 connected / 0 disconnected)."""
+        m = _get_metrics()
+        if m is None or m.event_stream_connected is None:
+            return
+        m.event_stream_connected.set(1 if connected else 0)
+
+    def _note_reconnect(self) -> None:
+        """Count a disconnect that triggers a reconnect."""
+        m = _get_metrics()
+        if m is None or m.event_stream_reconnects_total is None:
+            return
+        m.event_stream_reconnects_total.inc()
+
+    def _note_gap(self) -> None:
+        """Count an unresumable gap that forces a local cache flush."""
+        m = _get_metrics()
+        if m is None or m.event_stream_gap_total is None:
+            return
+        m.event_stream_gap_total.inc()
+
+    def _note_event(self, event_type: str, result: str) -> None:
+        """Count a received frame by outcome (delivered / dropped_*)."""
+        m = _get_metrics()
+        if m is None or m.event_stream_events_total is None:
+            return
+        m.event_stream_events_total.labels(event_type=event_type, result=result).inc()
+
     # ── internal ──────────────────────────────────────────────────────────────
 
     async def _run(self) -> None:
@@ -156,6 +201,7 @@ class AuthEventStreamClient:
                     exc,
                     backoff,
                 )
+            self._note_reconnect()
             jitter = (
                 backoff * _BACKOFF_JITTER * (secrets.randbelow(2001) / 1000.0 - 1.0)
             )
@@ -179,7 +225,12 @@ class AuthEventStreamClient:
         ) as client:
             async with client.stream("GET", self._url) as response:
                 response.raise_for_status()
-                await self._read_sse(response)
+                self._set_connected(True)
+                logger.info("auth.event_stream connected url=%s", self._url)
+                try:
+                    await self._read_sse(response)
+                finally:
+                    self._set_connected(False)
 
     async def _read_sse(self, response: httpx.Response) -> None:
         """Parse SSE lines and dispatch events."""
@@ -222,6 +273,10 @@ class AuthEventStreamClient:
         if event_type == "gap":
             # Server signals unresumable gap — caller must flush caches.
             self._last_event_id = None
+            self._note_gap()
+            logger.info(
+                "auth.event_stream gap signalled — flushing local revocation cache"
+            )
             try:
                 await self._on_gap()
             except Exception:
@@ -231,12 +286,14 @@ class AuthEventStreamClient:
         try:
             payload = deserialize(raw_data, self._signing_key)
         except Exception:
+            self._note_event(event_type, "dropped_malformed")
             logger.warning(
                 "auth.event_stream dropping event=%s reason=malformed_data",
                 event_type,
             )
             return
         if payload is None:
+            self._note_event(event_type, "dropped_sig_fail")
             logger.warning(
                 "auth.event_stream dropping event=%s reason=sig_verify_failed",
                 event_type,
@@ -251,6 +308,7 @@ class AuthEventStreamClient:
             payload=payload,
             event_id=event_id,
         )
+        self._note_event(event_type, "delivered")
         try:
             await self._on_event(event)
         except Exception:

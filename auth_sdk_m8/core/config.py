@@ -126,6 +126,51 @@ def _build_vault_source(vault_addr: str, vault_token: str) -> Any:
     return _vault_source
 
 
+def _read_secret_file(path_str: str, field_name: str) -> str:
+    """Return the stripped contents of a `*_FILE` secret mount.
+
+    Args:
+        path_str: Filesystem path taken from the ``<FIELD>_FILE`` env var.
+        field_name: Owning settings field, used only for error messages.
+
+    Raises:
+        ValueError: The path does not point at a readable file (fail-closed —
+            a missing secret file is a deployment misconfiguration, never a
+            silent fallback to a plaintext value).
+    """
+    path = Path(path_str)
+    if not path.is_file():
+        raise ValueError(
+            f"{field_name}_FILE points to a missing file: {path}. "
+            "Mount the secret file or unset the *_FILE variable."
+        )
+    return path.read_text(encoding="utf-8").strip()
+
+
+def _build_file_secret_source(settings_cls: type[BaseSettings]) -> Any:
+    """Return a settings source implementing the Docker/K8s `*_FILE` convention.
+
+    For any model field ``FOO``, if the environment defines ``FOO_FILE`` pointing
+    at a readable file, the file's stripped contents become the value of ``FOO``.
+    This lets the production overlay mount secrets under ``/run/secrets/*`` (Docker
+    secrets / SOPS / Vault agent / K8s) instead of inlining plaintext values into
+    env files. Field names are resolved once from the concrete settings subclass,
+    so every secret declared by a service is covered without an explicit allowlist.
+    File contents are never logged.
+    """
+    field_names = frozenset(settings_cls.model_fields)
+
+    def _file_secret_source(_settings: Any = None) -> Dict[str, Any]:
+        values: Dict[str, Any] = {}
+        for field_name in field_names:
+            path_str = getenv(f"{field_name}_FILE")
+            if path_str:
+                values[field_name] = _read_secret_file(path_str, field_name)
+        return values
+
+    return _file_secret_source
+
+
 def parse_cors(value: str) -> List[str]:
     """Parse a comma-separated CORS origins string into a validated list.
 
@@ -294,6 +339,25 @@ class CommonSettings(BaseSettings):
     # Only chrome-extension:// is supported; custom schemes require custom impl.
     CORS_ALLOWED_ORIGIN_SCHEMES: List[str] = []
 
+    # ── Trusted hosts ─────────────────────────────────────────────────────────
+    # Allowlist of Host header values accepted by Starlette's
+    # TrustedHostMiddleware.  None (default) disables host checking — operators
+    # must set this in production.  Comma-separated when sourced from env.
+    # Examples: "example.com,www.example.com" (prod), "localhost" (local),
+    # "testserver" (test client).
+    ALLOWED_HOSTS: Optional[List[str]] = None
+
+    @field_validator("ALLOWED_HOSTS", mode="before")
+    @classmethod
+    def parse_allowed_hosts(cls, v: object) -> Optional[List[str]]:
+        """Parse comma-separated allowed hosts from env."""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            hosts = [h.strip() for h in v.split(",") if h.strip()]
+            return hosts if hosts else None
+        return list(v) if v else None  # type: ignore[call-overload]
+
     @field_validator("CORS_ALLOWED_ORIGIN_SCHEMES", mode="before")
     @classmethod
     def parse_cors_origin_schemes(cls, v: object) -> List[str]:
@@ -432,6 +496,13 @@ class CommonSettings(BaseSettings):
     # When true, warnings that indicate production security risks become fatal
     # errors, aborting startup.  Recommended for staging/production CI gates.
     STRICT_PRODUCTION_MODE: bool = False
+    # Break-glass flag: allow plain http:// on inter-service URL fields (JWKS_URI,
+    # INTROSPECTION_URL) even in staging/production.  Intended only for trusted
+    # single-host Docker deployments where all traffic stays on a private bridge
+    # network.  Defaults False: http:// URLs warn in prod and are fatal under
+    # STRICT unless this opt-in is set; setting it opts the runtime health check
+    # out of the http:// warning.  Ignored in local/dev (http:// always allowed).
+    ALLOW_INTERNAL_HTTP: bool = False
     # Controls the Secure flag on session cookies (Starlette SessionMiddleware
     # https_only parameter).  Defaults True; only set False in local/dev.
     SESSION_COOKIE_SECURE: bool = True
@@ -856,9 +927,16 @@ class CommonSettings(BaseSettings):
         dotenv_settings: Any,
         file_secret_settings: Any,
     ) -> "Tuple[Any, ...]":
-        """Source priority: init kwargs > .env file > env vars > Docker secrets > Vault."""
+        """Source priority: init kwargs > *_FILE secrets > .env > env > secrets-dir > Vault.
+
+        The ``*_FILE`` source is placed directly below init kwargs so a mounted
+        secret file overrides a plaintext value in ``.env`` or the process
+        environment — the production overlay sources secrets from files, not from
+        inlined env values — while explicit constructor kwargs (tests) still win.
+        """
         sources: list[Any] = [
             init_settings,
+            _build_file_secret_source(_settings_cls),
             dotenv_settings,
             env_settings,
             file_secret_settings,

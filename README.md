@@ -330,6 +330,12 @@ Checks performed:
 | `AUTH_SERVICE_ROLE=consumer` + `TOKEN_MODE=stateless` + `DB_HOST` set | warning |
 | `STRICT_PRODUCTION_MODE=true` with wildcard `*` in `ALLOWED_ORIGINS` | **fatal** |
 | `STRICT_PRODUCTION_MODE=true` with `SESSION_COOKIE_SECURE=false` outside `local` | **fatal** |
+| `ENVIRONMENT=production` with `TOKEN_ISSUER` or `TOKEN_AUDIENCE` unset | warning (fatal under `STRICT_PRODUCTION_MODE`) |
+| `ALLOWED_HOSTS` not configured in `ENVIRONMENT=production` | warning |
+| `ALLOWED_HOSTS` not configured under `STRICT_PRODUCTION_MODE` | **fatal** |
+| `ALLOWED_HOSTS` contains wildcard `'*'` under `STRICT_PRODUCTION_MODE` | **fatal** |
+| `JWKS_URI` / `INTROSPECTION_URL` using `http://` in `staging`/`production` | warning (fatal under `STRICT_PRODUCTION_MODE`) |
+| `JWKS_URI` / `INTROSPECTION_URL` using `http://` with `ALLOW_INTERNAL_HTTP=true` | allowed (break-glass opt-in) |
 
 ---
 
@@ -584,6 +590,9 @@ What strict mode adds on top of the base `check_config_health` checks:
 - Wildcard `*` in `ALLOWED_ORIGINS` → **fatal**
 - `SESSION_COOKIE_SECURE=false` outside `ENVIRONMENT=local` → **fatal**
 - `TOKEN_ISSUER` or `TOKEN_AUDIENCE` not set in production → **fatal** (base: warning)
+- `ALLOWED_HOSTS` not configured → **fatal** (base: warning in production only)
+- `ALLOWED_HOSTS` contains wildcard `'*'` → **fatal**
+- `JWKS_URI` / `INTROSPECTION_URL` using `http://` in `staging`/`production` → **fatal** (base: warning; bypass with `ALLOW_INTERNAL_HTTP=true`)
 
 ---
 
@@ -661,6 +670,8 @@ for Chrome extensions or native-app OAuth clients.
 | `OAUTH_ALLOWED_REDIRECT_SCHEMES` | `["chrome-extension://"]` | URI schemes accepted as `redirect_target` at the login-URL endpoint. `http://` and `https://` are always hard-rejected regardless of this list. |
 | `OAUTH_ALLOWED_REDIRECT_PREFIXES` | `[]` | Optional full-URI allowlist for operator-controlled extension binding. Empty = open public-client model (any extension with the correct scheme). |
 | `CORS_ALLOWED_ORIGIN_SCHEMES` | `[]` | URI scheme prefixes allowed as `Origin` in CORS preflight requests. Required for Chrome extension `fetch()` calls. |
+| `ALLOWED_HOSTS` | `None` | Comma-separated list of accepted `Host` header values for Starlette `TrustedHostMiddleware`. `None` disables host-header checking. Checked at startup by `check_config_health`: missing in production → warning; missing under `STRICT_PRODUCTION_MODE` or containing `'*'` under strict → fatal. |
+| `ALLOW_INTERNAL_HTTP` | `False` | Break-glass opt-in: allow `JWKS_URI` and `INTROSPECTION_URL` to use plain `http://` in staging/production when all inter-service traffic is confined to a trusted internal Docker network. Without this flag, `http://` in those fields produces a warning in staging/production and a fatal in strict mode. |
 
 Both settings accept comma-separated strings from env vars:
 

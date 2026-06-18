@@ -225,6 +225,119 @@ def _check_token_boundary_config(
     return fatal, warnings
 
 
+_internal_url_fields: tuple[str, ...] = ("JWKS_URI", "INTROSPECTION_URL")
+
+
+def _check_internal_url_config(
+    settings: _SettingsProto,
+    environment: str,
+    strict: bool,
+) -> tuple[list[str], list[str]]:
+    """Warn or fail when inter-service URLs use plain http:// in production.
+
+    Rules (applied to JWKS_URI and INTROSPECTION_URL):
+    - local/development → always allowed (internal Docker bridge, no-op).
+    - ALLOW_INTERNAL_HTTP=true → break-glass opt-in; allowed in any env.
+    - staging/production + http:// → warning.
+    - staging/production + http:// + strict → fatal.
+    - https:// or field not set → always passes.
+    """
+    if environment not in {"staging", "production"}:
+        return [], []
+    if getattr(settings, "ALLOW_INTERNAL_HTTP", False):
+        return [], []
+    fatal: list[str] = []
+    warnings: list[str] = []
+    for field in _internal_url_fields:
+        val = getattr(settings, field, None)
+        if not val:
+            continue
+        url_str = str(val)
+        if not url_str.startswith("http://"):
+            continue
+        msg = (
+            f"CONFIG: {field}={url_str!r} uses plain http:// in "
+            f"ENVIRONMENT={environment!r} — use https:// for inter-service "
+            "calls, or set ALLOW_INTERNAL_HTTP=true if all traffic is "
+            "confined to a trusted internal Docker network."
+        )
+        (fatal if strict else warnings).append(msg)
+    return fatal, warnings
+
+
+def _check_allowed_hosts_config(
+    settings: _SettingsProto,
+    environment: str,
+    strict: bool,
+) -> tuple[list[str], list[str]]:
+    """Gate ALLOWED_HOSTS for production/strict environments.
+
+    Rules:
+    - Settings type without the attribute → no-op (backward-compatible).
+    - local + not strict → no-op regardless of value.
+    - prod + empty/None → warning (operator should restrict Host headers).
+    - strict + empty/None → fatal.
+    - strict + ``"*"`` in list → fatal (wildcard defeats the control).
+    """
+    if not hasattr(settings, "ALLOWED_HOSTS"):
+        return [], []
+    hosts: list[str] = getattr(settings, "ALLOWED_HOSTS") or []
+    fatal: list[str] = []
+    warnings: list[str] = []
+    is_prod = environment == "production"
+    if strict and "*" in hosts:
+        fatal.append(
+            "CONFIG: ALLOWED_HOSTS contains a wildcard ('*') under "
+            "STRICT_PRODUCTION_MODE — specify explicit host names instead."
+        )
+    if not hosts and (strict or is_prod):
+        msg = (
+            "CONFIG: ALLOWED_HOSTS is not configured — "
+            "set ALLOWED_HOSTS to restrict accepted Host headers in production."
+        )
+        (fatal if strict else warnings).append(msg)
+    return fatal, warnings
+
+
+def _check_event_signing_config(
+    settings: _SettingsProto,
+    environment: str,
+    strict: bool,
+) -> tuple[list[str], list[str]]:
+    """Gate event-signing rollout flags.
+
+    Rules:
+    - Settings without EVENT_SIGNING_ENABLED → no-op (backward-compatible).
+    - EVENT_SIGNING_ENABLED=false + strict → fatal.
+    - EVENT_SIGNING_ENABLED=false + non-strict → warning.
+    - EVENT_SIGNING_ACCEPT_UNSIGNED=true + production or strict → fatal.
+    - EVENT_SIGNING_ACCEPT_UNSIGNED=true + non-prod/non-strict → warning.
+    """
+    if not hasattr(settings, "EVENT_SIGNING_ENABLED"):
+        return [], []
+    signing_enabled: bool = getattr(settings, "EVENT_SIGNING_ENABLED", True)
+    accept_unsigned: bool = getattr(settings, "EVENT_SIGNING_ACCEPT_UNSIGNED", False)
+    fatal: list[str] = []
+    warnings: list[str] = []
+    if not signing_enabled:
+        msg = (
+            "CONFIG: EVENT_SIGNING_ENABLED=false — "
+            "event payloads are not authenticated; any subscriber can inject "
+            "or replay arbitrary events. "
+            "Enable signing for all production deployments."
+        )
+        (fatal if strict else warnings).append(msg)
+    if accept_unsigned:
+        is_prod = environment == "production"
+        msg = (
+            "CONFIG: EVENT_SIGNING_ACCEPT_UNSIGNED=true — "
+            "unsigned events are accepted; this is a transitional rollout flag "
+            "and must not be left enabled in production."
+        )
+        (fatal if (strict or is_prod) else warnings).append(msg)
+    return fatal, warnings
+
+
 def _check_rate_limit_config(settings: _SettingsProto) -> list[str]:
     warnings: list[str] = []
     for control, threshold in _RATE_LIMIT_WARNING_RPM.items():
@@ -269,6 +382,11 @@ def check_config_health(
     - ENVIRONMENT=production with TOKEN_ISSUER or TOKEN_AUDIENCE unset (warning / fatal under STRICT)
     - STRICT_PRODUCTION_MODE: wildcard in ALLOWED_ORIGINS (fatal)
     - STRICT_PRODUCTION_MODE: SESSION_COOKIE_SECURE=false outside local (fatal)
+    - ALLOWED_HOSTS empty/unset in production (warning) or strict mode (fatal)
+    - ALLOWED_HOSTS wildcard '*' under strict mode (fatal)
+    - JWKS_URI / INTROSPECTION_URL using http:// in prod/strict (warning/fatal)
+    - EVENT_SIGNING_ENABLED=false (warning / fatal under STRICT)
+    - EVENT_SIGNING_ACCEPT_UNSIGNED=true in production or strict (warning / fatal)
     """
     strict: bool = getattr(settings, "STRICT_PRODUCTION_MODE", False)
     algo = settings.ACCESS_TOKEN_ALGORITHM
@@ -288,6 +406,9 @@ def check_config_health(
     f5 = _check_strict_mode(settings, environment)
     w6 = _check_rate_limit_config(settings)
     f7, w7 = _check_token_boundary_config(settings, environment, strict)
+    f8, w8 = _check_allowed_hosts_config(settings, environment, strict)
+    f9, w9 = _check_internal_url_config(settings, environment, strict)
+    f10, w10 = _check_event_signing_config(settings, environment, strict)
 
     warnings: list[str] = []
     warnings.extend(w1)
@@ -295,7 +416,10 @@ def check_config_health(
     warnings.extend(w4)
     warnings.extend(w6)
     warnings.extend(w7)
-    fatal_errors = f1 + f2 + f3 + f4 + f5 + f7
+    warnings.extend(w8)
+    warnings.extend(w9)
+    warnings.extend(w10)
+    fatal_errors = f1 + f2 + f3 + f4 + f5 + f7 + f8 + f9 + f10
 
     for warning in warnings:
         logger.warning(warning)

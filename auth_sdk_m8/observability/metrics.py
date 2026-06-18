@@ -16,7 +16,9 @@ Metric groups (set via METRICS_GROUPS, comma-separated):
                  auth_api_key_validations_total, auth_api_key_rate_limit_checks_total,
                  auth_api_key_rate_limit_hits_total, auth_api_key_lifecycle_total,
                  auth_api_key_flush_duration_seconds,
-                 auth_code_exchange_total
+                 auth_code_exchange_total,
+                 auth_event_stream_connected, auth_event_stream_events_total,
+                 auth_event_stream_gap_total, auth_event_stream_reconnects_total
                  (only meaningful in services that have auth routes)
 
 Requires: pip install auth-sdk-m8[observability]
@@ -85,6 +87,11 @@ class _Metrics:
     api_key_rate_limit_hits_total: Optional[Counter] = None
     api_key_lifecycle_total: Optional[Counter] = None
     api_key_flush_duration_seconds: Optional[Histogram] = None
+    # event-stream revocation-cache observability (consumer side, part of auth group)
+    event_stream_connected: Optional[Gauge] = None
+    event_stream_events_total: Optional[Counter] = None
+    event_stream_gap_total: Optional[Counter] = None
+    event_stream_reconnects_total: Optional[Counter] = None
 
 
 _m: Optional[_Metrics] = None
@@ -255,6 +262,31 @@ def setup(enabled: bool, groups_str: str, api_prefix: str) -> None:
             f"{pfx}auth_api_key_flush_duration_seconds",
             "Redis-to-DB last_used_at batch flush latency in seconds",
             buckets=_FLUSH_BUCKETS,
+            registry=REGISTRY,
+        )
+        m.event_stream_connected = Gauge(
+            f"{pfx}auth_event_stream_connected",
+            "Auth event-stream (SSE revocation bridge) connection state: "
+            "1 = connected, 0 = disconnected",
+            registry=REGISTRY,
+        )
+        m.event_stream_events_total = Counter(
+            f"{pfx}auth_event_stream_events_total",
+            "Auth event-stream frames by outcome "
+            "(event_type: session-revoked | user-deleted | ...; "
+            "result: delivered | dropped_malformed | dropped_sig_fail)",
+            ["event_type", "result"],
+            registry=REGISTRY,
+        )
+        m.event_stream_gap_total = Counter(
+            f"{pfx}auth_event_stream_gap_total",
+            "Unresumable gap signals received; each forces a local "
+            "revocation-cache flush",
+            registry=REGISTRY,
+        )
+        m.event_stream_reconnects_total = Counter(
+            f"{pfx}auth_event_stream_reconnects_total",
+            "Event-stream disconnects that triggered a reconnect",
             registry=REGISTRY,
         )
 

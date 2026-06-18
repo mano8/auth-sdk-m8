@@ -7,6 +7,171 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 
+### Security hardening — startup config health checks (Phases 1.0, 1.2, 1.3)
+
+#### Phase 1.0 — baseline security-validator regression tests
+
+Codifies the existing security invariants in `CommonSettings` as an explicit
+regression suite (`tests/test_validator_baselines.py`) so they cannot silently
+regress across future changes:
+
+- All `secret_fields` reject the literal `changethis` placeholder at validation
+  time.
+- Password fields (`DB_PASSWORD`, `REDIS_PASSWORD`) enforce `PASSWORD_REGEX`
+  (8+ chars, upper, lower, digit, special, no spaces).
+- Secret-key fields (`ACCESS_SECRET_KEY`, `REFRESH_SECRET_KEY`) enforce
+  `SECRET_KEY_REGEX` (32+ chars, upper, lower, digit, non-alphanumeric).
+- `EVENT_SIGNING_ENABLED=true` requires a strong `EVENT_SIGNING_KEY` at boot.
+- `TOKEN_STRICT_VALIDATION=true` requires both `TOKEN_ISSUER` and
+  `TOKEN_AUDIENCE` at boot (fail-closed; missing either raises at model
+  validation time).
+- Error messages are operator-actionable: they name the failing field and state
+  the fix.
+
+No production code changes in this phase.
+
+#### Phase 1.2 — `ALLOWED_HOSTS` field and production host-header gate
+
+- **`CommonSettings.ALLOWED_HOSTS`** (`Optional[List[str]]`, default `None`) —
+  comma-separated or list-valued; intended as the allowlist for Starlette
+  `TrustedHostMiddleware`. An empty string or empty list normalises to `None`.
+- **`_check_allowed_hosts_config()`** in `config_health.py` — called by
+  `check_config_health()` at startup:
+  - `ALLOWED_HOSTS` not configured in production: warning (operators should
+    restrict Host headers).
+  - `ALLOWED_HOSTS` not configured under `STRICT_PRODUCTION_MODE`: fatal
+    (`ConfigurationError`).
+  - `ALLOWED_HOSTS` contains `'*'` under `STRICT_PRODUCTION_MODE`: fatal.
+  - Non-prod, non-strict, or explicitly configured hosts: no-op.
+  - Settings type without the attribute is a no-op (backward-compatible).
+
+#### Phase 1.3 — `ALLOW_INTERNAL_HTTP` field and inter-service http:// URL gate
+
+- **`CommonSettings.ALLOW_INTERNAL_HTTP`** (`bool`, default `False`) —
+  break-glass opt-in for services where `JWKS_URI` / `INTROSPECTION_URL` point
+  at plain `http://` because all traffic is confined to a trusted internal
+  Docker network.
+- **`_check_internal_url_config()`** in `config_health.py` — called by
+  `check_config_health()` at startup for `JWKS_URI` and `INTROSPECTION_URL`:
+  - `local` / `development` environments: always allowed (Docker bridge).
+  - `ALLOW_INTERNAL_HTTP=true`: exempt regardless of environment.
+  - `staging` / `production` + `http://`: warning.
+  - `staging` / `production` + `http://` + `STRICT_PRODUCTION_MODE`: fatal
+    (`ConfigurationError`).
+  - `https://` or field not set: always passes.
+
+#### Phase 1.4 — shared app-layer guards for `/metrics` and deep `/health`
+
+New `auth_sdk_m8.security.guards` module (requires the `fastapi` extra, like
+`security.headers`). Provides proxy-independent app-layer primitives so the
+guarantee for sensitive operational surfaces survives a reverse-proxy swap or
+misconfiguration — proxy route-hiding stays defense-in-depth, not the primary
+control. `fa-auth-m8` and `fastapi-m8` consume these instead of each
+re-deriving its own `X-Internal-Token` comparison:
+
+- **`compare_secret(provided, expected)`** — `None`/empty-safe, constant-time
+  secret comparison (`secrets.compare_digest`). A missing header or unset
+  secret yields `False` rather than a spurious empty-string match.
+- **`extract_bearer_token(request)`** — parses `Authorization: Bearer <token>`
+  (case-insensitive scheme); returns `None` when absent, wrong-scheme, or empty.
+- **`make_internal_token_authorizer(secret, *, header_name="X-Internal-Token")`**
+  — builds a `(Request) -> bool` **predicate** for *detail gating*: deep
+  `/health` answers shallow status to everyone and reveals the detail body only
+  when the predicate is `True`. Fail-closed — an unset secret never authorizes.
+- **`make_scrape_credential_guard(credential)`** — builds a `(Request) -> None`
+  FastAPI **dependency** for `/metrics`: when *credential* is unset the route is
+  network-gated only (no-op); when set, the request must present a matching
+  `Authorization: Bearer` credential or receive `401` with a
+  `WWW-Authenticate: Bearer` challenge. A deliberately long-lived static
+  credential (maps to Prometheus `authorization` in `scrape_configs`); short-TTL
+  tokens are not forced here.
+
+**Backward compatibility:** purely additive — a new optional-`fastapi` submodule;
+no existing import path or signature changes.
+
+### Revocation-cache observability (Phase 7.x.2)
+
+Metrics and structured logs for the `AuthEventStreamClient` (the SSE revocation
+bridge consumers run as a best-effort cache accelerator), so operators can see
+the live cache-invalidation path without ever exposing secrets.
+
+- **New auth-group Prometheus metrics** (`observability` extra; only registered
+  when `METRICS_ENABLED=true` and the `auth` group is on):
+  - `auth_event_stream_connected` (gauge) — `1` while the SSE stream is
+    connected, `0` once it drops.
+  - `auth_event_stream_events_total{event_type,result}` (counter) — received
+    frames by outcome: `delivered` (verified, dispatched to `on_event`),
+    `dropped_sig_fail` (signature verification failed — a forged/unsigned frame,
+    **not** dispatched, so it cannot evict cache entries), or `dropped_malformed`
+    (undeserializable data).
+  - `auth_event_stream_gap_total` (counter) — unresumable gap signals received;
+    each forces a local revocation-cache flush via `on_gap`.
+  - `auth_event_stream_reconnects_total` (counter) — disconnects that triggered
+    a reconnect.
+- **Logs:** connection established (logs the stream URL only — never the
+  `X-Internal-Token` or signing key), gap-flush at `INFO`, malformed/forged
+  frames at `WARNING`. Metric labels carry only the bounded `event_type` and a
+  fixed `result`; no JTIs, payloads, or secrets are ever logged or labelled.
+- **Best-effort / decoupled:** the `events` extra has no hard dependency on
+  `observability`; when `prometheus-client` is absent metric emission is a
+  silent no-op and the client behaves exactly as before.
+
+**Backward compatibility:** purely additive — no API or signature changes; the
+event-stream client works unchanged with or without the `observability` extra.
+
+### Secret-file (`*_FILE`) source support (Phase 6.1)
+
+`CommonSettings` now resolves the Docker/K8s `*_FILE` secret convention, so the
+production overlay can source runtime secrets from mounted files (Docker secrets
+/ SOPS / Vault agent / K8s) instead of inlining plaintext values into env files:
+
+- **`_build_file_secret_source(settings_cls)`** — a settings source wired into
+  `CommonSettings.settings_customise_sources`. For *any* declared field `FOO`,
+  if the environment defines `FOO_FILE` pointing at a readable file, the file's
+  stripped contents become the value of `FOO`. Field names are resolved from the
+  concrete settings subclass, so every secret a service declares
+  (`DB_PASSWORD_FILE`, `REDIS_PASSWORD_FILE`, `EVENT_SIGNING_KEY_FILE`, and any
+  service-specific secret such as `PRIVATE_API_SECRET_FILE`,
+  `SESSION_SECRET_FILE`, `TOKENS_ENCRYPTION_KEY_FILE`,
+  `MEDIA_INTERNAL_SERVICE_TOKEN_FILE`, …) is covered with no explicit allowlist.
+- **`_read_secret_file(path, field_name)`** — reads and strips the mounted file.
+  Fail-closed: a `*_FILE` variable pointing at a missing file raises at settings
+  construction (`<FIELD>_FILE points to a missing file`) rather than silently
+  falling back to a plaintext value. File contents are never logged.
+- **Source priority:** init kwargs > `*_FILE` secrets > `.env` > env vars >
+  pydantic secrets-dir > Vault. A mounted secret file therefore overrides a
+  plaintext value in `.env` or the process environment, while explicit
+  constructor kwargs still win (so tests and programmatic overrides are
+  unaffected).
+
+**Backward compatibility:** purely additive — services that set no `*_FILE`
+variables are unaffected; the new source returns nothing and the existing
+init/dotenv/env/Vault chain is unchanged.
+
+### Fixed
+
+- **Duplicate `CommonSettings.ALLOW_INTERNAL_HTTP` field definition** (introduced
+  in Phase 1.3) collapsed to a single declaration — it tripped a `mypy`
+  `no-redef` error. Behaviour is unchanged (same field, same `False` default).
+- **`SecurityHeadersSettings.ENVIRONMENT`** is now a read-only `@property` in the
+  structural protocol instead of a mutable attribute, so concrete settings whose
+  `ENVIRONMENT` is a `Literal[...]` subtype of `str` (e.g. `CommonSettings`)
+  satisfy it without a `mypy` attribute-variance conflict. Read-only; no runtime
+  or API change.
+- **Test suite is `mypy`-clean across `auth_sdk_m8` *and* `tests`** (previously
+  only the package was gated): added `None`/`Optional` narrowing for awaited
+  background tasks and `deserialize()`/secret accessors, switched UUID-coercion
+  tests to `UserModel.model_validate`, and `cast` the deliberately non-conforming
+  backward-compat stubs to the settings protocol.
+
+### Security
+
+- **Dependency security floors** (clears `pip-audit`):
+  - `cryptography>=48.0.1` (was `>=48.0.0`) — GHSA-537c-gmf6-5ccf.
+  - Added a `starlette>=1.3.1` floor to the `fastapi` / `observability` / `all`
+    extras — `fastapi` permits the vulnerable `>=0.46.0` transitively; excludes
+    CVE-2026-54282 / CVE-2026-54283. (Minimum floor only, no upper pin.)
+
 ---
 
 ## [1.5.0] — 2026-06-17 · `/ping` reachable behind a prefix-routing proxy

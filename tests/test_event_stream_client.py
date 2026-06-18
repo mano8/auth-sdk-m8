@@ -8,13 +8,19 @@ Covers:
 """
 
 import asyncio
+import builtins
 import json
+import logging
 import warnings
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from prometheus_client import CollectorRegistry
 
+import auth_sdk_m8.events.stream_client as _stream_mod
+import auth_sdk_m8.observability.metrics as _metrics_mod
 from auth_sdk_m8.events import AuthEventStreamClient, AuthStreamEvent, derive_stream_url
+from auth_sdk_m8.events.stream_client import _get_metrics
 from auth_sdk_m8.redis_events._signing import serialize
 from auth_sdk_m8.redis_events.event_bus import EventBus
 from auth_sdk_m8.redis_events.publisher import EventPublisher
@@ -375,3 +381,220 @@ async def test_run_resets_backoff_after_success() -> None:
         ):
             await client._run()
     assert call_count == 2
+
+
+# ── observability: revocation-cache metrics (Phase 7.x.2) ─────────────────────
+
+
+@pytest.fixture
+def metrics_registry(monkeypatch):
+    """Fresh metrics registry with the auth group enabled; reset afterwards."""
+    fresh = CollectorRegistry(auto_describe=False)
+    monkeypatch.setattr(_metrics_mod, "REGISTRY", fresh)
+    monkeypatch.setattr(_metrics_mod, "_m", None)
+    _metrics_mod.setup(enabled=True, groups_str="auth", api_prefix="")
+    yield fresh
+    monkeypatch.setattr(_metrics_mod, "_m", None)
+
+
+def _sv(registry: CollectorRegistry, name: str, labels: dict | None = None) -> float:
+    return registry.get_sample_value(name, labels or {}) or 0.0
+
+
+async def test_metrics_signed_event_counts_delivered(metrics_registry) -> None:
+    """A verified (signed) event is dispatched and counted as delivered."""
+    on_event = AsyncMock()
+    client = _make_client(on_event=on_event)
+    payload = {"event_type": "session.revoked", "user_id": "u1", "jti": "j1"}
+    lines = ["event: session-revoked", f"data: {serialize(payload, KEY)}", ""]
+
+    await client._read_sse(_sse_response(lines))
+
+    on_event.assert_called_once()
+    assert (
+        _sv(
+            metrics_registry,
+            "auth_event_stream_events_total",
+            {"event_type": "session-revoked", "result": "delivered"},
+        )
+        == 1.0
+    )
+
+
+async def test_metrics_forged_event_counts_sig_fail_no_delivery(
+    metrics_registry,
+) -> None:
+    """A forged (wrong-key) event is dropped — counted as sig fail, not delivered."""
+    on_event = AsyncMock()
+    client = _make_client(on_event=on_event)
+    other_key = "Zyxwvu-9876_ABC-zyxwvu-tsrqpo-nmlkji-hgfedc"
+    forged = serialize({"event_type": "session.revoked", "user_id": "x"}, other_key)
+    lines = ["event: session-revoked", f"data: {forged}", ""]
+
+    await client._read_sse(_sse_response(lines))
+
+    on_event.assert_not_called()
+    assert (
+        _sv(
+            metrics_registry,
+            "auth_event_stream_events_total",
+            {"event_type": "session-revoked", "result": "dropped_sig_fail"},
+        )
+        == 1.0
+    )
+    assert (
+        _sv(
+            metrics_registry,
+            "auth_event_stream_events_total",
+            {"event_type": "session-revoked", "result": "delivered"},
+        )
+        == 0.0
+    )
+
+
+async def test_metrics_malformed_event_counts_dropped(metrics_registry) -> None:
+    """A frame whose data fails to deserialize is counted as dropped_malformed."""
+    client = _make_client()
+    lines = ["event: user-deleted", "data: {not-valid-json", ""]
+
+    await client._read_sse(_sse_response(lines))
+
+    assert (
+        _sv(
+            metrics_registry,
+            "auth_event_stream_events_total",
+            {"event_type": "user-deleted", "result": "dropped_malformed"},
+        )
+        == 1.0
+    )
+
+
+async def test_metrics_gap_increments_gap_total(metrics_registry) -> None:
+    """A gap signal increments the cache-flush counter and calls on_gap."""
+    on_gap = AsyncMock()
+    client = _make_client(on_gap=on_gap)
+    client._last_event_id = "1-5"
+
+    await client._read_sse(_sse_response(["event: gap", "data: unresumable", ""]))
+
+    on_gap.assert_called_once()
+    assert _sv(metrics_registry, "auth_event_stream_gap_total") == 1.0
+
+
+async def test_metrics_connected_gauge_set_then_cleared(metrics_registry) -> None:
+    """The connection gauge reads 1 while streaming and 0 once it ends."""
+    client = _make_client()
+    seen: list[float] = []
+
+    resp = MagicMock()
+    resp.raise_for_status = MagicMock()
+
+    async def _iter():
+        seen.append(_sv(metrics_registry, "auth_event_stream_connected"))
+        if False:  # noqa: SIM210
+            yield  # pragma: no cover
+
+    resp.aiter_lines = _iter
+
+    with patch("auth_sdk_m8.events.stream_client.httpx.AsyncClient") as mock_cls:
+        mock_instance = MagicMock()
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_cls.return_value = mock_cm
+
+        stream_cm = MagicMock()
+        stream_cm.__aenter__ = AsyncMock(return_value=resp)
+        stream_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_instance.stream.return_value = stream_cm
+
+        await client._connect_and_read()
+
+    assert seen == [1.0]
+    assert _sv(metrics_registry, "auth_event_stream_connected") == 0.0
+
+
+async def test_metrics_reconnect_counter_increments(metrics_registry) -> None:
+    """Each disconnect that triggers a reconnect bumps the reconnect counter."""
+    call_count = 0
+
+    async def _fail_then_cancel():
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise ConnectionError("transient")
+        raise asyncio.CancelledError()
+
+    client = _make_client()
+    with patch.object(client, "_connect_and_read", side_effect=_fail_then_cancel):
+        with patch(
+            "auth_sdk_m8.events.stream_client.asyncio.sleep", new_callable=AsyncMock
+        ):
+            await client._run()
+
+    assert _sv(metrics_registry, "auth_event_stream_reconnects_total") == 1.0
+
+
+def test_get_metrics_none_without_observability(monkeypatch) -> None:
+    """_get_metrics returns None when the observability extra is not installed."""
+    real_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "auth_sdk_m8.observability.metrics":
+            raise ImportError("observability extra not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    assert _get_metrics() is None
+
+
+def test_get_metrics_returns_container_when_enabled(metrics_registry) -> None:
+    """_get_metrics returns the live container when observability is set up."""
+    assert _get_metrics() is _metrics_mod.get()
+    assert _stream_mod._get_metrics() is not None
+
+
+# ── no-secret-logging acceptance (Phase 7.x.2) ────────────────────────────────
+
+
+async def test_secrets_never_logged_across_paths(metrics_registry, caplog) -> None:
+    """Neither the private-API secret nor the signing key appears in any log."""
+    caplog.set_level(logging.DEBUG, logger="auth_sdk_m8.events.stream_client")
+    client = _make_client(on_event=AsyncMock(), on_gap=AsyncMock())
+
+    # delivered, malformed, sig-fail, and gap paths all log.
+    delivered = serialize({"event_type": "session.revoked", "user_id": "u"}, KEY)
+    forged = serialize(
+        {"event_type": "session.revoked"}, "Zyxwvu-9876_ABC-zyxwvu-tsrqpo-nmlkji-hg"
+    )
+    lines = [
+        "event: session-revoked",
+        f"data: {delivered}",
+        "",
+        "event: user-deleted",
+        "data: {bad",
+        "",
+        "event: session-revoked",
+        f"data: {forged}",
+        "",
+        "event: gap",
+        "data: unresumable",
+        "",
+    ]
+    await client._read_sse(_sse_response(lines))
+
+    # a disconnect log path too: one transient error, then cancel to exit.
+    errors = [ConnectionError("x"), asyncio.CancelledError()]
+
+    async def _fail_then_cancel():
+        raise errors.pop(0)
+
+    with patch.object(client, "_connect_and_read", side_effect=_fail_then_cancel):
+        with patch(
+            "auth_sdk_m8.events.stream_client.asyncio.sleep", new_callable=AsyncMock
+        ):
+            await client._run()
+
+    blob = "\n".join(r.getMessage() for r in caplog.records)
+    assert _SECRET not in blob
+    assert KEY not in blob
