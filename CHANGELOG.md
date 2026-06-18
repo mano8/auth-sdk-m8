@@ -89,6 +89,36 @@ re-deriving its own `X-Internal-Token` comparison:
 **Backward compatibility:** purely additive — a new optional-`fastapi` submodule;
 no existing import path or signature changes.
 
+### Revocation-cache observability (Phase 7.x.2)
+
+Metrics and structured logs for the `AuthEventStreamClient` (the SSE revocation
+bridge consumers run as a best-effort cache accelerator), so operators can see
+the live cache-invalidation path without ever exposing secrets.
+
+- **New auth-group Prometheus metrics** (`observability` extra; only registered
+  when `METRICS_ENABLED=true` and the `auth` group is on):
+  - `auth_event_stream_connected` (gauge) — `1` while the SSE stream is
+    connected, `0` once it drops.
+  - `auth_event_stream_events_total{event_type,result}` (counter) — received
+    frames by outcome: `delivered` (verified, dispatched to `on_event`),
+    `dropped_sig_fail` (signature verification failed — a forged/unsigned frame,
+    **not** dispatched, so it cannot evict cache entries), or `dropped_malformed`
+    (undeserializable data).
+  - `auth_event_stream_gap_total` (counter) — unresumable gap signals received;
+    each forces a local revocation-cache flush via `on_gap`.
+  - `auth_event_stream_reconnects_total` (counter) — disconnects that triggered
+    a reconnect.
+- **Logs:** connection established (logs the stream URL only — never the
+  `X-Internal-Token` or signing key), gap-flush at `INFO`, malformed/forged
+  frames at `WARNING`. Metric labels carry only the bounded `event_type` and a
+  fixed `result`; no JTIs, payloads, or secrets are ever logged or labelled.
+- **Best-effort / decoupled:** the `events` extra has no hard dependency on
+  `observability`; when `prometheus-client` is absent metric emission is a
+  silent no-op and the client behaves exactly as before.
+
+**Backward compatibility:** purely additive — no API or signature changes; the
+event-stream client works unchanged with or without the `observability` extra.
+
 ### Fixed
 
 - **Duplicate `CommonSettings.ALLOW_INTERNAL_HTTP` field definition** (introduced
