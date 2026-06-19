@@ -7,6 +7,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 
+### Changed — single-mount `{prefix}/ping` · **BREAKING** (2.0.0)
+
+`mount_service_meta` now registers **exactly one** `/ping` route, at the
+effective prefix:
+
+- **Prefix set** (e.g. `API_PREFIX=/media`): `/ping` is served **only** at
+  `{prefix}/ping` (`/media/ping`) and is **published in the OpenAPI schema**. The
+  root `/ping` is **no longer mounted**.
+- **No prefix**: `/ping` stays at the root, as before.
+
+Previously the root `/ping` was always mounted *plus* a hidden
+(`include_in_schema=False`) `{prefix}/ping` copy. That produced an
+invisible-in-`/docs` liveness route and a duplicate operation. The new behaviour
+makes the published path match the proxy-routable path and removes the
+duplicate. The internal `_build_ping_router` `in_schema` parameter is removed.
+
+**Migration:** services fronted by a prefix-routing proxy (Traefik
+`PathPrefix({prefix})`) are unaffected — they already probe `{prefix}/ping`. Any
+liveness/healthcheck that hits the **root** `/ping` of a *prefixed* service must
+switch to `{prefix}/ping`. Services with no `API_PREFIX` are unaffected.
+
+This breaking change is why the next release is **2.0.0** (the deferred
+auth-sdk-m8 major). Consumers must raise their floor to
+`auth-sdk-m8>=2.0.0,<3.0.0` and update any tests asserting the old dual-mount.
+
 ### Security hardening — startup config health checks (Phases 1.0, 1.2, 1.3)
 
 #### Phase 1.0 — baseline security-validator regression tests

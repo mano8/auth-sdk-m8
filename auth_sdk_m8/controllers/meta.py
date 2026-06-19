@@ -4,11 +4,13 @@ Requires the ``fastapi`` extra:  pip install "auth-sdk-m8[fastapi]"
 
 - ``{prefix}/meta`` — static service/version/contract identity for client
   compatibility checks (cacheable, no dependency I/O).
-- ``/ping`` + ``{prefix}/ping`` — dependency-free liveness probe, mounted at
-  **both** the root (so direct container/sidecar probes never depend on app
-  routing/prefix config) and under ``{prefix}`` (so it stays reachable through a
-  prefix-routing reverse proxy such as Traefik, which only forwards
-  ``PathPrefix({prefix})`` — a root-only ``/ping`` 404s at the gateway).
+- ``{prefix}/ping`` — dependency-free liveness probe, mounted **once** at the
+  effective prefix: under ``{prefix}`` when one is configured (so it stays
+  reachable through a prefix-routing reverse proxy such as Traefik, which only
+  forwards ``PathPrefix({prefix})``, and so container healthchecks hit the same
+  ``{prefix}/ping`` they already use for ``{prefix}/health``), or at the root
+  ``/ping`` when no prefix is set. Exactly one ping route exists, so it always
+  appears in the OpenAPI schema and is never duplicated.
 
 The shared building block lives here because auth-sdk-m8 is the only common
 dependency of both the issuer (fa-auth-m8) and the consumer framework
@@ -40,11 +42,11 @@ def _build_meta_router(meta: ServiceMeta, prefix: str) -> APIRouter:
     return router
 
 
-def _build_ping_router(prefix: str = "", *, in_schema: bool = True) -> APIRouter:
+def _build_ping_router(prefix: str = "") -> APIRouter:
     """Build a ``{prefix}/ping`` liveness router (root when *prefix* is empty)."""
     router = APIRouter(prefix=prefix, tags=["meta"])
 
-    @router.get("/ping", include_in_schema=in_schema)
+    @router.get("/ping")
     def get_ping() -> dict[str, str]:
         """Return a dependency-free liveness response."""
         return PING_RESPONSE
@@ -66,13 +68,12 @@ def mount_service_meta(
             is mandatory — a service cannot mount the routes without valid values
             (provide-or-fail at the call site; empty fields fail ``ServiceMeta``
             validation).
-        prefix: Optional API prefix for ``/meta`` and the proxy-routable copy of
-            ``/ping``. ``/ping`` is always mounted at the root for direct
-            liveness probes; when *prefix* is non-empty it is **also** mounted at
-            ``{prefix}/ping`` (hidden from the schema to avoid a duplicate
-            operation) so it remains reachable behind a prefix-routing proxy.
+        prefix: Optional API prefix for ``/meta`` and ``/ping``. When non-empty,
+            both routes mount under ``{prefix}`` (e.g. ``{prefix}/ping``) so they
+            stay reachable behind a prefix-routing proxy that only forwards
+            ``PathPrefix({prefix})``. When empty, ``/ping`` mounts at the root.
+            Exactly one ping route is registered either way — it is always in the
+            OpenAPI schema and never duplicated.
     """
     app.include_router(_build_meta_router(meta, prefix))
-    app.include_router(_build_ping_router())
-    if prefix:
-        app.include_router(_build_ping_router(prefix, in_schema=False))
+    app.include_router(_build_ping_router(prefix))
