@@ -39,6 +39,30 @@ map and the medium-term bootstrap-secret → short-TTL scoped service-token
 exchange remain the issuer's (`fa-auth-m8`) concern. `/metrics` keeps its static
 scrape credential (no token model). Additive — no existing behaviour changes.
 
+### Added — service-identity and mTLS guidance (Phase 9.2)
+
+`SECURITY.md` gains a new **"Service identity and mTLS"** section that answers
+the "internal HTTPS?" question once and for all:
+
+- **Single-host baseline** — plain `http://` on Docker container-DNS is
+  acceptable; `check_config_health` warns in production (item 1.3) but lets
+  operators opt in via `ALLOW_INTERNAL_HTTP=true`. App-layer guards are
+  the primary control regardless.
+- **Multi-host: when mTLS applies** — when services span physical or virtual
+  hosts, mTLS is the correct network-layer control. Reference Traefik
+  file-provider configuration covers: CA/cert generation, the internal
+  entrypoint with `RequireAndVerifyClientCert` (TLS 1.3 floor), router and
+  service wiring in `dynamic_conf.yml`, and container cert mounts.
+- **Migration path** — run token + mTLS together during rollout
+  (`X-Internal-Token` / `X-Internal-Client` + mTLS at proxy). The app-layer
+  guard remains the primary control; mTLS is defense-in-depth. The shared
+  `PRIVATE_API_SECRET` can be retired once mTLS is proven and the per-consumer
+  credential model (item 9.1 issuer side) is deployed.
+- **Service-mesh alternative** — for Kubernetes/Istio/Linkerd/Consul Connect,
+  delegate mTLS to the sidecar/CNI; app-layer guards are unchanged.
+
+No code change — this is a deployer-guidance document.
+
 ### Changed — single-mount `{prefix}/ping` · **BREAKING** (2.0.0)
 
 `mount_service_meta` now registers **exactly one** `/ping` route, at the

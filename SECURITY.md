@@ -30,6 +30,150 @@ primitives; it does not own network controls, secret storage, or key rotation pr
 
 ---
 
+## Service identity and mTLS (multi-host deployments)
+
+### Single-host baseline
+
+On a single trusted Docker host all services share the same Docker network
+(`app_net`). Traffic between the auth service and its consumers never leaves the
+host kernel, so plain `http://` on container-DNS names (`http://auth_user_service:8000`)
+is acceptable. `check_config_health` (item 1.3) **warns in production** when it
+detects an `http://` URL in `JWKS_URI` / `INTROSPECTION_URL` and the environment
+is not explicitly opted in; set `ALLOW_INTERNAL_HTTP=true` in
+`auth.env.production.example` to acknowledge the single-host trust.
+
+The app-layer guards (`make_internal_token_authorizer`, `make_consumer_authorizer`,
+`make_scrape_credential_guard`) are the **primary** access control regardless of
+deployment topology. They hold even if the proxy is misconfigured or absent.
+
+### Multi-host: when mTLS is the right control
+
+When services run on different physical or virtual hosts — separate VMs, a
+Kubernetes cluster, a Docker Swarm with multiple nodes — the Docker network no
+longer provides host-kernel isolation. In this case **mTLS (mutual TLS) is the
+correct network-layer control**, not a blanket internal-HTTPS mandate on a
+single-host cluster.
+
+mTLS provides:
+- **Service identity** — both sides present a certificate; a rogue process cannot
+  impersonate a peer without a valid cert signed by the shared CA.
+- **Encryption in transit** — traffic between hosts is encrypted even before the
+  app-layer token check.
+- **No shared secret** — the identity proof is asymmetric; rotating one service's
+  cert does not require touching others.
+
+### Traefik mTLS configuration (reference)
+
+The following applies to the `hardened_m8` / `hardened_ui_m8` file-provider
+pattern (socketless Traefik, `dynamic_conf.yml`). Adapt paths to your CA and
+certificate layout.
+
+**Step 1 — generate a private CA and per-service certs**
+
+```bash
+# CA (keep the key offline or in Vault)
+openssl genrsa -out ca.key 4096
+openssl req -x509 -new -nodes -key ca.key -sha256 -days 3650 \
+    -subj "/CN=m8-internal-ca" -out ca.crt
+
+# Per-service cert (repeat for each service: auth, fastapi, media)
+openssl genrsa -out auth.key 2048
+openssl req -new -key auth.key -subj "/CN=auth_user_service" -out auth.csr
+openssl x509 -req -in auth.csr -CA ca.crt -CAkey ca.key \
+    -CAcreateserial -days 365 -sha256 -out auth.crt
+```
+
+**Step 2 — configure Traefik internal entrypoint with mTLS**
+
+`traefik/traefik.yml`:
+```yaml
+entryPoints:
+  internal:
+    address: ":9000"
+    http:
+      tls:
+        options: internal-mtls
+
+tls:
+  options:
+    internal-mtls:
+      minVersion: VersionTLS13
+      clientAuth:
+        caFiles:
+          - /certs/ca.crt
+        clientAuthType: RequireAndVerifyClientCert
+```
+
+**Step 3 — configure router + service in the file provider**
+
+`traefik/dynamic_conf.yml`:
+```yaml
+http:
+  routers:
+    auth-private:
+      rule: "PathPrefix(`/user/private`)"
+      entryPoints: [internal]
+      service: auth-service
+      tls:
+        options: internal-mtls
+
+  services:
+    auth-service:
+      loadBalancer:
+        servers:
+          - url: "http://auth_user_service:8000"
+```
+
+**Step 4 — mount certs in the service container**
+
+`docker-compose.production.yml`:
+```yaml
+services:
+  fastapi_full:               # the consumer
+    volumes:
+      - ./certs/fastapi.crt:/certs/client.crt:ro
+      - ./certs/fastapi.key:/certs/client.key:ro
+      - ./certs/ca.crt:/certs/ca.crt:ro
+    environment:
+      REQUESTS_CA_BUNDLE: /certs/ca.crt
+      # if the HTTP client library reads explicit paths:
+      # CLIENT_CERT_FILE: /certs/client.crt
+      # CLIENT_KEY_FILE:  /certs/client.key
+```
+
+**Optional — client-cert verification at the proxy**
+
+For the `/user/private/*` internal entrypoint the `RequireAndVerifyClientCert`
+auth type above already enforces mutual auth. For routes that must remain
+accessible to non-mTLS callers (e.g. the public `/user/ping` liveness check),
+use the `NoClientCert` client-auth type on the public entrypoint and reserve
+`RequireAndVerifyClientCert` for the internal one.
+
+### Migration path: token + mTLS as defense-in-depth
+
+During a rollout period, run **both** controls: keep the existing
+`X-Internal-Token` / `X-Internal-Client` app-layer check **and** add mTLS at the
+proxy. This layering means:
+
+1. If mTLS is misconfigured or cert rotation lapses, the token check still
+   blocks unauthenticated callers.
+2. If an app-layer token leaks over an unencrypted channel, mTLS encrypts the
+   transport so the leak does not happen in the first place.
+
+Once mTLS is proven stable across all services, the shared `PRIVATE_API_SECRET`
+can be retired in favour of the per-consumer credential model (item 9.1 issuer
+side). Do not remove the app-layer guard in the meantime — the guard is the
+**primary** control; mTLS is defense-in-depth.
+
+### Service-mesh alternative
+
+If you are running in Kubernetes or a service mesh (Istio, Linkerd, Consul
+Connect), delegate mTLS to the mesh's sidecar/CNI instead of configuring it at
+the Traefik level. The app-layer token guards remain unchanged regardless of
+which network layer provides mTLS.
+
+---
+
 ## Secret inventory
 
 | Secret | Held by | Blast radius if leaked | Rotation priority |
