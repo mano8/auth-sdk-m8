@@ -7,6 +7,38 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 
+### Added — per-consumer credential verification primitives (Phase 9.1, near-term)
+
+New `auth_sdk_m8.security.consumer_auth` module: the framework-agnostic building
+blocks for replacing the single shared `PRIVATE_API_SECRET` (one secret every
+consumer presents, rarely rotated, fleet-wide blast radius) with a **map of
+consumer ids → hashed, scoped per-consumer secrets**. Callers present
+`X-Internal-Client` + `X-Internal-Token`; the issuer authorizes a private
+operation only when the matched credential carries the required scope.
+
+- **`ConsumerScope`** (`StrEnum`) — well-known scopes (`introspection`,
+  `event-stream`, `user-create`); custom scope strings are also accepted.
+- **`ConsumerCredential`** — a client id, a salted SHA-256 digest
+  (`sha256$<salt_hex>$<digest_hex>`, never plaintext), and a granted-scope set.
+  `create()` hashes a plaintext secret; `from_encoded()` is the load path;
+  `verify_secret()` is a constant-time check; scopes are **deny-by-default**.
+- **`ConsumerCredentialRegistry`** — id → credential lookup (`from_secrets` /
+  `from_encoded`). `verify()` reports unknown-client and wrong-secret
+  **identically** and runs a constant-time digest comparison in both branches
+  (no client-enumeration oracle); `authorize()` adds scope enforcement, raising
+  `ConsumerAuthenticationError` (401-shaped) or `ConsumerScopeError`
+  (403-shaped).
+- **`make_consumer_authorizer`** (in `security.guards`) — a FastAPI dependency
+  that reads the two headers, authorizes against a registry, and injects the
+  matched `ConsumerCredential` into the route (`401` on bad/unknown credential,
+  `403` on scope violation). The per-consumer successor to
+  `make_internal_token_authorizer` / `make_scrape_credential_guard`.
+
+This is the SDK's verification half of 9.1; issuing/persisting the credential
+map and the medium-term bootstrap-secret → short-TTL scoped service-token
+exchange remain the issuer's (`fa-auth-m8`) concern. `/metrics` keeps its static
+scrape credential (no token model). Additive — no existing behaviour changes.
+
 ### Changed — single-mount `{prefix}/ping` · **BREAKING** (2.0.0)
 
 `mount_service_meta` now registers **exactly one** `/ping` route, at the

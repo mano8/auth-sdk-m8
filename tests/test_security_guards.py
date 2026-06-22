@@ -10,15 +10,22 @@ import pytest
 from fastapi import Depends, FastAPI, Request
 from fastapi.testclient import TestClient
 
+from auth_sdk_m8.security.consumer_auth import (
+    INTERNAL_CLIENT_HEADER,
+    ConsumerCredentialRegistry,
+    ConsumerScope,
+)
 from auth_sdk_m8.security.guards import (
     INTERNAL_TOKEN_HEADER,
     compare_secret,
     extract_bearer_token,
+    make_consumer_authorizer,
     make_internal_token_authorizer,
     make_scrape_credential_guard,
 )
 
 SECRET = "s3cret-internal-token-value"
+CONSUMER_SECRET = "consumer-a-bootstrap-secret-value-0001"
 
 
 # ── compare_secret (pure) ────────────────────────────────────────────────────
@@ -165,3 +172,86 @@ def test_guard_rejects_missing_credential() -> None:
     resp = _guarded_app(SECRET).get("/metrics")
     assert resp.status_code == 401
     assert resp.headers["WWW-Authenticate"] == "Bearer"
+
+
+# ── make_consumer_authorizer (per-consumer hard gate / dependency) ───────────
+
+
+def _consumer_registry() -> ConsumerCredentialRegistry:
+    return ConsumerCredentialRegistry.from_secrets(
+        {
+            "svc-a": (CONSUMER_SECRET, ConsumerScope.INTROSPECTION),
+            "svc-b": (
+                "other-secret-value-000000000000000002",
+                ConsumerScope.USER_CREATE,
+            ),
+        }
+    )
+
+
+def _consumer_app(**kwargs) -> TestClient:
+    app = FastAPI()
+    authorize = make_consumer_authorizer(_consumer_registry(), **kwargs)
+
+    @app.get("/private")
+    def private(cred=Depends(authorize)) -> dict[str, object]:
+        return {"client_id": cred.client_id, "scopes": sorted(cred.scopes)}
+
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def _consumer_headers(client_id: str, secret: str) -> dict[str, str]:
+    return {INTERNAL_CLIENT_HEADER: client_id, INTERNAL_TOKEN_HEADER: secret}
+
+
+def test_consumer_authorizer_allows_valid_pair() -> None:
+    resp = _consumer_app().get(
+        "/private", headers=_consumer_headers("svc-a", CONSUMER_SECRET)
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"client_id": "svc-a", "scopes": ["introspection"]}
+
+
+def test_consumer_authorizer_rejects_wrong_secret() -> None:
+    resp = _consumer_app().get("/private", headers=_consumer_headers("svc-a", "wrong"))
+    assert resp.status_code == 401
+
+
+def test_consumer_authorizer_rejects_cross_consumer_secret() -> None:
+    # svc-b's secret presented as svc-a must be rejected (no blast-radius reuse).
+    resp = _consumer_app().get(
+        "/private",
+        headers=_consumer_headers("svc-a", "other-secret-value-000000000000000002"),
+    )
+    assert resp.status_code == 401
+
+
+def test_consumer_authorizer_rejects_missing_headers() -> None:
+    resp = _consumer_app().get("/private")
+    assert resp.status_code == 401
+
+
+def test_consumer_authorizer_enforces_scope() -> None:
+    # svc-a is introspection-only → denied on a user-create route (403, not 401).
+    resp = _consumer_app(required_scope=ConsumerScope.USER_CREATE).get(
+        "/private", headers=_consumer_headers("svc-a", CONSUMER_SECRET)
+    )
+    assert resp.status_code == 403
+
+
+def test_consumer_authorizer_allows_matching_scope() -> None:
+    resp = _consumer_app(required_scope=ConsumerScope.INTROSPECTION).get(
+        "/private", headers=_consumer_headers("svc-a", CONSUMER_SECRET)
+    )
+    assert resp.status_code == 200
+
+
+def test_consumer_authorizer_honours_custom_headers() -> None:
+    client = _consumer_app(client_header="X-Client", token_header="X-Token")
+    ok = client.get(
+        "/private", headers={"X-Client": "svc-a", "X-Token": CONSUMER_SECRET}
+    )
+    assert ok.status_code == 200
+    # The default headers no longer authenticate.
+    miss = client.get("/private", headers=_consumer_headers("svc-a", CONSUMER_SECRET))
+    assert miss.status_code == 401
