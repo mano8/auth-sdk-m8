@@ -30,6 +30,7 @@ Companion SDK to [fa-auth-m8](https://github.com/mano8/fa-auth-m8) — install i
 - [Asymmetric key-strength enforcement](#asymmetric-key-strength-enforcement)
 - [Response security headers](#response-security-headers)
 - [Strict production mode](#strict-production-mode)
+- [Defaults by layer](#defaults-by-layer)
 - [Token modes](#token-modes)
 - [Chrome extension / native-app OAuth support](#chrome-extension--native-app-oauth-support)
 - [Auth degradation policy](#auth-degradation-policy)
@@ -600,6 +601,61 @@ What strict mode adds on top of the base `check_config_health` checks:
 
 ---
 
+## Defaults by layer
+
+Security-critical settings and how they behave across the stack. **All `secret_fields` reject the
+literal `changethis` placeholder at startup** — a service with any modeled secret still at its
+placeholder fails closed immediately.
+
+**Boot-required conditions:**
+
+- Any modeled secret field set to `changethis` → `ValueError` at startup; never ship placeholder
+  values in a running deployment.
+- `EVENT_SIGNING_KEY` is required when `EVENT_SIGNING_ENABLED=true` (the default); boot fails
+  without it.
+- `TOKEN_ISSUER` and `TOKEN_AUDIENCE` are required when `TOKEN_STRICT_VALIDATION=true` (the
+  default); boot fails without them.
+- `ACCESS_PUBLIC_KEY_FILE` or `JWKS_URI` is required with `RS256`/`ES256`; no implicit fallback.
+
+| Setting | SDK default | `local` / dev | fa-auth-m8 `hardened_m8` | fastapi-m8 consumer | Production overlay |
+| --- | --- | --- | --- | --- | --- |
+| `ACCESS_TOKEN_ALGORITHM` | `RS256` | any | `RS256` | `RS256` | `RS256` |
+| `TOKEN_STRICT_VALIDATION` | `true` | `true` (iss + aud enforced) | `true` | `true` | `true` |
+| `TOKEN_ISSUER` | `None` | optional | set in `auth.env.example` | must match issuer | **required** (strict fatal if unset) |
+| `TOKEN_AUDIENCE` | `None` | optional | set in `auth.env.example` | must match issuer | **required** (strict fatal if unset) |
+| `EVENT_SIGNING_ENABLED` | `true` | `true` | `true` | inherited | `true` |
+| `EVENT_SIGNING_KEY` | `None` | **required** when signing enabled; boot fails without it | `changethis` → fatal at startup | inherited | non-placeholder required |
+| `ENVIRONMENT` | `local` | `local` | `local` | `local` | `production` (overlay) |
+| `STRICT_PRODUCTION_MODE` | `false` | `false` | `false` | `false` | `true` (overlay) |
+| `ALLOWED_HOSTS` | `None` | no host check | `None` — Traefik host rules are primary in this stack | `None` | **required**; strict fatal if unset |
+| `ALLOWED_ORIGINS` | `["http://localhost:8080"]` | any | localhost allowed | localhost allowed | no `localhost` (prod fatal) |
+| `SET_DOCS` / `SET_OPEN_API` | `true` | on | on | on | **off** (gated in production) |
+| `SERVE_DOCS_IN_PRODUCTION` | `false` | N/A | N/A | N/A | explicit opt-in to publish docs in prod |
+| `HSTS_ENABLED` | `false` | never (local-blocked) | never | never | **opt-in only** (`HSTS_ENABLED=true`); never automatic |
+| `CONTENT_SECURITY_POLICY_ENABLED` | `false` | never (local-blocked) | never | never | **opt-in only**; never automatic |
+| `SESSION_COOKIE_SECURE` | `false` | `false` | `false` | N/A | `true` (overlay) |
+| `ALLOW_INTERNAL_HTTP` | `false` | no check in `local` | Docker-network-only (single trusted host) | Docker-network-only | `true` opt-in (single trusted Docker host) |
+| `AUTH_STRICT_MODE` | `false` | `false` | `false` | `false` | optionally `true` for fail-closed Redis ops |
+
+> **HSTS and CSP are never inferred from the production flag.** Both are browser-persisted and
+> hard to reverse; enabling either on a plain-HTTP or localhost stack breaks the browser for that
+> host. Set `HSTS_ENABLED=true` / `CONTENT_SECURITY_POLICY_ENABLED=true` only when the stack is
+> behind a TLS-terminating proxy in a non-local environment. The production overlay documents these
+> as opt-in only.
+
+**fa-auth-m8 compose examples — dev vs production-capable:**
+
+| Example | Purpose |
+| --- | --- |
+| `quickstart_m8` | **Dev-only** — SQLite, no Redis, HS256 out of the box |
+| `postgres_m8` | **Dev-only** — PostgreSQL, stateful tokens, no hardening layer |
+| `rs256_m8` | **Dev-only** — RS256 key-pair demo, single service |
+| `metrics_m8` | **Dev-only** — Prometheus + Grafana observability |
+| `vault_dev_m8` | **Dev-only** — HashiCorp Vault in dev mode (root token); never point a production app at it |
+| `hardened_m8` | Dev + production-capable via `docker-compose.production.yml` overlay |
+
+---
+
 ## Token modes
 
 Set `TOKEN_MODE` to control session strategy. Both auth service and consumers must agree.
@@ -981,6 +1037,8 @@ auth_sdk_m8/
 │   └── security.py      # ComSecurityHelper (legacy: PKCE, token hashing)
 ├── security/
 │   ├── factory.py            # build_access_validator() — settings-driven factory
+│   ├── guards.py             # make_internal_token_authorizer, make_scrape_credential_guard, make_consumer_authorizer
+│   ├── consumer_auth.py      # ConsumerScope, ConsumerCredential, ConsumerCredentialRegistry (Phase 9.1)
 │   ├── headers.py            # add_security_headers_middleware, build_security_headers
 │   ├── blacklist.py          # AccessTokenBlacklist — Redis JTI revocation check
 │   ├── jwks_resolver.py      # JwksKeyResolver — JWKS endpoint with TTL cache
