@@ -39,7 +39,6 @@ Companion SDK to [fa-auth-m8](https://github.com/mano8/fa-auth-m8) — install i
 - [Observability hooks](#observability-hooks)
 - [Prometheus metrics](#prometheus-metrics)
 - [Auth event stream (SSE bridge)](#auth-event-stream-sse-bridge)
-- [Redis event bus (deprecated)](#redis-event-bus-deprecated)
 - [Package layout](#package-layout)
 - [Architecture note](#architecture-note)
 
@@ -60,7 +59,7 @@ Install only what your service needs:
 | `[fastapi]` | `fastapi` | cookie helpers, `BaseController` |
 | `[config]` | `pydantic-settings` | `CommonSettings` base class |
 | `[events]` | `httpx` | fa-auth SSE event-stream client |
-| `[redis]` | `redis` | Redis event bus (deprecated) / blacklist |
+| `[redis]` | `redis` | JTI blacklist (`AccessTokenBlacklist`) |
 | `[db]` | `sqlmodel`, `sqlalchemy` | `TimestampMixin`, DB error parsing |
 | `[mysql]` | `pymysql` | MySQL driver |
 | `[postgres]` | `psycopg2-binary` | PostgreSQL driver |
@@ -951,8 +950,7 @@ METRICS_GROUPS=all   # or: traffic,performance,reliability,health,auth
 ## Auth event stream (SSE bridge)
 
 **The chosen transport for auth-state events in the m8 fleet** is an authenticated
-Server-Sent Events stream on fa-auth's private API, not the Redis Pub/Sub bus (see
-[Redis event bus (deprecated)](#redis-event-bus-deprecated) below).
+Server-Sent Events stream on fa-auth's private API.
 
 Install the `events` extra:
 
@@ -1005,17 +1003,6 @@ The client:
 
 ---
 
-## Redis event bus (deprecated)
-
-> **Deprecated in 1.2.0.** `EventBus`, `EventPublisher`, and `EventSubscriber` will be removed in
-> 2.0.0. Use `AuthEventStreamClient` (above) instead. `_signing.py` is exempt — the SSE bridge
-> reuses it and `EVENT_SIGNING_KEY` stays.
-
-The classes still work and still emit a `DeprecationWarning` on construction. HMAC-SHA256 signing
-(`EVENT_SIGNING_KEY`) behaves identically — the wire format is shared with the SSE bridge.
-
----
-
 ## Package layout
 
 ```text
@@ -1028,7 +1015,8 @@ auth_sdk_m8/
 │   ├── user.py          # UserModel, SessionModel
 │   └── user_events.py   # UserDeletedEvent, SessionRevokedEvent
 ├── events/              # fa-auth SSE bridge client (pip install "auth-sdk-m8[events]")
-│   └── stream_client.py # AuthEventStreamClient, AuthStreamEvent, derive_stream_url
+│   ├── stream_client.py # AuthEventStreamClient, AuthStreamEvent, derive_stream_url
+│   └── _signing.py      # canonical-JSON HMAC-SHA256 sign/verify for stream events
 ├── core/
 │   ├── config.py        # CommonSettings, SecretProvider (re-exports check_config_health)
 │   ├── config_health.py # check_config_health — startup validation checks
@@ -1054,11 +1042,6 @@ auth_sdk_m8/
 │   ├── metrics.py        # setup(), get(), render()
 │   ├── middleware.py     # MetricsMiddleware
 │   └── settings.py       # ObservabilitySettingsMixin
-├── redis_events/        # deprecated — use events/ instead; removed in 2.0.0
-│   ├── event_bus.py      # EventBus (deprecated)
-│   ├── publisher.py      # EventPublisher (deprecated)
-│   ├── subscriber.py     # EventSubscriber (deprecated)
-│   └── _signing.py       # canonical-JSON HMAC-SHA256 sign/verify (NOT deprecated; reused)
 ├── controllers/
 │   ├── base.py           # BaseController: exception → JSONResponse
 │   └── meta.py           # mount_service_meta — /meta + /ping routes

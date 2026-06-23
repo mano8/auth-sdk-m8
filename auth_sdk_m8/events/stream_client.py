@@ -18,7 +18,7 @@ from typing import Awaitable, Callable, Optional
 
 import httpx
 
-from auth_sdk_m8.redis_events._signing import deserialize
+from auth_sdk_m8.events._signing import deserialize
 
 logger = logging.getLogger(__name__)
 

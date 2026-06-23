@@ -9,7 +9,6 @@ import hashlib
 import json
 import logging
 import uuid
-import warnings
 from datetime import datetime, timezone
 from os import urandom
 from typing import Any, Optional, Tuple, Union
@@ -18,18 +17,9 @@ import jwt
 from jwt import ExpiredSignatureError, PyJWTError
 
 from auth_sdk_m8.core.exceptions import InvalidToken
-from auth_sdk_m8.schemas.auth import TokenDecodeProps, TokenSecret, TokenUserData
-
-# Import from submodules directly to avoid circular imports with security/__init__.py
-from auth_sdk_m8.security.token_validator import TokenValidator
-from auth_sdk_m8.security.validation import TokenValidationConfig
+from auth_sdk_m8.schemas.auth import TokenSecret
 
 logger = logging.getLogger(__name__)
-
-LEGACY_ACCESS_TOKEN_VALIDATION_CONFIG = TokenValidationConfig(
-    required_claims=["exp"],
-    leeway_seconds=0,
-)
 
 # Algorithms accepted for refresh-token signing (defense-in-depth whitelist).
 _ALLOWED_REFRESH_ALGORITHMS: frozenset[str] = frozenset({"HS256", "RS256", "ES256"})
@@ -86,36 +76,6 @@ class ComSecurityHelper:
 
     All methods are static — instantiation is not required.
     """
-
-    @staticmethod
-    def decode_access_token(token_data: TokenDecodeProps) -> TokenUserData:
-        """Decode and validate a JWT access token.
-
-        Args:
-            token_data: Token string, signing secret, and algorithm.
-
-        Returns:
-            Parsed token payload as ``TokenUserData``.
-
-        Raises:
-            InvalidToken: If the token is expired, invalid, or not an access token.
-
-        .. deprecated::
-            Use ``TokenValidator`` instead.
-        """
-        warnings.warn(
-            "decode_access_token is deprecated; use TokenValidator",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        validator = TokenValidator(
-            secrets=TokenSecret(
-                secret_key=token_data.secret_key,
-                algorithm=token_data.algorithm,
-            ),
-            config=LEGACY_ACCESS_TOKEN_VALIDATION_CONFIG,
-        )
-        return validator.validate_access_token(token_data.access_token)
 
     @staticmethod
     def decode_refresh_token(

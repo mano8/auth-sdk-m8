@@ -75,43 +75,6 @@ class VaultProvider(SecretProvider):
         return result.get("data", {}).get("data", {}).get(key)
 
 
-def settings_customise_sources(
-    init_settings: Any,
-    env_settings: Any,
-    file_secret_settings: Any,
-) -> Tuple[Any, ...]:
-    """Source priority: init kwargs > .env file > env vars > Vault (prod/staging).
-
-    .. deprecated::
-        Pass via ``model_config`` does not work with pydantic-settings ≥ 2.x.
-        Vault injection is now handled by the ``settings_customise_sources``
-        classmethod on :class:`CommonSettings` — no action needed in subclasses.
-    """
-    sources: list[Any] = [init_settings, file_secret_settings, env_settings]
-    env = getenv("ENVIRONMENT", "").lower()
-    secret_provider = getenv("SECRET_PROVIDER", "").lower()
-
-    if env in {"production", "staging"} and secret_provider == "vault":  # nosec B105 - provider name, not a password
-        vault_addr = getenv("VAULT_ADDR")
-        vault_token = getenv("VAULT_TOKEN")
-        token_file = "/run/secrets/vault_token"  # nosec B105 - Docker secrets mount path, not a hardcoded password
-        if not vault_token and Path(token_file).is_file():
-            vault_token = Path(token_file).read_text(encoding="utf-8").strip()
-        if vault_addr and vault_token:
-            provider = VaultProvider(vault_addr, vault_token)
-
-            def _vault_source(_settings: Any = None) -> Dict[str, Any]:
-                return {
-                    key: val
-                    for key in REQUIRE_UPDATE_FIELDS
-                    if (val := provider.get(key)) is not None
-                }
-
-            sources.append(_vault_source)
-
-    return tuple(sources)
-
-
 def _build_vault_source(vault_addr: str, vault_token: str) -> Any:
     """Return a pydantic-settings callable source that reads secrets from Vault."""
     provider = VaultProvider(vault_addr, vault_token)
@@ -413,16 +376,11 @@ class CommonSettings(BaseSettings):
 
     REFRESH_SECRET_KEY: SecretStr  # Always HS256 (internal)
     REFRESH_SECRET_KEY_OLD: Optional[SecretStr] = None  # Set during key rotation
-    # Deprecated: set ACCESS_TOKEN_ALGORITHM instead.  Kept as a fallback: when
-    # ACCESS_TOKEN_ALGORITHM is left at its default it inherits this value via
-    # _sync_token_algorithms.  Never propagated to REFRESH_TOKEN_ALGORITHM.
-    #
     # SECURE-BY-DEFAULT (BREAKING in 1.0.0): the default access-token algorithm
     # is RS256 (asymmetric / JWKS).  HS256 (shared secret) is still fully
     # supported but must be opted into explicitly by setting
-    # ACCESS_TOKEN_ALGORITHM=HS256 (or TOKEN_ALGORITHM=HS256) and providing
-    # ACCESS_SECRET_KEY.  Refresh tokens are internal and remain HS256 always.
-    TOKEN_ALGORITHM: str = "RS256"
+    # ACCESS_TOKEN_ALGORITHM=HS256 and providing ACCESS_SECRET_KEY.  Refresh
+    # tokens are internal and remain HS256 always.
     ACCESS_TOKEN_ALGORITHM: str = "RS256"
     REFRESH_TOKEN_ALGORITHM: str = "HS256"
     # Controls session persistence and JTI blacklisting strategy:
@@ -541,10 +499,10 @@ class CommonSettings(BaseSettings):
         "magnetometer=(), microphone=(), payment=(), usb=()"
     )
 
-    # ── Event bus signing (Redis Pub/Sub) ─────────────────────────────────────
-    # SECURE-BY-DEFAULT (BREAKING in 1.0.0): event-bus payloads are HMAC-SHA256
-    # signed and consumers reject unsigned/forged events.  Pass
-    # EVENT_SIGNING_KEY to EventBus / EventPublisher / EventSubscriber.
+    # ── Event-stream signing ──────────────────────────────────────────────────
+    # SECURE-BY-DEFAULT (BREAKING in 1.0.0): event-stream payloads are HMAC-SHA256
+    # signed and consumers reject unsigned/forged events.  The fa-auth SSE bridge
+    # (AuthEventStreamClient) verifies each frame with EVENT_SIGNING_KEY.
     #   EVENT_SIGNING_ENABLED          — master switch (default True).  When
     #     True, EVENT_SIGNING_KEY is required at startup (fail-closed at boot).
     #     Set False to disable signing entirely (opt-out).
@@ -688,20 +646,8 @@ class CommonSettings(BaseSettings):
     # ── Validators ────────────────────────────────────────────────────────────
 
     @model_validator(mode="after")
-    def _sync_token_algorithms(self) -> "CommonSettings":
-        """Seed ACCESS_TOKEN_ALGORITHM from the deprecated TOKEN_ALGORITHM.
-
-        The deprecated ``TOKEN_ALGORITHM`` knob only seeds
-        ``ACCESS_TOKEN_ALGORITHM`` when the per-type field is still at its
-        default (``RS256``); an explicit ``ACCESS_TOKEN_ALGORITHM`` always wins.
-        ``TOKEN_ALGORITHM`` is never propagated to ``REFRESH_TOKEN_ALGORITHM`` —
-        refresh tokens are internal and must always use symmetric HS256 signing.
-        """
-        if (
-            self.ACCESS_TOKEN_ALGORITHM == "RS256"  # nosec B105 - default sentinel, not a password
-            and self.TOKEN_ALGORITHM != "RS256"  # nosec B105
-        ):
-            self.ACCESS_TOKEN_ALGORITHM = self.TOKEN_ALGORITHM
+    def _enforce_refresh_algorithm(self) -> "CommonSettings":
+        """Refresh tokens are internal and must always use symmetric HS256 signing."""
         if self.REFRESH_TOKEN_ALGORITHM != "HS256":  # nosec B105
             raise ValueError(
                 "REFRESH_TOKEN_ALGORITHM must be HS256. "

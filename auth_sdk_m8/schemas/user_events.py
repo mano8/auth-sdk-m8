@@ -1,8 +1,8 @@
 """User- and session-related event schemas for the auth event stream.
 
-These typed payloads ride the fa-auth SSE bridge (and, historically, the
-deprecated Redis Pub/Sub bus). They share the :class:`EventBase` envelope and
-are signed/verified with the ``_signing`` helpers regardless of transport.
+These typed payloads ride the fa-auth SSE bridge. They share the
+:class:`EventBase` envelope and are signed/verified with the ``_signing``
+helpers regardless of transport.
 """
 
 from typing import Optional

@@ -7,6 +7,36 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 
+### Removed — deprecated APIs dropped for 2.0.0 · **BREAKING**
+
+The 2.0.0 major removes every previously-deprecated surface:
+
+- **Redis Pub/Sub event bus** — the `auth_sdk_m8.redis_events` package
+  (`EventBus`, `EventPublisher`, `EventSubscriber`) is gone. Deprecated in
+  1.2.0; superseded by the fa-auth SSE bridge
+  (`auth_sdk_m8.events.AuthEventStreamClient`). The HMAC-SHA256 signing helpers
+  (`serialize`/`deserialize`, formerly `redis_events/_signing.py`) were **not**
+  deprecated and are retained — relocated to `auth_sdk_m8.events._signing`
+  (the SSE bridge reuses them; `EVENT_SIGNING_KEY` is unchanged). The `[redis]`
+  extra stays — it now installs the client used by the JTI blacklist
+  (`AccessTokenBlacklist`).
+- **`ComSecurityHelper.decode_access_token`** — removed. Use `TokenValidator`
+  (via `build_access_validator`). The internal
+  `LEGACY_ACCESS_TOKEN_VALIDATION_CONFIG` constant is removed with it.
+- **`TOKEN_ALGORITHM` settings knob** — removed. Set `ACCESS_TOKEN_ALGORITHM`
+  directly (refresh tokens remain HS256-only, still enforced). The seeding
+  validator is gone.
+- **Module-level `settings_customise_sources()`** in `auth_sdk_m8.core.config`
+  — removed. Vault/`_FILE` source ordering is handled automatically by the
+  `CommonSettings.settings_customise_sources` classmethod; subclasses must drop
+  the `settings_customise_sources=...` entry from their `model_config`.
+
+**Migration:** raise the floor to `auth-sdk-m8>=2.0.0,<3.0.0`. Replace any
+`decode_access_token` call with a `TokenValidator`, rename `TOKEN_ALGORITHM` →
+`ACCESS_TOKEN_ALGORITHM`, drop the module-level `settings_customise_sources`
+import/`model_config` override, and switch any remaining Redis-bus code to the
+SSE bridge.
+
 ### Added — per-consumer credential verification primitives (Phase 9.1, near-term)
 
 New `auth_sdk_m8.security.consumer_auth` module: the framework-agnostic building
