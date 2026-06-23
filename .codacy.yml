@@ -22,3 +22,8 @@ exclude_paths:
   - ".pytest_cache/**"
   - "**/__pycache__/**"
   - "examples/**"
+  # SECURITY.md is kept markdownlint-clean by hand; excluded here because
+  # Codacy's prose/agent-file analyzer misclassifies a security policy doc
+  # (flags incident-response steps as "absolute rules needing an escape hatch"
+  # and suggests splitting it into SOUL.md/USER.md/TOOLS.md).
+  - "SECURITY.md"

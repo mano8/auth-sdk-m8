@@ -30,6 +30,7 @@ Companion SDK to [fa-auth-m8](https://github.com/mano8/fa-auth-m8) — install i
 - [Asymmetric key-strength enforcement](#asymmetric-key-strength-enforcement)
 - [Response security headers](#response-security-headers)
 - [Strict production mode](#strict-production-mode)
+- [Defaults by layer](#defaults-by-layer)
 - [Token modes](#token-modes)
 - [Chrome extension / native-app OAuth support](#chrome-extension--native-app-oauth-support)
 - [Auth degradation policy](#auth-degradation-policy)
@@ -38,7 +39,6 @@ Companion SDK to [fa-auth-m8](https://github.com/mano8/fa-auth-m8) — install i
 - [Observability hooks](#observability-hooks)
 - [Prometheus metrics](#prometheus-metrics)
 - [Auth event stream (SSE bridge)](#auth-event-stream-sse-bridge)
-- [Redis event bus (deprecated)](#redis-event-bus-deprecated)
 - [Package layout](#package-layout)
 - [Architecture note](#architecture-note)
 
@@ -59,7 +59,7 @@ Install only what your service needs:
 | `[fastapi]` | `fastapi` | cookie helpers, `BaseController` |
 | `[config]` | `pydantic-settings` | `CommonSettings` base class |
 | `[events]` | `httpx` | fa-auth SSE event-stream client |
-| `[redis]` | `redis` | Redis event bus (deprecated) / blacklist |
+| `[redis]` | `redis` | JTI blacklist (`AccessTokenBlacklist`) |
 | `[db]` | `sqlmodel`, `sqlalchemy` | `TimestampMixin`, DB error parsing |
 | `[mysql]` | `pymysql` | MySQL driver |
 | `[postgres]` | `psycopg2-binary` | PostgreSQL driver |
@@ -349,18 +349,22 @@ because it is the only common dependency of both the issuer and the consumer fra
 | Route | Question | Touches deps? | Cacheable |
 | --- | --- | --- | --- |
 | `{prefix}/meta` | what version/contract is this service? | no | yes (`Cache-Control`) |
-| `/ping` **and** `{prefix}/ping` | is the process up & serving? | **no** (liveness) | no |
+| `{prefix}/ping` | is the process up & serving? | **no** (liveness) | no |
 
 `/meta` is read by clients **pre-auth** to assert compatibility before they do anything else; it
 exposes only `service` / `version` / `api_version` / `contract` — never build paths, hostnames,
 dependency internals, or secrets. `/ping` is a pure liveness probe — keep it separate from a
 dependency-aware `/health` readiness probe so a transient DB/Redis blip cannot trigger a restart.
 
-`/ping` is mounted at **both** the root and `{prefix}/ping`: the root copy lets a direct
-container/sidecar probe stay independent of the app's prefix config, while the prefixed copy stays
-reachable behind a prefix-routing reverse proxy (e.g. Traefik forwards only `PathPrefix({prefix})`,
-so a root-only `/ping` 404s at the gateway). The prefixed copy is hidden from the OpenAPI schema so
-the document still carries a single `ping` operation.
+`/ping` is mounted **once**, at the effective prefix: when `prefix` is set it is served **only** at
+`{prefix}/ping` (e.g. `/media/ping`), so it stays reachable behind a prefix-routing reverse proxy
+(Traefik forwards only `PathPrefix({prefix})`); when `prefix` is empty it is served at the root
+`/ping`. Either way there is a single `ping` operation, and it is **published in the OpenAPI
+schema**.
+
+> **Breaking change in 2.0.0.** Before 2.0.0 the root `/ping` was *always* mounted alongside a
+> hidden (schema-excluded) `{prefix}/ping` copy. As of 2.0.0 a prefixed service no longer serves the
+> root `/ping` — probes must use `{prefix}/ping`. Services with no `API_PREFIX` are unaffected.
 
 ```python
 from fastapi import FastAPI
@@ -391,7 +395,7 @@ mount_service_meta(
   "contract": { "name": "media-service-m8", "version": "1.0", "range": ">=1.0.0 <2.0.0" }
 }
 
-// GET /ping  → 200   (also GET {API_PREFIX}/ping → 200, e.g. /media/ping)
+// GET {API_PREFIX}/ping  → 200   (e.g. /media/ping; root /ping → 404 when a prefix is set)
 { "status": "ok" }
 ```
 
@@ -593,6 +597,61 @@ What strict mode adds on top of the base `check_config_health` checks:
 - `ALLOWED_HOSTS` not configured → **fatal** (base: warning in production only)
 - `ALLOWED_HOSTS` contains wildcard `'*'` → **fatal**
 - `JWKS_URI` / `INTROSPECTION_URL` using `http://` in `staging`/`production` → **fatal** (base: warning; bypass with `ALLOW_INTERNAL_HTTP=true`)
+
+---
+
+## Defaults by layer
+
+Security-critical settings and how they behave across the stack. **All `secret_fields` reject the
+literal `changethis` placeholder at startup** — a service with any modeled secret still at its
+placeholder fails closed immediately.
+
+**Boot-required conditions:**
+
+- Any modeled secret field set to `changethis` → `ValueError` at startup; never ship placeholder
+  values in a running deployment.
+- `EVENT_SIGNING_KEY` is required when `EVENT_SIGNING_ENABLED=true` (the default); boot fails
+  without it.
+- `TOKEN_ISSUER` and `TOKEN_AUDIENCE` are required when `TOKEN_STRICT_VALIDATION=true` (the
+  default); boot fails without them.
+- `ACCESS_PUBLIC_KEY_FILE` or `JWKS_URI` is required with `RS256`/`ES256`; no implicit fallback.
+
+| Setting | SDK default | `local` / dev | fa-auth-m8 `hardened_m8` | fastapi-m8 consumer | Production overlay |
+| --- | --- | --- | --- | --- | --- |
+| `ACCESS_TOKEN_ALGORITHM` | `RS256` | any | `RS256` | `RS256` | `RS256` |
+| `TOKEN_STRICT_VALIDATION` | `true` | `true` (iss + aud enforced) | `true` | `true` | `true` |
+| `TOKEN_ISSUER` | `None` | optional | set in `auth.env.example` | must match issuer | **required** (strict fatal if unset) |
+| `TOKEN_AUDIENCE` | `None` | optional | set in `auth.env.example` | must match issuer | **required** (strict fatal if unset) |
+| `EVENT_SIGNING_ENABLED` | `true` | `true` | `true` | inherited | `true` |
+| `EVENT_SIGNING_KEY` | `None` | **required** when signing enabled; boot fails without it | `changethis` → fatal at startup | inherited | non-placeholder required |
+| `ENVIRONMENT` | `local` | `local` | `local` | `local` | `production` (overlay) |
+| `STRICT_PRODUCTION_MODE` | `false` | `false` | `false` | `false` | `true` (overlay) |
+| `ALLOWED_HOSTS` | `None` | no host check | `None` — Traefik host rules are primary in this stack | `None` | **required**; strict fatal if unset |
+| `ALLOWED_ORIGINS` | `["http://localhost:8080"]` | any | localhost allowed | localhost allowed | no `localhost` (prod fatal) |
+| `SET_DOCS` / `SET_OPEN_API` | `true` | on | on | on | **off** (gated in production) |
+| `SERVE_DOCS_IN_PRODUCTION` | `false` | N/A | N/A | N/A | explicit opt-in to publish docs in prod |
+| `HSTS_ENABLED` | `false` | never (local-blocked) | never | never | **opt-in only** (`HSTS_ENABLED=true`); never automatic |
+| `CONTENT_SECURITY_POLICY_ENABLED` | `false` | never (local-blocked) | never | never | **opt-in only**; never automatic |
+| `SESSION_COOKIE_SECURE` | `false` | `false` | `false` | N/A | `true` (overlay) |
+| `ALLOW_INTERNAL_HTTP` | `false` | no check in `local` | Docker-network-only (single trusted host) | Docker-network-only | `true` opt-in (single trusted Docker host) |
+| `AUTH_STRICT_MODE` | `false` | `false` | `false` | `false` | optionally `true` for fail-closed Redis ops |
+
+> **HSTS and CSP are never inferred from the production flag.** Both are browser-persisted and
+> hard to reverse; enabling either on a plain-HTTP or localhost stack breaks the browser for that
+> host. Set `HSTS_ENABLED=true` / `CONTENT_SECURITY_POLICY_ENABLED=true` only when the stack is
+> behind a TLS-terminating proxy in a non-local environment. The production overlay documents these
+> as opt-in only.
+
+**fa-auth-m8 compose examples — dev vs production-capable:**
+
+| Example | Purpose |
+| --- | --- |
+| `quickstart_m8` | **Dev-only** — SQLite, no Redis, HS256 out of the box |
+| `postgres_m8` | **Dev-only** — PostgreSQL, stateful tokens, no hardening layer |
+| `rs256_m8` | **Dev-only** — RS256 key-pair demo, single service |
+| `metrics_m8` | **Dev-only** — Prometheus + Grafana observability |
+| `vault_dev_m8` | **Dev-only** — HashiCorp Vault in dev mode (root token); never point a production app at it |
+| `hardened_m8` | Dev + production-capable via `docker-compose.production.yml` overlay |
 
 ---
 
@@ -891,8 +950,7 @@ METRICS_GROUPS=all   # or: traffic,performance,reliability,health,auth
 ## Auth event stream (SSE bridge)
 
 **The chosen transport for auth-state events in the m8 fleet** is an authenticated
-Server-Sent Events stream on fa-auth's private API, not the Redis Pub/Sub bus (see
-[Redis event bus (deprecated)](#redis-event-bus-deprecated) below).
+Server-Sent Events stream on fa-auth's private API.
 
 Install the `events` extra:
 
@@ -945,17 +1003,6 @@ The client:
 
 ---
 
-## Redis event bus (deprecated)
-
-> **Deprecated in 1.2.0.** `EventBus`, `EventPublisher`, and `EventSubscriber` will be removed in
-> 2.0.0. Use `AuthEventStreamClient` (above) instead. `_signing.py` is exempt — the SSE bridge
-> reuses it and `EVENT_SIGNING_KEY` stays.
-
-The classes still work and still emit a `DeprecationWarning` on construction. HMAC-SHA256 signing
-(`EVENT_SIGNING_KEY`) behaves identically — the wire format is shared with the SSE bridge.
-
----
-
 ## Package layout
 
 ```text
@@ -968,7 +1015,8 @@ auth_sdk_m8/
 │   ├── user.py          # UserModel, SessionModel
 │   └── user_events.py   # UserDeletedEvent, SessionRevokedEvent
 ├── events/              # fa-auth SSE bridge client (pip install "auth-sdk-m8[events]")
-│   └── stream_client.py # AuthEventStreamClient, AuthStreamEvent, derive_stream_url
+│   ├── stream_client.py # AuthEventStreamClient, AuthStreamEvent, derive_stream_url
+│   └── _signing.py      # canonical-JSON HMAC-SHA256 sign/verify for stream events
 ├── core/
 │   ├── config.py        # CommonSettings, SecretProvider (re-exports check_config_health)
 │   ├── config_health.py # check_config_health — startup validation checks
@@ -977,6 +1025,8 @@ auth_sdk_m8/
 │   └── security.py      # ComSecurityHelper (legacy: PKCE, token hashing)
 ├── security/
 │   ├── factory.py            # build_access_validator() — settings-driven factory
+│   ├── guards.py             # make_internal_token_authorizer, make_scrape_credential_guard, make_consumer_authorizer
+│   ├── consumer_auth.py      # ConsumerScope, ConsumerCredential, ConsumerCredentialRegistry (Phase 9.1)
 │   ├── headers.py            # add_security_headers_middleware, build_security_headers
 │   ├── blacklist.py          # AccessTokenBlacklist — Redis JTI revocation check
 │   ├── jwks_resolver.py      # JwksKeyResolver — JWKS endpoint with TTL cache
@@ -992,11 +1042,6 @@ auth_sdk_m8/
 │   ├── metrics.py        # setup(), get(), render()
 │   ├── middleware.py     # MetricsMiddleware
 │   └── settings.py       # ObservabilitySettingsMixin
-├── redis_events/        # deprecated — use events/ instead; removed in 2.0.0
-│   ├── event_bus.py      # EventBus (deprecated)
-│   ├── publisher.py      # EventPublisher (deprecated)
-│   ├── subscriber.py     # EventSubscriber (deprecated)
-│   └── _signing.py       # canonical-JSON HMAC-SHA256 sign/verify (NOT deprecated; reused)
 ├── controllers/
 │   ├── base.py           # BaseController: exception → JSONResponse
 │   └── meta.py           # mount_service_meta — /meta + /ping routes

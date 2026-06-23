@@ -84,35 +84,37 @@ def test_meta_route_honours_prefix() -> None:
 # ── /ping route ──────────────────────────────────────────────────────────────
 
 
-def test_ping_route_returns_ok() -> None:
+def test_ping_route_returns_ok_at_root_without_prefix() -> None:
+    # No prefix: /ping mounts at the root.
     resp = _client().get("/ping")
     assert resp.status_code == 200
     assert resp.json() == PING_RESPONSE
 
 
-def test_ping_is_served_at_root_even_with_prefix() -> None:
-    # Root /ping stays available for direct container/sidecar liveness probes
-    # that do not know the API prefix.
-    resp = _client(prefix="/media").get("/ping")
-    assert resp.status_code == 200
-    assert resp.json() == PING_RESPONSE
+def test_root_ping_disabled_when_prefix_set() -> None:
+    # With a prefix the root /ping is NOT mounted — only the prefixed copy
+    # exists, so liveness is routed exclusively through the proxy prefix
+    # (matching how container healthchecks already hit {prefix}/health).
+    assert _client(prefix="/media").get("/ping").status_code == 404
 
 
-def test_ping_is_also_served_under_prefix() -> None:
+def test_ping_served_under_prefix() -> None:
     # Reachable through a prefix-routing proxy (Traefik forwards PathPrefix).
     resp = _client(prefix="/media").get("/media/ping")
     assert resp.status_code == 200
     assert resp.json() == PING_RESPONSE
 
 
-def test_prefixed_ping_hidden_from_schema() -> None:
-    # Only the root /ping is published; the prefixed copy is in_schema=False so
-    # the OpenAPI document carries a single ping operation.
+def test_prefixed_ping_is_published_in_schema() -> None:
+    # Exactly one ping operation exists, mounted at the prefix, and it is
+    # published in the OpenAPI document (no hidden duplicate).
     schema = _client(prefix="/media").get("/openapi.json").json()
     ping_paths = [p for p in schema["paths"] if p.endswith("/ping")]
+    assert ping_paths == ["/media/ping"]
+
+
+def test_root_ping_published_in_schema_without_prefix() -> None:
+    # Empty prefix publishes the single root ping operation.
+    schema = _client().get("/openapi.json").json()
+    ping_paths = [p for p in schema["paths"] if p.endswith("/ping")]
     assert ping_paths == ["/ping"]
-
-
-def test_no_prefixed_ping_when_prefix_empty() -> None:
-    # Empty prefix mounts the root ping only (no duplicate route).
-    assert _client().get("/media/ping").status_code == 404

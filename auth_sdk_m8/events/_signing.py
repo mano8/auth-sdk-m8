@@ -1,9 +1,12 @@
-"""HMAC-SHA256 signing helpers for the Redis Pub/Sub event bus.
+"""HMAC-SHA256 signing helpers for the auth event stream.
 
 Secure-by-default: when a signing key is configured, publishers wrap each
 payload in a signed envelope and consumers verify the signature before
 deserializing or dispatching to a handler.  Forged or (by default) unsigned
 messages are dropped without invoking the handler.
+
+These helpers are transport-agnostic; the fa-auth SSE bridge
+(:mod:`auth_sdk_m8.events.stream_client`) uses them to verify incoming events.
 
 Wire format (signed):  ``{"payload": {...}, "sig": "<hex hmac>"}``
 Wire format (unsigned): the raw payload object (legacy / signing disabled).
@@ -66,9 +69,9 @@ def deserialize(
         expected = _compute_sig(payload, signing_key)
         if hmac.compare_digest(expected, str(data["sig"])):
             return payload
-        logger.warning("EventBus: dropping message with invalid HMAC signature")
+        logger.warning("Dropping event with invalid HMAC signature")
         return None
     if accept_unsigned:
         return data
-    logger.warning("EventBus: dropping unsigned message (signed events required)")
+    logger.warning("Dropping unsigned event (signed events required)")
     return None

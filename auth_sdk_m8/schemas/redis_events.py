@@ -1,4 +1,4 @@
-"""Base event schema for the Redis Pub/Sub event bus."""
+"""Base event-envelope schema shared by auth event-stream payloads."""
 
 from pydantic import BaseModel
 

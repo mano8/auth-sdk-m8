@@ -4,14 +4,12 @@ Covers:
 - derive_stream_url derivation from JTI-status URL and bare base URLs.
 - AuthStreamEvent dataclass fields.
 - AuthEventStreamClient reconnect / resume / gap / sig-verify paths.
-- Deprecation warning from EventBus / EventPublisher / EventSubscriber.
 """
 
 import asyncio
 import builtins
 import json
 import logging
-import warnings
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -20,13 +18,9 @@ from prometheus_client import CollectorRegistry
 import auth_sdk_m8.events.stream_client as _stream_mod
 import auth_sdk_m8.observability.metrics as _metrics_mod
 from auth_sdk_m8.events import AuthEventStreamClient, AuthStreamEvent, derive_stream_url
+from auth_sdk_m8.events._signing import serialize
 from auth_sdk_m8.events.stream_client import _get_metrics
-from auth_sdk_m8.redis_events._signing import serialize
-from auth_sdk_m8.redis_events.event_bus import EventBus
-from auth_sdk_m8.redis_events.publisher import EventPublisher
-from auth_sdk_m8.redis_events.subscriber import EventSubscriber
 
-_REDIS_URL = "redis://localhost:6379"
 KEY = "Abcdef-1234_XYZ-abcdef-ghijkl-mnopqr-stuvwx"
 _STREAM_URL = "http://auth:8000/private/v1/events/stream"
 _SECRET = "my-internal-secret"
@@ -77,36 +71,6 @@ def test_auth_stream_event_fields() -> None:
 def test_auth_stream_event_no_id() -> None:
     ev = AuthStreamEvent(event_type="user-deleted", payload={}, event_id=None)
     assert ev.event_id is None
-
-
-# ── DeprecationWarning from Redis classes ─────────────────────────────────────
-
-
-def test_event_bus_emits_deprecation_warning() -> None:
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        with patch("auth_sdk_m8.redis_events.event_bus.redis.from_url"):
-            EventBus(_REDIS_URL)
-    assert any(issubclass(w.category, DeprecationWarning) for w in caught)
-    assert any("EventBus" in str(w.message) for w in caught)
-
-
-def test_event_publisher_emits_deprecation_warning() -> None:
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        with patch("auth_sdk_m8.redis_events.publisher.redis.from_url"):
-            EventPublisher(_REDIS_URL)
-    assert any(issubclass(w.category, DeprecationWarning) for w in caught)
-    assert any("EventPublisher" in str(w.message) for w in caught)
-
-
-def test_event_subscriber_emits_deprecation_warning() -> None:
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        with patch("auth_sdk_m8.redis_events.subscriber.redis.from_url"):
-            EventSubscriber(_REDIS_URL)
-    assert any(issubclass(w.category, DeprecationWarning) for w in caught)
-    assert any("EventSubscriber" in str(w.message) for w in caught)
 
 
 # ── AuthEventStreamClient helpers ─────────────────────────────────────────────

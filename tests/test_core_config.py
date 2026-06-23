@@ -18,7 +18,6 @@ from auth_sdk_m8.core.config import (
     _read_secret_file,
     check_config_health,
     parse_cors,
-    settings_customise_sources,
 )
 from auth_sdk_m8.core.exceptions import ConfigurationError
 from tests.conftest import (
@@ -81,87 +80,6 @@ def test_vault_provider_get_missing_key() -> None:
     with patch.dict(sys.modules, {"hvac": mock_hvac}):
         provider = VaultProvider("http://vault:8200", "token")
         assert provider.get("MISSING") is None
-
-
-# ── settings_customise_sources ────────────────────────────────────────────────
-
-
-def test_settings_customise_sources_local(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ENVIRONMENT", "local")
-    monkeypatch.delenv("SECRET_PROVIDER", raising=False)
-    init = MagicMock()
-    env = MagicMock()
-    file_sec = MagicMock()
-    sources = settings_customise_sources(init, env, file_sec)
-    assert len(sources) == 3
-
-
-def test_settings_customise_sources_vault_from_env(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("ENVIRONMENT", "production")
-    monkeypatch.setenv("SECRET_PROVIDER", "vault")
-    monkeypatch.setenv("VAULT_ADDR", "http://vault:8200")
-    monkeypatch.setenv("VAULT_TOKEN", "mytoken")
-
-    mock_hvac = MagicMock()
-    mock_client = MagicMock()
-    mock_hvac.Client.return_value = mock_client
-    mock_client.secrets.kv.v2.read_secret_version.return_value = {
-        "data": {"data": {"ACCESS_SECRET_KEY": "val"}}
-    }
-
-    with patch.dict(sys.modules, {"hvac": mock_hvac}):
-        sources = settings_customise_sources(MagicMock(), MagicMock(), MagicMock())
-
-    assert len(sources) == 4
-    vault_source = sources[3]
-    result = vault_source(MagicMock())
-    assert "ACCESS_SECRET_KEY" in result
-
-
-def test_settings_customise_sources_vault_from_file(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("ENVIRONMENT", "staging")
-    monkeypatch.setenv("SECRET_PROVIDER", "vault")
-    monkeypatch.setenv("VAULT_ADDR", "http://vault:8200")
-    monkeypatch.delenv("VAULT_TOKEN", raising=False)
-
-    mock_hvac = MagicMock()
-    mock_hvac.Client.return_value = MagicMock()
-
-    with (
-        patch.dict(sys.modules, {"hvac": mock_hvac}),
-        patch("auth_sdk_m8.core.config.Path") as mock_path_cls,
-    ):
-        mock_path_instance = MagicMock()
-        mock_path_instance.is_file.return_value = True
-        mock_path_instance.read_text.return_value = "file-token"
-        mock_path_cls.return_value = mock_path_instance
-
-        sources = settings_customise_sources(
-            MagicMock(),
-            MagicMock(),
-            MagicMock(),
-        )
-
-    assert len(sources) == 4
-
-
-def test_settings_customise_sources_vault_no_addr(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("ENVIRONMENT", "production")
-    monkeypatch.setenv("SECRET_PROVIDER", "vault")
-    monkeypatch.delenv("VAULT_ADDR", raising=False)
-    monkeypatch.delenv("VAULT_TOKEN", raising=False)
-
-    with patch("auth_sdk_m8.core.config.Path") as mock_path_cls:
-        mock_path_cls.return_value.is_file.return_value = False
-        sources = settings_customise_sources(MagicMock(), MagicMock(), MagicMock())
-
-    assert len(sources) == 3
 
 
 # ── parse_cors ────────────────────────────────────────────────────────────────
@@ -1123,40 +1041,11 @@ def test_assert_key_strength_es256_valid_p256_key() -> None:
     _assert_key_strength(pem, "ES256", is_private=False)
 
 
-# ── _sync_token_algorithms ────────────────────────────────────────────────────
+# ── _enforce_refresh_algorithm ────────────────────────────────────────────────
 
 
-def test_sync_token_algorithms_seeds_access_when_at_default() -> None:
-    """Deprecated TOKEN_ALGORITHM seeds ACCESS only when ACCESS is at default.
-
-    Refresh tokens are internal and must never inherit the asymmetric algorithm.
-    """
-    kwargs = {
-        **VALID_SETTINGS_KWARGS,
-        "TOKEN_ALGORITHM": "ES256",
-        "ACCESS_TOKEN_ALGORITHM": "RS256",  # default sentinel → eligible for seeding
-        "ACCESS_SECRET_KEY": None,
-        "JWKS_URI": "https://auth.example.com/.well-known/jwks.json",
-    }
-    s = IsolatedSettings(**kwargs)
-    assert s.ACCESS_TOKEN_ALGORITHM == "ES256"
-    assert s.REFRESH_TOKEN_ALGORITHM == "HS256"
-
-
-def test_sync_token_algorithms_rejects_direct_asymmetric_refresh() -> None:
+def test_enforce_refresh_algorithm_rejects_direct_asymmetric_refresh() -> None:
     kwargs = {**VALID_SETTINGS_KWARGS, "REFRESH_TOKEN_ALGORITHM": "RS256"}
-    with pytest.raises(ValueError, match="REFRESH_TOKEN_ALGORITHM must be HS256"):
-        IsolatedSettings(**kwargs)
-
-
-def test_sync_token_algorithms_both_already_non_hs256() -> None:
-    """ACCESS and REFRESH both pre-set to non-HS256 → sync skips both lines (507->509, 509->511)."""
-    kwargs = {
-        **VALID_SETTINGS_KWARGS,
-        "TOKEN_ALGORITHM": "RS256",
-        "ACCESS_TOKEN_ALGORITHM": "RS256",
-        "REFRESH_TOKEN_ALGORITHM": "RS256",
-    }
     with pytest.raises(ValueError, match="REFRESH_TOKEN_ALGORITHM must be HS256"):
         IsolatedSettings(**kwargs)
 

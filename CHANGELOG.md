@@ -7,6 +7,117 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 
+### Removed — deprecated APIs dropped for 2.0.0 · **BREAKING**
+
+The 2.0.0 major removes every previously-deprecated surface:
+
+- **Redis Pub/Sub event bus** — the `auth_sdk_m8.redis_events` package
+  (`EventBus`, `EventPublisher`, `EventSubscriber`) is gone. Deprecated in
+  1.2.0; superseded by the fa-auth SSE bridge
+  (`auth_sdk_m8.events.AuthEventStreamClient`). The HMAC-SHA256 signing helpers
+  (`serialize`/`deserialize`, formerly `redis_events/_signing.py`) were **not**
+  deprecated and are retained — relocated to `auth_sdk_m8.events._signing`
+  (the SSE bridge reuses them; `EVENT_SIGNING_KEY` is unchanged). The `[redis]`
+  extra stays — it now installs the client used by the JTI blacklist
+  (`AccessTokenBlacklist`).
+- **`ComSecurityHelper.decode_access_token`** — removed. Use `TokenValidator`
+  (via `build_access_validator`). The internal
+  `LEGACY_ACCESS_TOKEN_VALIDATION_CONFIG` constant is removed with it.
+- **`TOKEN_ALGORITHM` settings knob** — removed. Set `ACCESS_TOKEN_ALGORITHM`
+  directly (refresh tokens remain HS256-only, still enforced). The seeding
+  validator is gone.
+- **Module-level `settings_customise_sources()`** in `auth_sdk_m8.core.config`
+  — removed. Vault/`_FILE` source ordering is handled automatically by the
+  `CommonSettings.settings_customise_sources` classmethod; subclasses must drop
+  the `settings_customise_sources=...` entry from their `model_config`.
+
+**Migration:** raise the floor to `auth-sdk-m8>=2.0.0,<3.0.0`. Replace any
+`decode_access_token` call with a `TokenValidator`, rename `TOKEN_ALGORITHM` →
+`ACCESS_TOKEN_ALGORITHM`, drop the module-level `settings_customise_sources`
+import/`model_config` override, and switch any remaining Redis-bus code to the
+SSE bridge.
+
+### Added — per-consumer credential verification primitives (Phase 9.1, near-term)
+
+New `auth_sdk_m8.security.consumer_auth` module: the framework-agnostic building
+blocks for replacing the single shared `PRIVATE_API_SECRET` (one secret every
+consumer presents, rarely rotated, fleet-wide blast radius) with a **map of
+consumer ids → hashed, scoped per-consumer secrets**. Callers present
+`X-Internal-Client` + `X-Internal-Token`; the issuer authorizes a private
+operation only when the matched credential carries the required scope.
+
+- **`ConsumerScope`** (`StrEnum`) — well-known scopes (`introspection`,
+  `event-stream`, `user-create`); custom scope strings are also accepted.
+- **`ConsumerCredential`** — a client id, a salted SHA-256 digest
+  (`sha256$<salt_hex>$<digest_hex>`, never plaintext), and a granted-scope set.
+  `create()` hashes a plaintext secret; `from_encoded()` is the load path;
+  `verify_secret()` is a constant-time check; scopes are **deny-by-default**.
+- **`ConsumerCredentialRegistry`** — id → credential lookup (`from_secrets` /
+  `from_encoded`). `verify()` reports unknown-client and wrong-secret
+  **identically** and runs a constant-time digest comparison in both branches
+  (no client-enumeration oracle); `authorize()` adds scope enforcement, raising
+  `ConsumerAuthenticationError` (401-shaped) or `ConsumerScopeError`
+  (403-shaped).
+- **`make_consumer_authorizer`** (in `security.guards`) — a FastAPI dependency
+  that reads the two headers, authorizes against a registry, and injects the
+  matched `ConsumerCredential` into the route (`401` on bad/unknown credential,
+  `403` on scope violation). The per-consumer successor to
+  `make_internal_token_authorizer` / `make_scrape_credential_guard`.
+
+This is the SDK's verification half of 9.1; issuing/persisting the credential
+map and the medium-term bootstrap-secret → short-TTL scoped service-token
+exchange remain the issuer's (`fa-auth-m8`) concern. `/metrics` keeps its static
+scrape credential (no token model). Additive — no existing behaviour changes.
+
+### Added — service-identity and mTLS guidance (Phase 9.2)
+
+`SECURITY.md` gains a new **"Service identity and mTLS"** section that answers
+the "internal HTTPS?" question once and for all:
+
+- **Single-host baseline** — plain `http://` on Docker container-DNS is
+  acceptable; `check_config_health` warns in production (item 1.3) but lets
+  operators opt in via `ALLOW_INTERNAL_HTTP=true`. App-layer guards are
+  the primary control regardless.
+- **Multi-host: when mTLS applies** — when services span physical or virtual
+  hosts, mTLS is the correct network-layer control. Reference Traefik
+  file-provider configuration covers: CA/cert generation, the internal
+  entrypoint with `RequireAndVerifyClientCert` (TLS 1.3 floor), router and
+  service wiring in `dynamic_conf.yml`, and container cert mounts.
+- **Migration path** — run token + mTLS together during rollout
+  (`X-Internal-Token` / `X-Internal-Client` + mTLS at proxy). The app-layer
+  guard remains the primary control; mTLS is defense-in-depth. The shared
+  `PRIVATE_API_SECRET` can be retired once mTLS is proven and the per-consumer
+  credential model (item 9.1 issuer side) is deployed.
+- **Service-mesh alternative** — for Kubernetes/Istio/Linkerd/Consul Connect,
+  delegate mTLS to the sidecar/CNI; app-layer guards are unchanged.
+
+No code change — this is a deployer-guidance document.
+
+### Changed — single-mount `{prefix}/ping` · **BREAKING** (2.0.0)
+
+`mount_service_meta` now registers **exactly one** `/ping` route, at the
+effective prefix:
+
+- **Prefix set** (e.g. `API_PREFIX=/media`): `/ping` is served **only** at
+  `{prefix}/ping` (`/media/ping`) and is **published in the OpenAPI schema**. The
+  root `/ping` is **no longer mounted**.
+- **No prefix**: `/ping` stays at the root, as before.
+
+Previously the root `/ping` was always mounted *plus* a hidden
+(`include_in_schema=False`) `{prefix}/ping` copy. That produced an
+invisible-in-`/docs` liveness route and a duplicate operation. The new behaviour
+makes the published path match the proxy-routable path and removes the
+duplicate. The internal `_build_ping_router` `in_schema` parameter is removed.
+
+**Migration:** services fronted by a prefix-routing proxy (Traefik
+`PathPrefix({prefix})`) are unaffected — they already probe `{prefix}/ping`. Any
+liveness/healthcheck that hits the **root** `/ping` of a *prefixed* service must
+switch to `{prefix}/ping`. Services with no `API_PREFIX` are unaffected.
+
+This breaking change is why the next release is **2.0.0** (the deferred
+auth-sdk-m8 major). Consumers must raise their floor to
+`auth-sdk-m8>=2.0.0,<3.0.0` and update any tests asserting the old dual-mount.
+
 ### Security hardening — startup config health checks (Phases 1.0, 1.2, 1.3)
 
 #### Phase 1.0 — baseline security-validator regression tests

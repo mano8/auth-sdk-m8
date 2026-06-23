@@ -40,6 +40,14 @@ from typing import Callable
 
 from fastapi import HTTPException, Request, status
 
+from auth_sdk_m8.security.consumer_auth import (
+    INTERNAL_CLIENT_HEADER,
+    ConsumerAuthenticationError,
+    ConsumerCredential,
+    ConsumerCredentialRegistry,
+    ConsumerScopeError,
+)
+
 #: Default header the m8 trio uses for the inter-service shared secret.
 INTERNAL_TOKEN_HEADER = "X-Internal-Token"  # nosec B105 — header name, not a secret value
 #: Prefix (case-insensitive) of an ``Authorization: Bearer <token>`` header.
@@ -154,3 +162,61 @@ def make_scrape_credential_guard(
             )
 
     return _guard
+
+
+def make_consumer_authorizer(
+    registry: ConsumerCredentialRegistry,
+    *,
+    required_scope: object = None,
+    client_header: str = INTERNAL_CLIENT_HEADER,
+    token_header: str = INTERNAL_TOKEN_HEADER,
+) -> Callable[[Request], ConsumerCredential]:
+    """Build a hard gate that authenticates a **per-consumer** credential.
+
+    Returns a ``(Request) -> ConsumerCredential`` closure usable directly as a
+    FastAPI dependency on a private route. It reads ``X-Internal-Client`` and
+    ``X-Internal-Token`` from the request and authorizes the pair against
+    *registry* (see :mod:`auth_sdk_m8.security.consumer_auth`):
+
+    - unknown client id **or** wrong secret → ``401`` (the two are
+      indistinguishable, so a caller cannot enumerate client ids);
+    - authenticated but missing *required_scope* → ``403``;
+    - success → the matched :class:`ConsumerCredential` is returned and injected
+      into the route, so the handler knows which consumer called and with which
+      scopes.
+
+    This is the per-consumer successor to :func:`make_internal_token_authorizer`
+    /``make_scrape_credential_guard`` (a single shared secret): it bounds the
+    blast radius to one consumer and enforces least privilege via scopes.
+
+    Args:
+        registry: The consumer credential registry to authorize against.
+        required_scope: Scope the route requires, or ``None`` for
+            authentication only.
+        client_header: Header carrying the consumer id. Defaults to
+            ``X-Internal-Client``.
+        token_header: Header carrying the consumer secret. Defaults to
+            ``X-Internal-Token``.
+
+    Returns:
+        A dependency ``authorize(request) -> ConsumerCredential`` that raises
+        ``HTTPException`` 401/403 on failure.
+    """
+
+    def _dependency(request: Request) -> ConsumerCredential:
+        client_id = request.headers.get(client_header)
+        secret = request.headers.get(token_header)
+        try:
+            return registry.authorize(client_id, secret, required_scope)
+        except ConsumerScopeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden",
+            ) from exc
+        except ConsumerAuthenticationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Unauthorized",
+            ) from exc
+
+    return _dependency

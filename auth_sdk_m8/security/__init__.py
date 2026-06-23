@@ -1,6 +1,15 @@
 """Security validation interfaces for auth-sdk-m8."""
 
 from auth_sdk_m8.security.blacklist import AccessTokenBlacklist
+from auth_sdk_m8.security.consumer_auth import (
+    INTERNAL_CLIENT_HEADER,
+    ConsumerAuthenticationError,
+    ConsumerAuthError,
+    ConsumerCredential,
+    ConsumerCredentialRegistry,
+    ConsumerScope,
+    ConsumerScopeError,
+)
 from auth_sdk_m8.security.factory import build_access_validator
 from auth_sdk_m8.security.hooks import ValidationHooks
 from auth_sdk_m8.security.jwks_resolver import JwksKeyResolver
@@ -13,7 +22,14 @@ from auth_sdk_m8.security.token_validator import TokenValidator
 from auth_sdk_m8.security.validation import TokenValidationConfig
 
 __all__ = [
+    "INTERNAL_CLIENT_HEADER",
     "AccessTokenBlacklist",
+    "ConsumerAuthError",
+    "ConsumerAuthenticationError",
+    "ConsumerCredential",
+    "ConsumerCredentialRegistry",
+    "ConsumerScope",
+    "ConsumerScopeError",
     "JwksKeyResolver",
     "KeyResolver",
     "RefreshTokenPolicy",
