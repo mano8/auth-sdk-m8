@@ -7,26 +7,27 @@ primitives; it does not own network controls, secret storage, or key rotation pr
 
 **What this library provides:**
 
-- Token validation — signature, expiry, algorithm, `iss`/`aud` claims, JTI revocation check.
+- Token validation — signature, expiry, algorithm, `iss`/`aud` claims, JTI (JWT ID) revocation check.
 - Startup config health checks (`check_config_health`) — fatal misconfig blocks boot before the
   first request.
 - App-layer access guards — `make_internal_token_authorizer` (detail-gating predicate for deep
   `/health`), `make_scrape_credential_guard` (hard gate for `/metrics`), and
   `make_consumer_authorizer` (per-consumer scope enforcement for `/private/*`). These guards hold
   regardless of which reverse proxy is in front.
-- Per-consumer credential verification (`ConsumerCredentialRegistry`) — salted SHA-256 digests,
-  constant-time comparison, deny-by-default scope model.
+- Per-consumer credential verification (`ConsumerCredentialRegistry`) — salted SHA-256
+  (Secure Hash Algorithm) digests, constant-time comparison, deny-by-default scope model.
 - Response security headers — `add_security_headers_middleware` attaches hardening headers at the
-  ASGI layer so they apply even to errors raised before a route handler.
+  ASGI (Asynchronous Server Gateway Interface) layer so they apply even to errors raised before a
+  route handler.
 
-**What this library does NOT own:**
+**What this library does not own:**
 
 - Network-layer controls (TLS termination, firewall rules, Traefik/nginx routing). These are the
   deployer's responsibility; guards here are the primary control, proxy hiding is defense-in-depth.
 - Secret storage. Secrets are loaded from env files, `_FILE` mounts, Docker secrets, or Vault
   through `CommonSettings.settings_customise_sources` — the library reads them, it does not store them.
 - Key generation or rotation procedures. See the rotation playbooks below for the correct steps.
-- Rate limiting at the infrastructure layer or per-IP/per-user network throttling.
+- Rate limiting at the infrastructure layer or per-IP (Internet Protocol)/per-user network throttling.
 
 ---
 
@@ -55,8 +56,9 @@ correct network-layer control**, not a blanket internal-HTTPS mandate on a
 single-host cluster.
 
 mTLS provides:
+
 - **Service identity** — both sides present a certificate; a rogue process cannot
-  impersonate a peer without a valid cert signed by the shared CA.
+  impersonate a peer without a valid cert signed by the shared CA (Certificate Authority).
 - **Encryption in transit** — traffic between hosts is encrypted even before the
   app-layer token check.
 - **No shared secret** — the identity proof is asymmetric; rotating one service's
@@ -68,10 +70,11 @@ The following applies to the `hardened_m8` / `hardened_ui_m8` file-provider
 pattern (socketless Traefik, `dynamic_conf.yml`). Adapt paths to your CA and
 certificate layout.
 
-**Step 1 — generate a private CA and per-service certs**
+#### Step 1 — generate a private CA and per-service certs
 
 ```bash
-# CA (keep the key offline or in Vault)
+# CA (Certificate Authority) — keep the key offline or in Vault.
+# CN = Common Name (the certificate subject identifier).
 openssl genrsa -out ca.key 4096
 openssl req -x509 -new -nodes -key ca.key -sha256 -days 3650 \
     -subj "/CN=m8-internal-ca" -out ca.crt
@@ -83,9 +86,10 @@ openssl x509 -req -in auth.csr -CA ca.crt -CAkey ca.key \
     -CAcreateserial -days 365 -sha256 -out auth.crt
 ```
 
-**Step 2 — configure Traefik internal entrypoint with mTLS**
+#### Step 2 — configure Traefik internal entrypoint with mTLS
 
 `traefik/traefik.yml`:
+
 ```yaml
 entryPoints:
   internal:
@@ -104,9 +108,10 @@ tls:
         clientAuthType: RequireAndVerifyClientCert
 ```
 
-**Step 3 — configure router + service in the file provider**
+#### Step 3 — configure router + service in the file provider
 
 `traefik/dynamic_conf.yml`:
+
 ```yaml
 http:
   routers:
@@ -124,9 +129,10 @@ http:
           - url: "http://auth_user_service:8000"
 ```
 
-**Step 4 — mount certs in the service container**
+#### Step 4 — mount certs in the service container
 
 `docker-compose.production.yml`:
+
 ```yaml
 services:
   fastapi_full:               # the consumer
@@ -141,7 +147,7 @@ services:
       # CLIENT_KEY_FILE:  /certs/client.key
 ```
 
-**Optional — client-cert verification at the proxy**
+#### Optional — client-cert verification at the proxy
 
 For the `/user/private/*` internal entrypoint the `RequireAndVerifyClientCert`
 auth type above already enforces mutual auth. For routes that must remain
@@ -168,7 +174,7 @@ side). Do not remove the app-layer guard in the meantime — the guard is the
 ### Service-mesh alternative
 
 If you are running in Kubernetes or a service mesh (Istio, Linkerd, Consul
-Connect), delegate mTLS to the mesh's sidecar/CNI instead of configuring it at
+Connect), delegate mTLS to the mesh's sidecar/CNI (Container Network Interface) instead of configuring it at
 the Traefik level. The app-layer token guards remain unchanged regardless of
 which network layer provides mTLS.
 
@@ -179,13 +185,13 @@ which network layer provides mTLS.
 | Secret | Held by | Blast radius if leaked | Rotation priority |
 | --- | --- | --- | --- |
 | `ACCESS_SECRET_KEY` (HS256) | issuer | Any holder can forge valid access tokens | **Immediate** |
-| RSA/EC private key (`ACCESS_PRIVATE_KEY_FILE`) | issuer only (never consumers) | Any holder can forge access tokens and sign a rogue JWKS | **Immediate** |
+| RSA (Rivest–Shamir–Adleman)/EC private key (`ACCESS_PRIVATE_KEY_FILE`) | issuer only (never consumers) | Any holder can forge access tokens and sign a rogue JWKS | **Immediate** |
 | `REFRESH_SECRET_KEY` | issuer | Any holder can forge refresh tokens, bypassing rotation | **Immediate** |
 | `REFRESH_SECRET_KEY_OLD` | issuer (rotation window only) | Same as `REFRESH_SECRET_KEY` while set | **Remove after rotation window expires** |
 | `EVENT_SIGNING_KEY` | issuer + all consumers | Forged event frames — malicious session-revoked / user-deleted delivery can corrupt revocation caches | **Immediate; rotate all services together** |
 | `PRIVATE_API_SECRET` (shared model) | issuer + registered consumers | Any holder can call `/private/*` endpoints (JTI-status, event-stream) | **Immediate; scoped per-consumer credentials (9.1) reduce blast radius** |
 | `DB_PASSWORD` | issuer | Direct read/write access to the user, session, auth-code, and API-key tables | **Immediate** |
-| `REDIS_PASSWORD` / per-ACL-user password | issuer (and media-service if bundled) | Session and refresh-token store; JTI blacklist reads and writes | **Immediate** |
+| `REDIS_PASSWORD` / per-ACL (Access Control List)-user password | issuer (and media-service if bundled) | Session and refresh-token store; JTI blacklist reads and writes | **Immediate** |
 | `METRICS_SCRAPE_CREDENTIAL` | per-service, Prometheus scraper | Unauthorised metrics reads | Rotate promptly |
 | Per-consumer credential (`ConsumerCredential`) | issuer credential map | A leaked credential can call the scoped `/private/*` operation it was granted | Rotate the individual credential; no fleet-wide impact |
 
@@ -220,7 +226,7 @@ which network layer provides mTLS.
 
 ### Leaked event-signing key (`EVENT_SIGNING_KEY`)
 
-1. **Impact** — an attacker can forge `session-revoked` / `user-deleted` SSE frames, causing
+1. **Impact** — an attacker can forge `session-revoked` / `user-deleted` SSE (Server-Sent Events) frames, causing
    consumers to incorrectly flush their revocation caches (false logouts) or suppress legitimate
    revocation events (tokens appear valid longer than they are). Token issuance is unaffected.
 2. **Rollout window** — set `EVENT_SIGNING_ACCEPT_UNSIGNED=true` on consumers and
@@ -270,5 +276,6 @@ which network layer provides mTLS.
 
 ## Reporting a vulnerability
 
-Report security issues privately to **mex.serra@gmail.com** with `[auth-sdk-m8] SECURITY` in the
-subject line. Do not open a public GitHub issue for vulnerabilities. Expected response within 48 h.
+Report security vulnerabilities privately through GitHub's **Security** tab on this repository —
+**"Report a vulnerability"** — which opens a private security advisory visible only to the
+maintainers. Do not open a public GitHub issue for vulnerabilities. Expected response within 48 h.
