@@ -5,7 +5,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
-## [Unreleased]
+## [2.0.1] - 2026-06-23
+
+### Changed
+
+- Raise the `[config]` (and `[all]`) `pydantic-settings` floor from `>=2.14.1`
+  to `>=2.14.2`. 2.14.2 is a patch release whose only functional change hardens
+  the nested-secrets source against symlink escape/loop traversal; `CommonSettings`
+  does not use that source, so the bump is non-breaking and pulls in the security
+  fix for any consumer that does. Reproducible-build constraints regenerated.
+
+## [2.0.0] - 2026-06-23
 
 ### Removed — deprecated APIs dropped for 2.0.0 · **BREAKING**
 
