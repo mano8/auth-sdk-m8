@@ -496,7 +496,7 @@ Required fields added by the mixin:
 | Field | Type | Description |
 | --- | --- | --- |
 | `INTROSPECTION_URL` | `AnyHttpUrl \| None` | Full URL of the auth service JTI-status endpoint, e.g. `https://auth.example.com/user/private/v1/jti-status` |
-| `PRIVATE_API_SECRET` | `SecretStr \| None` | Shared secret presented in `X-Internal-Token` for introspection requests |
+| `PRIVATE_API_SECRET` | `SecretStr \| None` | This consumer's **per-consumer** private-API secret, sent as `X-Internal-Token` alongside its `X-Internal-Client` id (introspection + event-stream). The legacy shared bare-token model is retired |
 
 Both fields default to `None` (stateless mode). The `_require_introspection_for_stateful_consumer` validator raises `ValueError` when `TOKEN_MODE` is `stateful` or `hybrid` and either field is unset.
 
