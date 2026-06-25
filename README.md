@@ -990,7 +990,9 @@ async def lifespan(app: FastAPI):
 
 The client:
 
-- Authenticates with `X-Internal-Token: <PRIVATE_API_SECRET>` (same header used by `jti-status`).
+- Authenticates each connection via an **internal-auth provider** (see below). Passing
+  `private_api_secret` keeps the legacy `X-Internal-Token: <PRIVATE_API_SECRET>` header (same one
+  `jti-status` uses).
 - Verifies every `data` frame with HMAC-SHA256 (`EVENT_SIGNING_KEY`); forged/unsigned events are dropped.
 - Reconnects automatically with jittered exponential back-off; sends `Last-Event-ID` for resume.
 - Calls `on_gap()` when the server signals an unresumable gap (epoch change or buffer eviction) —
@@ -1000,6 +1002,41 @@ The client:
 
 `derive_stream_url(introspection_url)` strips `/jti-status` from `INTROSPECTION_URL` and appends
 `/events/stream`.
+
+### Per-consumer / service-token auth for the stream (Phase 9.1)
+
+When the issuer runs a `PRIVATE_API_CONSUMERS` registry, the single shared `X-Internal-Token` is no
+longer enough — the stream must present this consumer's own credential. Pass an `auth_provider`
+instead of `private_api_secret` (the two are mutually exclusive; exactly one is required):
+
+```python
+from auth_sdk_m8.security import static_internal_auth  # legacy / bootstrap shapes
+
+client = AuthEventStreamClient(
+    stream_url=derive_stream_url(settings.INTROSPECTION_URL),
+    signing_key=settings.EVENT_SIGNING_KEY.get_secret_value(),
+    on_event=handle_auth_event,
+    on_gap=flush_local_caches,
+    # bootstrap: X-Internal-Client + X-Internal-Token
+    auth_provider=static_internal_auth(
+        settings.PRIVATE_API_SECRET.get_secret_value(),
+        client_id="media-worker",
+    ),
+)
+```
+
+An `auth_provider` is any object satisfying
+[`InternalAuthProvider`](auth_sdk_m8/security/internal_auth.py)
+(`headers()` / `invalidate()` / `close()`):
+
+- `static_internal_auth(secret)` → **legacy** single `X-Internal-Token`.
+- `static_internal_auth(secret, client_id=...)` → **bootstrap** `X-Internal-Client` + `X-Internal-Token`.
+- A **dynamic** provider (e.g. `fastapi-m8`'s service-token exchanger) returns
+  `Authorization: Bearer <short-TTL token>` and re-mints on demand.
+
+`headers()` is called **once per connection attempt**, so a dynamic provider refreshes its credential
+on every reconnect; a `401` on connect calls `invalidate()` so the next reconnect mints a fresh one.
+The client **takes ownership** of the provider and `close()`s it on `stop()`.
 
 ---
 
@@ -1026,7 +1063,8 @@ auth_sdk_m8/
 ├── security/
 │   ├── factory.py            # build_access_validator() — settings-driven factory
 │   ├── guards.py             # make_internal_token_authorizer, make_scrape_credential_guard, make_consumer_authorizer
-│   ├── consumer_auth.py      # ConsumerScope, ConsumerCredential, ConsumerCredentialRegistry (Phase 9.1)
+│   ├── consumer_auth.py      # ConsumerScope, ConsumerCredential, ConsumerCredentialRegistry (Phase 9.1, verify)
+│   ├── internal_auth.py      # InternalAuthProvider, StaticInternalAuth, static_internal_auth (Phase 9.1, emit)
 │   ├── headers.py            # add_security_headers_middleware, build_security_headers
 │   ├── blacklist.py          # AccessTokenBlacklist — Redis JTI revocation check
 │   ├── jwks_resolver.py      # JwksKeyResolver — JWKS endpoint with TTL cache

@@ -5,6 +5,49 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [2.1.0] - 2026-06-25 · Per-consumer / service-token auth for the SSE event stream (9.1)
+
+### Added
+
+- **`AuthEventStreamClient` accepts an `auth_provider`** so a consumer in
+  per-consumer mode can authenticate the SSE event stream, closing the Phase 9.1
+  event-stream gap. The client previously hard-coded a single `X-Internal-Token`
+  header, so a consumer whose issuer runs a `PRIVATE_API_CONSUMERS` registry
+  could authenticate only the introspection call, not the stream. The new
+  parameter is mutually exclusive with `private_api_secret` (exactly one is
+  required); legacy callers passing `private_api_secret` are unchanged.
+  - The provider's `headers()` is called once **per connection attempt**, so a
+    dynamic provider refreshes its credential on every reconnect; a `401` on
+    connect `invalidate()`s the provider so the next reconnect mints a fresh
+    credential. The client takes ownership of the provider and closes it on
+    `stop()`.
+- **`auth_sdk_m8.security.internal_auth`** — a framework-agnostic emission-side
+  contract for private-call auth headers (the issuer-side verification
+  primitives already live in `consumer_auth`):
+  - `InternalAuthProvider` — a `runtime_checkable` `Protocol`
+    (`headers()` / `invalidate()` / `close()`) any transport can drive (the SSE
+    client here, a consumer's revocation HTTP client). `fastapi-m8`'s dynamic
+    service-token provider already satisfies it structurally.
+  - `StaticInternalAuth` + `static_internal_auth(secret, client_id=None)` — the
+    static **legacy** (`X-Internal-Token` only) and **bootstrap**
+    (`X-Internal-Client` + `X-Internal-Token`) header shapes.
+- Exported `InternalAuthProvider`, `StaticInternalAuth`, `static_internal_auth`,
+  and `INTERNAL_TOKEN_HEADER` from `auth_sdk_m8.security`.
+
+### Changed
+
+- `INTERNAL_TOKEN_HEADER` is now defined in the framework-agnostic
+  `security.consumer_auth` (next to `INTERNAL_CLIENT_HEADER`) and re-exported
+  from `security.guards`; the importable name `security.guards.INTERNAL_TOKEN_HEADER`
+  is unchanged, so existing consumers (e.g. `fastapi-m8`) are unaffected.
+
+> **Backward compatible / minor.** All additions are opt-in and the legacy
+> `private_api_secret` path is preserved. Per the post-1.0 semver note, the
+> published `2.0.x` line is not yet consumed by any live stack, so 9.1 lands as a
+> `2.x` **minor**. The matching `fastapi-m8` follow-on
+> (route `build_event_stream_client` through `build_internal_auth`) is SDK-first
+> and ships after this is published.
+
 ## [2.0.1] - 2026-06-23
 
 ### Changed

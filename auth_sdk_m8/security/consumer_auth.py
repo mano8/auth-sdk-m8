@@ -47,6 +47,11 @@ from enum import StrEnum
 
 #: Header naming the calling consumer, paired with ``X-Internal-Token``.
 INTERNAL_CLIENT_HEADER = "X-Internal-Client"
+#: Header carrying the caller's secret (shared legacy secret or per-consumer
+#: bootstrap secret). Defined here — alongside ``INTERNAL_CLIENT_HEADER`` and
+#: framework-agnostic — and re-exported from
+#: :mod:`auth_sdk_m8.security.guards` for the FastAPI authorizer.
+INTERNAL_TOKEN_HEADER = "X-Internal-Token"  # nosec B105 — header name, not a secret value
 
 _ALGORITHM = "sha256"
 _ENCODING_SEPARATOR = "$"

@@ -42,14 +42,13 @@ from fastapi import HTTPException, Request, status
 
 from auth_sdk_m8.security.consumer_auth import (
     INTERNAL_CLIENT_HEADER,
+    INTERNAL_TOKEN_HEADER,
     ConsumerAuthenticationError,
     ConsumerCredential,
     ConsumerCredentialRegistry,
     ConsumerScopeError,
 )
 
-#: Default header the m8 trio uses for the inter-service shared secret.
-INTERNAL_TOKEN_HEADER = "X-Internal-Token"  # nosec B105 — header name, not a secret value
 #: Prefix (case-insensitive) of an ``Authorization: Bearer <token>`` header.
 _BEARER_PREFIX = "bearer "
 
