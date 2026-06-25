@@ -17,6 +17,7 @@ from auth_sdk_m8.security.consumer_auth import (
 )
 from auth_sdk_m8.security.guards import (
     INTERNAL_TOKEN_HEADER,
+    assert_secrets_distinct,
     compare_secret,
     extract_bearer_token,
     make_consumer_authorizer,
@@ -255,3 +256,60 @@ def test_consumer_authorizer_honours_custom_headers() -> None:
     # The default headers no longer authenticate.
     miss = client.get("/private", headers=_consumer_headers("svc-a", CONSUMER_SECRET))
     assert miss.status_code == 401
+
+
+# ── assert_secrets_distinct ──────────────────────────────────────────────────
+
+
+def test_assert_secrets_distinct_passes_when_all_different() -> None:
+    assert_secrets_distinct(
+        SECRET,
+        health_detail_credential="health-token-aaa",
+        metrics_scrape_credential="metrics-token-bbb",
+    )
+
+
+def test_assert_secrets_distinct_raises_on_single_reuse() -> None:
+    with pytest.raises(ValueError, match="health_detail_credential"):
+        assert_secrets_distinct(
+            SECRET,
+            health_detail_credential=SECRET,
+            metrics_scrape_credential="metrics-token-bbb",
+        )
+
+
+def test_assert_secrets_distinct_raises_naming_all_offenders() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        assert_secrets_distinct(
+            SECRET,
+            health_detail_credential=SECRET,
+            metrics_scrape_credential=SECRET,
+        )
+    msg = str(exc_info.value)
+    assert "health_detail_credential" in msg
+    assert "metrics_scrape_credential" in msg
+
+
+def test_assert_secrets_distinct_noop_when_reference_none() -> None:
+    # No reference secret → nothing to protect, so unset is fine.
+    assert_secrets_distinct(None, health_detail_credential=SECRET)
+
+
+def test_assert_secrets_distinct_noop_when_reference_empty() -> None:
+    assert_secrets_distinct("", health_detail_credential=SECRET)
+
+
+def test_assert_secrets_distinct_skips_unset_operational_secrets() -> None:
+    # An unset operational credential is not a reuse — skip it.
+    assert_secrets_distinct(SECRET, health_detail_credential=None)
+    assert_secrets_distinct(SECRET, health_detail_credential="")
+
+
+def test_assert_secrets_distinct_noop_with_no_named_args() -> None:
+    assert_secrets_distinct(SECRET)
+
+
+def test_assert_secrets_distinct_accessible_via_security_package() -> None:
+    from auth_sdk_m8.security import assert_secrets_distinct as fn
+
+    assert callable(fn)

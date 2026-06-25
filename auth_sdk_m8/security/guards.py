@@ -163,6 +163,43 @@ def make_scrape_credential_guard(
     return _guard
 
 
+def assert_secrets_distinct(reference: str | None, /, **named: str | None) -> None:
+    """Assert that no named operational secret equals *reference*.
+
+    Call this at startup / config-health time to fail closed when an operator
+    accidentally reuses the private-API secret (``PRIVATE_API_SECRET``) as an
+    operational credential (``HEALTH_DETAIL_CREDENTIAL``,
+    ``METRICS_SCRAPE_CREDENTIAL``, etc.). Each reuse both widens blast radius and
+    makes individual rotation harder — a single shared value cannot be rotated
+    independently.
+
+    Behaviour:
+    - *reference* ``None``/empty → no-op (the private-API secret is unset, so
+      there is nothing to reuse).
+    - Any *named* value that is ``None``/empty → skipped (unset credential ≠ reuse).
+    - First match raises :exc:`ValueError` naming all offending credentials.
+
+    Args:
+        reference: The private-API secret to protect against reuse, e.g.
+            ``settings.PRIVATE_API_SECRET.get_secret_value()``.
+        **named: Operational credentials to check, keyed by their config-variable
+            name (used only in the error message), e.g.
+            ``health_detail_credential=…, metrics_scrape_credential=…``.
+
+    Raises:
+        ValueError: When one or more *named* values equal *reference*.
+    """
+    if not reference:
+        return
+    offenders = [k for k, v in named.items() if v and v == reference]
+    if offenders:
+        joined = ", ".join(offenders)
+        raise ValueError(
+            f"Operational credential(s) reuse PRIVATE_API_SECRET: {joined}. "
+            "Each credential must be independently rotatable — use a distinct value."
+        )
+
+
 def make_consumer_authorizer(
     registry: ConsumerCredentialRegistry,
     *,

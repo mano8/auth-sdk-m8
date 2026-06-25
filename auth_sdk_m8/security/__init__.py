@@ -12,6 +12,7 @@ from auth_sdk_m8.security.consumer_auth import (
     ConsumerScopeError,
 )
 from auth_sdk_m8.security.factory import build_access_validator
+from auth_sdk_m8.security.guards import assert_secrets_distinct
 from auth_sdk_m8.security.hooks import ValidationHooks
 from auth_sdk_m8.security.internal_auth import (
     InternalAuthProvider,
@@ -31,6 +32,7 @@ __all__ = [
     "INTERNAL_CLIENT_HEADER",
     "INTERNAL_TOKEN_HEADER",
     "AccessTokenBlacklist",
+    "assert_secrets_distinct",
     "ConsumerAuthError",
     "ConsumerAuthenticationError",
     "ConsumerCredential",
