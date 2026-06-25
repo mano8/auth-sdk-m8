@@ -2,9 +2,9 @@
 
 Connects to ``GET /private/v1/events/stream`` on the fa-auth private API,
 authenticates via an :class:`~auth_sdk_m8.security.internal_auth.InternalAuthProvider`
-(legacy ``X-Internal-Token``, per-consumer ``X-Internal-Client`` + token, or a
-short-TTL ``Authorization: Bearer`` service token), and dispatches verified
-events to caller-supplied callbacks. Never raises into the host application: all
+(per-consumer ``X-Internal-Client`` + token, or a short-TTL
+``Authorization: Bearer`` service token), and dispatches verified events to
+caller-supplied callbacks. Never raises into the host application: all
 exceptions are logged and the client reconnects with jittered backoff.
 
 Requires the ``events`` extra:  ``pip install "auth-sdk-m8[events]"``.
@@ -21,10 +21,7 @@ from typing import Awaitable, Callable, Optional
 import httpx
 
 from auth_sdk_m8.events._signing import deserialize
-from auth_sdk_m8.security.internal_auth import (
-    InternalAuthProvider,
-    static_internal_auth,
-)
+from auth_sdk_m8.security.internal_auth import InternalAuthProvider
 
 logger = logging.getLogger(__name__)
 
@@ -96,15 +93,15 @@ class AuthEventStreamClient:
     """Authenticated SSE client for the fa-auth event-stream bridge.
 
     Connects to ``GET /private/v1/events/stream`` and authenticates each
-    connection via an
-    :class:`~auth_sdk_m8.security.internal_auth.InternalAuthProvider`: pass
-    ``private_api_secret`` to keep the legacy single ``X-Internal-Token``
-    behaviour, or pass an ``auth_provider`` for per-consumer credentials
-    (``X-Internal-Client`` + token) or short-TTL ``Authorization: Bearer``
-    service tokens (Phase 9.1). Exactly one must be supplied. Incoming ``data``
-    frames are verified via HMAC-SHA256 (same ``EVENT_SIGNING_KEY`` used for the
-    Redis transport). Reconnects automatically with jittered exponential
-    back-off; passes ``Last-Event-ID`` so the server can replay the gap.
+    connection via a required
+    :class:`~auth_sdk_m8.security.internal_auth.InternalAuthProvider`
+    (``auth_provider``): per-consumer credentials (``X-Internal-Client`` +
+    token) or short-TTL ``Authorization: Bearer`` service tokens (Phase 9.1).
+    The legacy single shared ``X-Internal-Token`` path has been retired.
+    Incoming ``data`` frames are verified via HMAC-SHA256 (same
+    ``EVENT_SIGNING_KEY`` used for the Redis transport). Reconnects automatically
+    with jittered exponential back-off; passes ``Last-Event-ID`` so the server
+    can replay the gap.
 
     The provider's :meth:`headers` is called once per connection attempt, so a
     dynamic provider refreshes its credential on every reconnect; a ``401`` on
@@ -132,19 +129,15 @@ class AuthEventStreamClient:
             :class:`AuthStreamEvent`.
         on_gap: Async callback invoked when the stream is unresumable; caller
             must flush caches and return promptly.
-        private_api_secret: Raw ``PRIVATE_API_SECRET`` string for the legacy
-            single ``X-Internal-Token`` header. Mutually exclusive with
-            ``auth_provider``.
         auth_provider: A per-call header source for per-consumer credentials or
-            short-TTL service tokens. Mutually exclusive with
-            ``private_api_secret``.
+            short-TTL service tokens. Required — the legacy single shared
+            ``X-Internal-Token`` path has been retired.
         connect_timeout: Seconds to wait for the initial connection.
         read_timeout: Seconds to wait between SSE frames (heartbeat interval
             should be well below this).
 
     Raises:
-        ValueError: If neither or both of ``private_api_secret`` and
-            ``auth_provider`` are supplied.
+        ValueError: If ``auth_provider`` is not supplied.
     """
 
     def __init__(
@@ -154,19 +147,14 @@ class AuthEventStreamClient:
         signing_key: Optional[str],
         on_event: Callable[[AuthStreamEvent], Awaitable[None]],
         on_gap: Callable[[], Awaitable[None]],
-        private_api_secret: Optional[str] = None,
         auth_provider: Optional[InternalAuthProvider] = None,
         connect_timeout: float = 5.0,
         read_timeout: float = 60.0,
     ) -> None:
-        if (private_api_secret is None) == (auth_provider is None):
-            raise ValueError(
-                "provide exactly one of private_api_secret or auth_provider"
-            )
+        if auth_provider is None:
+            raise ValueError("auth_provider is required")
         self._url = stream_url
-        self._auth: InternalAuthProvider = auth_provider or static_internal_auth(
-            private_api_secret  # type: ignore[arg-type]  # exactly-one guard above
-        )
+        self._auth: InternalAuthProvider = auth_provider
         self._signing_key = signing_key
         self._on_event = on_event
         self._on_gap = on_gap

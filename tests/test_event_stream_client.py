@@ -21,10 +21,12 @@ import auth_sdk_m8.observability.metrics as _metrics_mod
 from auth_sdk_m8.events import AuthEventStreamClient, AuthStreamEvent, derive_stream_url
 from auth_sdk_m8.events._signing import serialize
 from auth_sdk_m8.events.stream_client import _get_metrics
+from auth_sdk_m8.security import static_internal_auth
 
 KEY = "Abcdef-1234_XYZ-abcdef-ghijkl-mnopqr-stuvwx"
 _STREAM_URL = "http://auth:8000/private/v1/events/stream"
 _SECRET = "my-internal-secret"
+_CLIENT_ID = "test-consumer"
 
 pytestmark = pytest.mark.anyio
 
@@ -84,7 +86,7 @@ def _make_client(
 ) -> AuthEventStreamClient:
     return AuthEventStreamClient(
         stream_url=_STREAM_URL,
-        private_api_secret=_SECRET,
+        auth_provider=static_internal_auth(_SECRET, client_id=_CLIENT_ID),
         signing_key=signing_key,
         on_event=on_event or AsyncMock(),
         on_gap=on_gap or AsyncMock(),
@@ -292,27 +294,14 @@ def _make_provider(headers: dict | None = None) -> AsyncMock:
     return provider
 
 
-def test_requires_exactly_one_auth_source_none() -> None:
-    """Neither private_api_secret nor auth_provider → ValueError."""
-    with pytest.raises(ValueError, match="exactly one"):
+def test_requires_auth_provider() -> None:
+    """A missing auth_provider → ValueError (the legacy secret path is retired)."""
+    with pytest.raises(ValueError, match="auth_provider is required"):
         AuthEventStreamClient(
             stream_url=_STREAM_URL,
             signing_key=KEY,
             on_event=AsyncMock(),
             on_gap=AsyncMock(),
-        )
-
-
-def test_requires_exactly_one_auth_source_both() -> None:
-    """Both private_api_secret and auth_provider → ValueError."""
-    with pytest.raises(ValueError, match="exactly one"):
-        AuthEventStreamClient(
-            stream_url=_STREAM_URL,
-            signing_key=KEY,
-            on_event=AsyncMock(),
-            on_gap=AsyncMock(),
-            private_api_secret=_SECRET,
-            auth_provider=_make_provider(),
         )
 
 

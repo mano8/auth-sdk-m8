@@ -962,10 +962,14 @@ pip install "auth-sdk-m8[events]"
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from auth_sdk_m8.events import AuthEventStreamClient, AuthStreamEvent, derive_stream_url
+from auth_sdk_m8.security import static_internal_auth
 
 client = AuthEventStreamClient(
     stream_url=derive_stream_url(settings.INTROSPECTION_URL),  # e.g. http://fa-auth:8000/private/v1/events/stream
-    private_api_secret=settings.PRIVATE_API_SECRET.get_secret_value(),
+    auth_provider=static_internal_auth(  # per-consumer X-Internal-Client + X-Internal-Token
+        settings.PRIVATE_API_SECRET.get_secret_value(),
+        client_id=settings.INTERNAL_CLIENT_ID,
+    ),
     signing_key=settings.EVENT_SIGNING_KEY.get_secret_value(),
     on_event=handle_auth_event,
     on_gap=flush_local_caches,
@@ -990,9 +994,9 @@ async def lifespan(app: FastAPI):
 
 The client:
 
-- Authenticates each connection via an **internal-auth provider** (see below). Passing
-  `private_api_secret` keeps the legacy `X-Internal-Token: <PRIVATE_API_SECRET>` header (same one
-  `jti-status` uses).
+- Authenticates each connection via a required **internal-auth provider** (`auth_provider`, see
+  below) — per-consumer `X-Internal-Client` + `X-Internal-Token`, or a short-TTL `Authorization:
+  Bearer` service token. The legacy single shared `X-Internal-Token` path has been retired.
 - Verifies every `data` frame with HMAC-SHA256 (`EVENT_SIGNING_KEY`); forged/unsigned events are dropped.
 - Reconnects automatically with jittered exponential back-off; sends `Last-Event-ID` for resume.
 - Calls `on_gap()` when the server signals an unresumable gap (epoch change or buffer eviction) —
@@ -1005,12 +1009,12 @@ The client:
 
 ### Per-consumer / service-token auth for the stream (Phase 9.1)
 
-When the issuer runs a `PRIVATE_API_CONSUMERS` registry, the single shared `X-Internal-Token` is no
-longer enough — the stream must present this consumer's own credential. Pass an `auth_provider`
-instead of `private_api_secret` (the two are mutually exclusive; exactly one is required):
+The issuer runs a `PRIVATE_API_CONSUMERS` registry, so every caller must present its own
+credential — the legacy single shared `X-Internal-Token` (no consumer id) has been **retired**. The
+`auth_provider` is required and is the only authentication path:
 
 ```python
-from auth_sdk_m8.security import static_internal_auth  # legacy / bootstrap shapes
+from auth_sdk_m8.security import static_internal_auth  # bootstrap shape
 
 client = AuthEventStreamClient(
     stream_url=derive_stream_url(settings.INTROSPECTION_URL),
@@ -1029,8 +1033,8 @@ An `auth_provider` is any object satisfying
 [`InternalAuthProvider`](auth_sdk_m8/security/internal_auth.py)
 (`headers()` / `invalidate()` / `close()`):
 
-- `static_internal_auth(secret)` → **legacy** single `X-Internal-Token`.
-- `static_internal_auth(secret, client_id=...)` → **bootstrap** `X-Internal-Client` + `X-Internal-Token`.
+- `static_internal_auth(secret, client_id=...)` → **bootstrap** `X-Internal-Client` +
+  `X-Internal-Token` (`client_id` is required).
 - A **dynamic** provider (e.g. `fastapi-m8`'s service-token exchanger) returns
   `Authorization: Bearer <short-TTL token>` and re-mints on demand.
 
