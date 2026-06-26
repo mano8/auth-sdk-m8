@@ -62,3 +62,28 @@ jobs:
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
+
+  sbom:
+    name: Generate & attach SBOM
+    runs-on: ubuntu-latest
+    needs:
+      - release-build
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.x"
+
+      - name: Install package
+        run: pip install -e ".[all]"
+
+      - uses: anchore/sbom-action@v0.18.0
+        with:
+          artifact-name: auth-sdk-m8-${{ github.event.release.tag_name }}.sbom.spdx.json
+          format: spdx-json
+          upload-release-assets: true
