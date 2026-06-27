@@ -496,7 +496,7 @@ Required fields added by the mixin:
 | Field | Type | Description |
 | --- | --- | --- |
 | `INTROSPECTION_URL` | `AnyHttpUrl \| None` | Full URL of the auth service JTI-status endpoint, e.g. `https://auth.example.com/user/private/v1/jti-status` |
-| `PRIVATE_API_SECRET` | `SecretStr \| None` | Shared secret presented in `X-Internal-Token` for introspection requests |
+| `PRIVATE_API_SECRET` | `SecretStr \| None` | This consumer's **per-consumer** private-API secret, sent as `X-Internal-Token` alongside its `X-Internal-Client` id (introspection + event-stream). The legacy shared bare-token model is retired |
 
 Both fields default to `None` (stateless mode). The `_require_introspection_for_stateful_consumer` validator raises `ValueError` when `TOKEN_MODE` is `stateful` or `hybrid` and either field is unset.
 
@@ -962,10 +962,14 @@ pip install "auth-sdk-m8[events]"
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from auth_sdk_m8.events import AuthEventStreamClient, AuthStreamEvent, derive_stream_url
+from auth_sdk_m8.security import static_internal_auth
 
 client = AuthEventStreamClient(
     stream_url=derive_stream_url(settings.INTROSPECTION_URL),  # e.g. http://fa-auth:8000/private/v1/events/stream
-    private_api_secret=settings.PRIVATE_API_SECRET.get_secret_value(),
+    auth_provider=static_internal_auth(  # per-consumer X-Internal-Client + X-Internal-Token
+        settings.PRIVATE_API_SECRET.get_secret_value(),
+        client_id=settings.INTERNAL_CLIENT_ID,
+    ),
     signing_key=settings.EVENT_SIGNING_KEY.get_secret_value(),
     on_event=handle_auth_event,
     on_gap=flush_local_caches,
@@ -990,7 +994,9 @@ async def lifespan(app: FastAPI):
 
 The client:
 
-- Authenticates with `X-Internal-Token: <PRIVATE_API_SECRET>` (same header used by `jti-status`).
+- Authenticates each connection via a required **internal-auth provider** (`auth_provider`, see
+  below) — per-consumer `X-Internal-Client` + `X-Internal-Token`, or a short-TTL `Authorization:
+  Bearer` service token. The legacy single shared `X-Internal-Token` path has been retired.
 - Verifies every `data` frame with HMAC-SHA256 (`EVENT_SIGNING_KEY`); forged/unsigned events are dropped.
 - Reconnects automatically with jittered exponential back-off; sends `Last-Event-ID` for resume.
 - Calls `on_gap()` when the server signals an unresumable gap (epoch change or buffer eviction) —
@@ -1000,6 +1006,41 @@ The client:
 
 `derive_stream_url(introspection_url)` strips `/jti-status` from `INTROSPECTION_URL` and appends
 `/events/stream`.
+
+### Per-consumer / service-token auth for the stream (Phase 9.1)
+
+The issuer runs a `PRIVATE_API_CONSUMERS` registry, so every caller must present its own
+credential — the legacy single shared `X-Internal-Token` (no consumer id) has been **retired**. The
+`auth_provider` is required and is the only authentication path:
+
+```python
+from auth_sdk_m8.security import static_internal_auth  # bootstrap shape
+
+client = AuthEventStreamClient(
+    stream_url=derive_stream_url(settings.INTROSPECTION_URL),
+    signing_key=settings.EVENT_SIGNING_KEY.get_secret_value(),
+    on_event=handle_auth_event,
+    on_gap=flush_local_caches,
+    # bootstrap: X-Internal-Client + X-Internal-Token
+    auth_provider=static_internal_auth(
+        settings.PRIVATE_API_SECRET.get_secret_value(),
+        client_id="media-worker",
+    ),
+)
+```
+
+An `auth_provider` is any object satisfying
+[`InternalAuthProvider`](auth_sdk_m8/security/internal_auth.py)
+(`headers()` / `invalidate()` / `close()`):
+
+- `static_internal_auth(secret, client_id=...)` → **bootstrap** `X-Internal-Client` +
+  `X-Internal-Token` (`client_id` is required).
+- A **dynamic** provider (e.g. `fastapi-m8`'s service-token exchanger) returns
+  `Authorization: Bearer <short-TTL token>` and re-mints on demand.
+
+`headers()` is called **once per connection attempt**, so a dynamic provider refreshes its credential
+on every reconnect; a `401` on connect calls `invalidate()` so the next reconnect mints a fresh one.
+The client **takes ownership** of the provider and `close()`s it on `stop()`.
 
 ---
 
@@ -1026,7 +1067,8 @@ auth_sdk_m8/
 ├── security/
 │   ├── factory.py            # build_access_validator() — settings-driven factory
 │   ├── guards.py             # make_internal_token_authorizer, make_scrape_credential_guard, make_consumer_authorizer
-│   ├── consumer_auth.py      # ConsumerScope, ConsumerCredential, ConsumerCredentialRegistry (Phase 9.1)
+│   ├── consumer_auth.py      # ConsumerScope, ConsumerCredential, ConsumerCredentialRegistry (Phase 9.1, verify)
+│   ├── internal_auth.py      # InternalAuthProvider, StaticInternalAuth, static_internal_auth (Phase 9.1, emit)
 │   ├── headers.py            # add_security_headers_middleware, build_security_headers
 │   ├── blacklist.py          # AccessTokenBlacklist — Redis JTI revocation check
 │   ├── jwks_resolver.py      # JwksKeyResolver — JWKS endpoint with TTL cache

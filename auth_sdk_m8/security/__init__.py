@@ -3,6 +3,7 @@
 from auth_sdk_m8.security.blacklist import AccessTokenBlacklist
 from auth_sdk_m8.security.consumer_auth import (
     INTERNAL_CLIENT_HEADER,
+    INTERNAL_TOKEN_HEADER,
     ConsumerAuthenticationError,
     ConsumerAuthError,
     ConsumerCredential,
@@ -11,7 +12,13 @@ from auth_sdk_m8.security.consumer_auth import (
     ConsumerScopeError,
 )
 from auth_sdk_m8.security.factory import build_access_validator
+from auth_sdk_m8.security.guards import assert_secrets_distinct
 from auth_sdk_m8.security.hooks import ValidationHooks
+from auth_sdk_m8.security.internal_auth import (
+    InternalAuthProvider,
+    StaticInternalAuth,
+    static_internal_auth,
+)
 from auth_sdk_m8.security.jwks_resolver import JwksKeyResolver
 from auth_sdk_m8.security.key_resolver import KeyResolver
 from auth_sdk_m8.security.refresh_token_policy import RefreshTokenPolicy
@@ -23,21 +30,26 @@ from auth_sdk_m8.security.validation import TokenValidationConfig
 
 __all__ = [
     "INTERNAL_CLIENT_HEADER",
+    "INTERNAL_TOKEN_HEADER",
     "AccessTokenBlacklist",
+    "assert_secrets_distinct",
     "ConsumerAuthError",
     "ConsumerAuthenticationError",
     "ConsumerCredential",
     "ConsumerCredentialRegistry",
     "ConsumerScope",
     "ConsumerScopeError",
+    "InternalAuthProvider",
     "JwksKeyResolver",
     "KeyResolver",
     "RefreshTokenPolicy",
     "RefreshTokenStore",
     "SessionStore",
+    "StaticInternalAuth",
     "TokenPolicy",
     "TokenValidator",
     "TokenValidationConfig",
     "ValidationHooks",
     "build_access_validator",
+    "static_internal_auth",
 ]

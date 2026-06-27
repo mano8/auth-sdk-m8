@@ -5,6 +5,74 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [2.1.0] - 2026-06-25 · Per-consumer / service-token auth for the SSE event stream (9.1) + `PRIVATE_API_SECRET` shared-model retirement
+
+### Added
+
+- **`AuthEventStreamClient` requires an `auth_provider`** so a consumer in
+  per-consumer mode can authenticate the SSE event stream, closing the Phase 9.1
+  event-stream gap. The client previously hard-coded a single `X-Internal-Token`
+  header, so a consumer whose issuer runs a `PRIVATE_API_CONSUMERS` registry
+  could authenticate only the introspection call, not the stream.
+  - The provider's `headers()` is called once **per connection attempt**, so a
+    dynamic provider refreshes its credential on every reconnect; a `401` on
+    connect `invalidate()`s the provider so the next reconnect mints a fresh
+    credential. The client takes ownership of the provider and closes it on
+    `stop()`.
+- **`auth_sdk_m8.security.internal_auth`** — a framework-agnostic emission-side
+  contract for private-call auth headers (the issuer-side verification
+  primitives already live in `consumer_auth`):
+  - `InternalAuthProvider` — a `runtime_checkable` `Protocol`
+    (`headers()` / `invalidate()` / `close()`) any transport can drive (the SSE
+    client here, a consumer's revocation HTTP client). `fastapi-m8`'s dynamic
+    service-token provider already satisfies it structurally.
+  - `StaticInternalAuth` + `static_internal_auth(secret, *, client_id)` — the
+    static **bootstrap** (`X-Internal-Client` + `X-Internal-Token`) header shape.
+    `client_id` is **required**.
+- Exported `InternalAuthProvider`, `StaticInternalAuth`, `static_internal_auth`,
+  and `INTERNAL_TOKEN_HEADER` from `auth_sdk_m8.security`.
+
+### Removed — `PRIVATE_API_SECRET` shared-secret model retired · **BREAKING**
+
+The legacy single shared `PRIVATE_API_SECRET`, presented as a lone
+`X-Internal-Token` with no consumer id, is gone from the SDK's emission side —
+per-consumer credentials are now the **only** private-API auth path, so every
+caller is identifiable and individually revocable. The gate is cleared: every
+live consumer already emits per-consumer credentials (`fastapi-m8` 3.1.0,
+`media-service-m8` 2026-06-25), and the `2.x` line is not yet consumed by any
+live stack, so the breaking removal folds into this minor (no new major).
+
+- **`AuthEventStreamClient(private_api_secret=…)` removed** — pass `auth_provider`
+  (a per-consumer or service-token `InternalAuthProvider`) instead; it is now a
+  required keyword. Omitting it raises `ValueError`.
+- **`static_internal_auth(secret)` token-only shape removed** — `client_id` is
+  now a required keyword-only argument and must be non-empty (a `ValueError` is
+  raised otherwise). The builder produces the bootstrap pair only.
+
+**Migration:** replace `AuthEventStreamClient(..., private_api_secret=s)` with
+`AuthEventStreamClient(..., auth_provider=static_internal_auth(s, client_id=<id>))`
+(or a dynamic service-token provider), and add `client_id=` to any
+`static_internal_auth` call. `PRIVATE_API_SECRET` stays valid as the *value* of a
+consumer's per-consumer bootstrap secret. Deep-`/health` detail gating
+(`make_internal_token_authorizer`) and the `/metrics` scrape credential
+(`make_scrape_credential_guard`) are a separate operational surface and are
+unchanged.
+
+### Changed
+
+- `INTERNAL_TOKEN_HEADER` is now defined in the framework-agnostic
+  `security.consumer_auth` (next to `INTERNAL_CLIENT_HEADER`) and re-exported
+  from `security.guards`; the importable name `security.guards.INTERNAL_TOKEN_HEADER`
+  is unchanged, so existing consumers (e.g. `fastapi-m8`) are unaffected.
+
+> **Folds into the `2.x` minor while `2.x` stays unconsumed.** Per the post-1.0
+> semver note, the published `2.0.x` line is not yet consumed by any live stack,
+> so the 9.1 event-stream provider **and** the `PRIVATE_API_SECRET` shared-model
+> retirement land together in this `2.1.0` minor — before any live stack adopts
+> the `2.x` line — rather than forcing a new major. The matching `fastapi-m8`
+> follow-on (route `build_event_stream_client` through `build_internal_auth`)
+> already drives the stream via `auth_provider`.
+
 ## [2.0.1] - 2026-06-23
 
 ### Changed

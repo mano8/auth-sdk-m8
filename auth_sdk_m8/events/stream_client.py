@@ -1,7 +1,9 @@
 """AuthEventStreamClient — httpx-based SSE client for the fa-auth bridge.
 
 Connects to ``GET /private/v1/events/stream`` on the fa-auth private API,
-authenticates via ``X-Internal-Token``, and dispatches verified events to
+authenticates via an :class:`~auth_sdk_m8.security.internal_auth.InternalAuthProvider`
+(per-consumer ``X-Internal-Client`` + token, or a short-TTL
+``Authorization: Bearer`` service token), and dispatches verified events to
 caller-supplied callbacks. Never raises into the host application: all
 exceptions are logged and the client reconnects with jittered backoff.
 
@@ -19,8 +21,12 @@ from typing import Awaitable, Callable, Optional
 import httpx
 
 from auth_sdk_m8.events._signing import deserialize
+from auth_sdk_m8.security.internal_auth import InternalAuthProvider
 
 logger = logging.getLogger(__name__)
+
+#: HTTP status that signals the presented internal credential was rejected.
+_UNAUTHORIZED = 401
 
 
 def _get_metrics():
@@ -86,11 +92,22 @@ class AuthStreamEvent:
 class AuthEventStreamClient:
     """Authenticated SSE client for the fa-auth event-stream bridge.
 
-    Connects to ``GET /private/v1/events/stream`` using the existing
-    ``PRIVATE_API_SECRET`` (``X-Internal-Token`` header). Incoming ``data``
-    frames are verified via HMAC-SHA256 (same ``EVENT_SIGNING_KEY`` used for
-    the Redis transport). Reconnects automatically with jittered exponential
-    back-off; passes ``Last-Event-ID`` so the server can replay the gap.
+    Connects to ``GET /private/v1/events/stream`` and authenticates each
+    connection via a required
+    :class:`~auth_sdk_m8.security.internal_auth.InternalAuthProvider`
+    (``auth_provider``): per-consumer credentials (``X-Internal-Client`` +
+    token) or short-TTL ``Authorization: Bearer`` service tokens (Phase 9.1).
+    The legacy single shared ``X-Internal-Token`` path has been retired.
+    Incoming ``data`` frames are verified via HMAC-SHA256 (same
+    ``EVENT_SIGNING_KEY`` used for the Redis transport). Reconnects automatically
+    with jittered exponential back-off; passes ``Last-Event-ID`` so the server
+    can replay the gap.
+
+    The provider's :meth:`headers` is called once per connection attempt, so a
+    dynamic provider refreshes its credential on every reconnect; a ``401`` on
+    connect :meth:`invalidate`\\ s the provider so the next reconnect mints a
+    fresh one. The client **takes ownership** of the provider and closes it on
+    :meth:`stop`.
 
     Caller responsibilities:
 
@@ -106,31 +123,38 @@ class AuthEventStreamClient:
 
     Args:
         stream_url: Full URL of the SSE stream endpoint.
-        private_api_secret: Raw ``PRIVATE_API_SECRET`` string.
         signing_key: ``EVENT_SIGNING_KEY`` raw string for HMAC verification.
             Pass ``None`` only when signing is disabled on the server too.
         on_event: Async callback invoked with each verified
             :class:`AuthStreamEvent`.
         on_gap: Async callback invoked when the stream is unresumable; caller
             must flush caches and return promptly.
+        auth_provider: A per-call header source for per-consumer credentials or
+            short-TTL service tokens. Required — the legacy single shared
+            ``X-Internal-Token`` path has been retired.
         connect_timeout: Seconds to wait for the initial connection.
         read_timeout: Seconds to wait between SSE frames (heartbeat interval
             should be well below this).
+
+    Raises:
+        ValueError: If ``auth_provider`` is not supplied.
     """
 
     def __init__(
         self,
         *,
         stream_url: str,
-        private_api_secret: str,
         signing_key: Optional[str],
         on_event: Callable[[AuthStreamEvent], Awaitable[None]],
         on_gap: Callable[[], Awaitable[None]],
+        auth_provider: Optional[InternalAuthProvider] = None,
         connect_timeout: float = 5.0,
         read_timeout: float = 60.0,
     ) -> None:
+        if auth_provider is None:
+            raise ValueError("auth_provider is required")
         self._url = stream_url
-        self._secret = private_api_secret
+        self._auth: InternalAuthProvider = auth_provider
         self._signing_key = signing_key
         self._on_event = on_event
         self._on_gap = on_gap
@@ -145,7 +169,7 @@ class AuthEventStreamClient:
             self._task = asyncio.create_task(self._run())
 
     async def stop(self) -> None:
-        """Cancel the background reader task and wait for it to finish."""
+        """Cancel the reader task, wait for it, then close the auth provider."""
         if self._task and not self._task.done():
             self._task.cancel()
             try:
@@ -153,6 +177,7 @@ class AuthEventStreamClient:
             except asyncio.CancelledError:
                 pass
         self._task = None
+        await self._auth.close()
 
     # ── observability (best-effort; no secrets are ever logged or labelled) ────
 
@@ -209,8 +234,13 @@ class AuthEventStreamClient:
             backoff = min(backoff * 2, _BACKOFF_CAP)
 
     async def _connect_and_read(self) -> None:
-        """Open a single SSE connection and read until it closes."""
-        headers: dict[str, str] = {"X-Internal-Token": self._secret}
+        """Open a single SSE connection and read until it closes.
+
+        The auth headers come from the provider (refreshed per attempt). A
+        ``401`` on connect invalidates the provider so the next reconnect mints a
+        fresh credential, then re-raises to drive the back-off loop.
+        """
+        headers = await self._auth.headers()
         if self._last_event_id is not None:
             headers["Last-Event-ID"] = self._last_event_id
 
@@ -224,13 +254,22 @@ class AuthEventStreamClient:
             ),
         ) as client:
             async with client.stream("GET", self._url) as response:
-                response.raise_for_status()
+                await self._raise_for_status(response)
                 self._set_connected(True)
                 logger.info("auth.event_stream connected url=%s", self._url)
                 try:
                     await self._read_sse(response)
                 finally:
                     self._set_connected(False)
+
+    async def _raise_for_status(self, response: httpx.Response) -> None:
+        """Raise on a bad status, invalidating the provider on a ``401``."""
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError:
+            if response.status_code == _UNAUTHORIZED:
+                await self._auth.invalidate()
+            raise
 
     async def _read_sse(self, response: httpx.Response) -> None:
         """Parse SSE lines and dispatch events."""

@@ -12,6 +12,7 @@ import json
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from prometheus_client import CollectorRegistry
 
@@ -20,10 +21,12 @@ import auth_sdk_m8.observability.metrics as _metrics_mod
 from auth_sdk_m8.events import AuthEventStreamClient, AuthStreamEvent, derive_stream_url
 from auth_sdk_m8.events._signing import serialize
 from auth_sdk_m8.events.stream_client import _get_metrics
+from auth_sdk_m8.security import static_internal_auth
 
 KEY = "Abcdef-1234_XYZ-abcdef-ghijkl-mnopqr-stuvwx"
 _STREAM_URL = "http://auth:8000/private/v1/events/stream"
 _SECRET = "my-internal-secret"
+_CLIENT_ID = "test-consumer"
 
 pytestmark = pytest.mark.anyio
 
@@ -83,7 +86,7 @@ def _make_client(
 ) -> AuthEventStreamClient:
     return AuthEventStreamClient(
         stream_url=_STREAM_URL,
-        private_api_secret=_SECRET,
+        auth_provider=static_internal_auth(_SECRET, client_id=_CLIENT_ID),
         signing_key=signing_key,
         on_event=on_event or AsyncMock(),
         on_gap=on_gap or AsyncMock(),
@@ -276,6 +279,143 @@ async def test_last_event_id_sent_on_reconnect() -> None:
 
         call_kwargs = mock_cls.call_args[1]
         assert call_kwargs["headers"]["Last-Event-ID"] == "1-42"
+
+
+# ── auth provider (Phase 9.1 event-stream) ────────────────────────────────────
+
+
+def _make_provider(headers: dict | None = None) -> AsyncMock:
+    """Build an AsyncMock InternalAuthProvider returning *headers*."""
+    provider = AsyncMock()
+    provider.headers.return_value = dict(
+        headers or {"X-Internal-Client": "svc", "Authorization": "Bearer tok"}
+    )
+    provider.invalidate.return_value = True
+    return provider
+
+
+def test_requires_auth_provider() -> None:
+    """A missing auth_provider → ValueError (the legacy secret path is retired)."""
+    with pytest.raises(ValueError, match="auth_provider is required"):
+        AuthEventStreamClient(
+            stream_url=_STREAM_URL,
+            signing_key=KEY,
+            on_event=AsyncMock(),
+            on_gap=AsyncMock(),
+        )
+
+
+async def test_auth_provider_headers_used_on_connect() -> None:
+    """The provider supplies the per-connection headers (e.g. Bearer token)."""
+    provider = _make_provider({"Authorization": "Bearer tok"})
+    client = AuthEventStreamClient(
+        stream_url=_STREAM_URL,
+        signing_key=KEY,
+        on_event=AsyncMock(),
+        on_gap=AsyncMock(),
+        auth_provider=provider,
+    )
+
+    with patch("auth_sdk_m8.events.stream_client.httpx.AsyncClient") as mock_cls:
+        mock_instance = MagicMock()
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_cls.return_value = mock_cm
+
+        stream_cm = MagicMock()
+        stream_cm.__aenter__ = AsyncMock(return_value=_fake_resp())
+        stream_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_instance.stream.return_value = stream_cm
+
+        await client._connect_and_read()
+
+    provider.headers.assert_awaited_once()
+    assert mock_cls.call_args[1]["headers"]["Authorization"] == "Bearer tok"
+
+
+def _unauthorized_resp(status_code: int) -> MagicMock:
+    """A mock response whose raise_for_status raises HTTPStatusError(status)."""
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.raise_for_status = MagicMock(
+        side_effect=httpx.HTTPStatusError(
+            "error", request=httpx.Request("GET", _STREAM_URL), response=resp
+        )
+    )
+    return resp
+
+
+async def test_401_invalidates_provider_then_reraises() -> None:
+    """A 401 on connect invalidates the provider so the next attempt re-mints."""
+    provider = _make_provider()
+    client = AuthEventStreamClient(
+        stream_url=_STREAM_URL,
+        signing_key=KEY,
+        on_event=AsyncMock(),
+        on_gap=AsyncMock(),
+        auth_provider=provider,
+    )
+
+    with patch("auth_sdk_m8.events.stream_client.httpx.AsyncClient") as mock_cls:
+        mock_instance = MagicMock()
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_cls.return_value = mock_cm
+
+        stream_cm = MagicMock()
+        stream_cm.__aenter__ = AsyncMock(return_value=_unauthorized_resp(401))
+        stream_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_instance.stream.return_value = stream_cm
+
+        with pytest.raises(httpx.HTTPStatusError):
+            await client._connect_and_read()
+
+    provider.invalidate.assert_awaited_once()
+
+
+async def test_non_401_status_does_not_invalidate() -> None:
+    """A non-401 HTTP error re-raises without invalidating the provider."""
+    provider = _make_provider()
+    client = AuthEventStreamClient(
+        stream_url=_STREAM_URL,
+        signing_key=KEY,
+        on_event=AsyncMock(),
+        on_gap=AsyncMock(),
+        auth_provider=provider,
+    )
+
+    with patch("auth_sdk_m8.events.stream_client.httpx.AsyncClient") as mock_cls:
+        mock_instance = MagicMock()
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_cls.return_value = mock_cm
+
+        stream_cm = MagicMock()
+        stream_cm.__aenter__ = AsyncMock(return_value=_unauthorized_resp(503))
+        stream_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_instance.stream.return_value = stream_cm
+
+        with pytest.raises(httpx.HTTPStatusError):
+            await client._connect_and_read()
+
+    provider.invalidate.assert_not_awaited()
+
+
+async def test_stop_closes_auth_provider() -> None:
+    """stop() closes the owned auth provider even when never started."""
+    provider = _make_provider()
+    client = AuthEventStreamClient(
+        stream_url=_STREAM_URL,
+        signing_key=KEY,
+        on_event=AsyncMock(),
+        on_gap=AsyncMock(),
+        auth_provider=provider,
+    )
+    await client.stop()
+    provider.close.assert_awaited_once()
 
 
 def _fake_resp() -> MagicMock:

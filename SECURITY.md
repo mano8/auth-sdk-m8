@@ -166,9 +166,13 @@ proxy. This layering means:
 2. If an app-layer token leaks over an unencrypted channel, mTLS encrypts the
    transport so the leak does not happen in the first place.
 
-Once mTLS is proven stable across all services, the shared `PRIVATE_API_SECRET`
-can be retired in favour of the per-consumer credential model (item 9.1 issuer
-side). Do not remove the app-layer guard in the meantime — the guard is the
+The shared `PRIVATE_API_SECRET` **bare-token** model (one secret presented as a
+lone `X-Internal-Token`, no consumer id) has been **retired** from the SDK: the
+internal-auth providers (`auth_sdk_m8.security.internal_auth`) and the
+`AuthEventStreamClient` now require a per-consumer credential
+(`X-Internal-Client` + `X-Internal-Token`) or a short-TTL service token (item
+9.1). `PRIVATE_API_SECRET` lives on only as the *value* of a consumer's
+per-consumer bootstrap secret. Do not remove the app-layer guard — it is the
 **primary** control; mTLS is defense-in-depth.
 
 ### Service-mesh alternative
@@ -189,7 +193,7 @@ which network layer provides mTLS.
 | `REFRESH_SECRET_KEY` | issuer | Any holder can forge refresh tokens, bypassing rotation | **Immediate** |
 | `REFRESH_SECRET_KEY_OLD` | issuer (rotation window only) | Same as `REFRESH_SECRET_KEY` while set | **Remove after rotation window expires** |
 | `EVENT_SIGNING_KEY` | issuer + all consumers | Forged event frames — malicious session-revoked / user-deleted delivery can corrupt revocation caches | **Immediate; rotate all services together** |
-| `PRIVATE_API_SECRET` (shared model) | issuer + registered consumers | Any holder can call `/private/*` endpoints (JTI-status, event-stream) | **Immediate; scoped per-consumer credentials (9.1) reduce blast radius** |
+| `PRIVATE_API_SECRET` (per-consumer bootstrap value) | issuer + the owning consumer | A leaked value lets that one consumer's `/private/*` calls (JTI-status, event-stream) be impersonated; the bare-token shared model is retired | **Immediate for the affected consumer; per-consumer credentials (9.1) keep the blast radius to one consumer** |
 | `DB_PASSWORD` | issuer | Direct read/write access to the user, session, auth-code, and API-key tables | **Immediate** |
 | `REDIS_PASSWORD` / per-ACL (Access Control List)-user password | issuer (and media-service if bundled) | Session and refresh-token store; JTI blacklist reads and writes | **Immediate** |
 | `METRICS_SCRAPE_CREDENTIAL` | per-service, Prometheus scraper | Unauthorised metrics reads | Rotate promptly |
@@ -235,15 +239,19 @@ which network layer provides mTLS.
 3. **Verification** — the `auth_event_stream_events_total{result="dropped_sig_fail"}` metric
    should reach zero once every publisher is signing with the new key.
 
-### Leaked `PRIVATE_API_SECRET` (shared model)
+### Leaked `PRIVATE_API_SECRET` (per-consumer bootstrap value)
 
-1. **Impact** — any holder can call `/private/*` endpoints: JTI-status introspection and the
-   event-stream. They cannot forge tokens or read the database directly.
-2. **Containment** — rotate the value in the issuer **and every registered consumer** simultaneously;
-   redeploy all services.
-3. **Longer-term hardening** — deploy per-consumer credentials via `ConsumerCredentialRegistry`
-   (Phase 9.1 issuer-side). Each consumer then holds its own secret; rotating one does not
-   require touching all others. Blast radius drops from fleet-wide to a single consumer.
+1. **Impact** — the leaked value is one consumer's bootstrap secret: a holder can impersonate that
+   consumer's `/private/*` calls (JTI-status introspection and the event-stream) within the scopes
+   it was granted. They cannot forge tokens or read the database directly. The bare-token shared
+   model — one secret presented as a lone `X-Internal-Token` — is retired, so the blast radius is the
+   single owning consumer, not the fleet.
+2. **Containment** — rotate that consumer's credential in the issuer's `ConsumerCredentialRegistry`
+   (`PRIVATE_API_CONSUMERS`) and the consumer's own config; redeploy the affected pair. Other
+   consumers are untouched.
+3. **Longer-term hardening** — move the consumer to short-TTL service tokens (exchange the bootstrap
+   credential at `/private/v1/service-token`); rotation then comes from the short TTL rather than a
+   manual credential swap.
 
 ### Leaked database password (`DB_PASSWORD`)
 
