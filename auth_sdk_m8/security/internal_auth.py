@@ -108,7 +108,9 @@ def static_internal_auth(secret: str, *, client_id: str) -> StaticInternalAuth:
         ValueError: If *client_id* is empty.
     """
     if not client_id:
-        raise ValueError("client_id is required (the legacy token-only shape is retired)")
+        raise ValueError(
+            "client_id is required (the legacy token-only shape is retired)"
+        )
     return StaticInternalAuth(
         {INTERNAL_TOKEN_HEADER: secret, INTERNAL_CLIENT_HEADER: client_id}
     )
