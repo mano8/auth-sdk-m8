@@ -150,7 +150,7 @@ python-dotenv==1.2.2
     # via pydantic-settings
 pyyaml==6.0.3
     # via bandit
-redis==8.0.0
+redis==8.0.1
     # via auth-sdk-m8 (pyproject.toml)
 requests==2.34.2
     # via
