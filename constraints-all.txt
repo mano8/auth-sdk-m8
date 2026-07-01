@@ -55,7 +55,7 @@ fastapi==0.137.2
     # via auth-sdk-m8 (pyproject.toml)
 filelock==3.29.4
     # via cachecontrol
-greenlet==3.5.2
+greenlet==3.5.3
     # via sqlalchemy
 h11==0.16.0
     # via httpcore
