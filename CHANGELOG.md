@@ -5,6 +5,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [2.1.1] - 2026-07-02 · Dependency updates + CI consolidation
+
+### Changed
+
+- Bumped transitive dependency pins in `constraints-all.txt`:
+  `redis` 8.0.0→8.0.1, `anyio` 4.14.0→4.14.1, `ruff` 0.15.17→0.15.20,
+  `greenlet` 3.5.2→3.5.3, `ast-serialize` 0.5.0→0.6.0.
+- Bumped GitHub Actions pins: `actions/checkout` v6.0.2→v7.0.0,
+  `actions/setup-python` v6.2.0→v6.3.0,
+  `codecov/codecov-action` v6.0.1→v7.0.0,
+  `gitleaks/gitleaks-action` v2.3.0→v3.0.0.
+
+### Fixed (CI)
+
+- Consolidated two overlapping CI workflows into one: merged the
+  `secret-scan` (Gitleaks) job from `ci.yml` into `CI.yaml`, then
+  removed the redundant `ci.yml`.
+
+---
+
 ## [2.1.0] - 2026-06-25 · Per-consumer / service-token auth for the SSE event stream (9.1) + `PRIVATE_API_SECRET` shared-model retirement
 
 ### Added
