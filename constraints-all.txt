@@ -160,7 +160,7 @@ rich==15.0.0
     # via
     #   bandit
     #   pip-audit
-ruff==0.15.17
+ruff==0.15.20
     # via auth-sdk-m8 (pyproject.toml)
 sniffio==1.3.1
     # via trio
