@@ -2,7 +2,10 @@
 
 import pytest
 
-from auth_sdk_m8.core.exceptions import InvalidToken
+from auth_sdk_m8.core.exceptions import (
+    InconsistentPrivilegeClaimsError,
+    InvalidToken,
+)
 
 
 def test_invalid_token_is_exception() -> None:
@@ -26,3 +29,14 @@ def test_invalid_token_preserves_cause() -> None:
 def test_invalid_token_no_message() -> None:
     exc = InvalidToken()
     assert isinstance(exc, InvalidToken)
+
+
+def test_inconsistent_privilege_claims_error_is_value_error() -> None:
+    assert issubclass(InconsistentPrivilegeClaimsError, ValueError)
+
+
+def test_inconsistent_privilege_claims_error_raises_and_catches() -> None:
+    with pytest.raises(
+        InconsistentPrivilegeClaimsError, match="inconsistent_privilege_claims"
+    ):
+        raise InconsistentPrivilegeClaimsError("inconsistent_privilege_claims")

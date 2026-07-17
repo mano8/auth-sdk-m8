@@ -29,12 +29,16 @@ class RoleType(str, Enum):
 
     @staticmethod
     def is_valid_role_auth(current_role: "RoleType", role_limit: "RoleType") -> bool:
-        """Return True if current_role has at least the privilege of role_limit."""
-        ordered = RoleType.get_ordered_roles()
-        try:
-            return ordered.index(current_role.value) <= ordered.index(role_limit.value)
-        except ValueError:
-            return False
+        """Return True if current_role has at least the privilege of role_limit.
+
+        Delegates to :func:`auth_sdk_m8.authorization.has_minimum_role`, the
+        canonical hierarchy check, so this method and the new stable public
+        API can never drift apart. Imported locally to avoid a circular
+        import (``authorization`` imports :class:`RoleType` from this module).
+        """
+        from auth_sdk_m8.authorization import has_minimum_role
+
+        return has_minimum_role(current_role, role_limit)
 
 
 class Period(str, Enum):
