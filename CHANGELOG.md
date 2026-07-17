@@ -5,6 +5,59 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [3.0.0] - 2026-07-17 · Canonical role/flag authorization model, API-key introspection, generation-backed revocation · **BREAKING**
+
+### Added — Authorization contract and fixtures (Phase 1)
+
+The SDK now owns the **canonical role/flag invariant** and reusable authorization predicates. New public API:
+
+- **`auth_sdk_m8.schemas.shared`** (authorization):
+  - `RoleType` enum: `SUPERADMIN`, `ADMIN`, `WRITER`, `READER` (canonical values).
+  - `has_minimum_role(user_role, min_role)` — privilege predicate; `SUPERADMIN` requires both `role == SUPERADMIN` and `is_superuser == True`.
+  - `has_superuser_privileges(role, is_superuser)` — dual-evidence guard; true only when role is `SUPERADMIN` and flag is `True`.
+  - `is_valid_role_auth(role, is_superuser)` — consistency check; raises `ValueError` when `is_superuser == True` but role is not `SUPERADMIN`.
+  - `APIKeyPrincipal` — minimal principal shape for local and remote API-key introspection paths (`user_id`, `role`, `is_superuser`, `is_active`).
+  - `ApiKeyIntrospectionRequest` / `ApiKeyIntrospectionResponse` — request body accepts raw key via `SecretStr` (never logged); response shape with `active: true` or `active: false` (generic inactive).
+  - Schema version enforcement — unknown versions fail-closed; mismatch between consumer and issuer blocks authorization.
+
+- **JTI status v2 response** (`auth_sdk_m8.schemas.auth`):
+  - `JtiStatusResponseV2Active` — active: `user_id`, `auth_generation` (BIGINT), `schema_version`.
+  - `JtiStatusResponseV2Inactive` — generic inactive shape for every revocation cause.
+  - `SessionRevokedEventV2` — additive fields for generation-backed revocation: `auth_generation`, `event_type`, `version`, durable `event_id`.
+  - v1 schemas retained for rolling-compatibility tests.
+
+- **`API_KEY_INTROSPECTION` scope** in `ConsumerScope`.
+
+- **Exhaustive authorization test suite** (`tests/test_authorization.py`) with property-based predicate coverage and canonical/mismatched JWT fixtures signed with a trusted test key. 100% coverage enforced.
+
+### Changed — Role/flag consistency (Phase 1, Phase 2 breaking changes)
+
+The SDK **enforces `is_superuser <=> role == SUPERADMIN`** everywhere: token payload creation, validation, and `UserModel` construction. Token mismatches are mapped to typed SDK `InvalidToken` errors with bounded, secret-free observability.
+
+- **Breaking: token validation** — a token with `is_superuser=True` but `role != SUPERADMIN` (or vice versa) is rejected with `InvalidToken(reason="invalid_claim")`.
+- **Breaking: `UserModel` construction** — passing `role=WRITER` and `is_superuser=True` raises `ValidationError` at model validation time.
+- Existing tokens with valid role/flag pairs continue to validate without change.
+
+**Migration:** tokens issued before this release that have mismatched role/flag pairs are now invalid and must be re-issued by the issuer running `fa-auth-m8 >=2.0.0`.
+
+### Removed — deprecated in 2.1.0 · **BREAKING** (same as 2.0.0)
+
+This bump folds into `2.x`-only removals from 2.0.0 and 2.1.0 now that `3.x` is the new release line:
+
+- **Redis Pub/Sub event bus** — `auth_sdk_m8.redis_events` package is gone; use `AuthEventStreamClient`.
+- **`ComSecurityHelper.decode_access_token`** — use `TokenValidator` (via `build_access_validator`).
+- **`TOKEN_ALGORITHM` knob** — set `ACCESS_TOKEN_ALGORITHM` directly.
+- **Module-level `settings_customise_sources()`** — dropped in favor of the classmethod on `CommonSettings`.
+- **Implicit shared `PRIVATE_API_SECRET` bare-token model** — per-consumer credentials are now required; `auth_provider` is mandatory in `AuthEventStreamClient`.
+
+**Migration:** raise the floor to `auth-sdk-m8>=3.0.0,<4.0.0`. Replace any existing `2.x` migration steps with the 3.0.0 bearer: the canonical role/flag predicate must be enforced at the issuer level before consumers can validate. Follow `fastapi-m8 4.0.0` and `fa-auth-m8 2.0.0` (contract `2.0`) release notes for the full coordinated migration path.
+
+### Fixed
+
+- 100% test coverage verified with bundled `wheel`/`sdist` export test.
+
+---
+
 ## [2.1.1] - 2026-07-02 · Dependency updates + CI consolidation
 
 ### Changed

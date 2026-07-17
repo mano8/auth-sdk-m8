@@ -72,9 +72,15 @@ pip install "auth-sdk-m8[security,fastapi,config,db,mysql]"
 
 ---
 
+## Authorization contract and canonicity (3.0.0)
+
+**3.0.0 introduces the canonical role/flag invariant.** The SDK now enforces `is_superuser <=> role == SUPERADMIN` across token validation, payload creation, and `UserModel` construction. Tokens with mismatched role/flag pairs are rejected. Migrating from 2.x requires reissuing tokens via `fa-auth-m8 >=2.0.0`.
+
+---
+
 ## Secure-by-default (1.0.0)
 
-**1.0.0 is a breaking release.** The most secure design is now the default; operators opt out via
+**1.0.0 was a breaking release.** The most secure design is now the default; operators opt out via
 config. Three defaults changed:
 
 | Finding | Secure default (1.0.0) | Opt-out |

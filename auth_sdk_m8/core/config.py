@@ -517,7 +517,10 @@ class CommonSettings(BaseSettings):
     EVENT_SIGNING_ACCEPT_UNSIGNED: bool = False
 
     SENTRY_DSN: Optional[HttpUrl] = None
-    SELECTED_DB: Literal["Mysql", "Postgres"] = "Mysql"
+    # "Mariadb" and "Mysql" share the mysql+pymysql driver family but are
+    # distinct declared/verified server dialects — never conflate them
+    # (supported database contract, workspace plan Â§4.6).
+    SELECTED_DB: Literal["Mysql", "Mariadb", "Postgres"] = "Mysql"
 
     # ── Database ─────────────────────────────────────────────────────────────
     DB_ENGINE: str = "InnoDB"

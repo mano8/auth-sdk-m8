@@ -50,7 +50,7 @@ from auth_sdk_m8.testing import (
     load_authorization_fixture_matrix,
 )
 
-__version__ = "2.1.1"
+__version__ = "3.0.0"
 
 __all__ = [
     "__version__",

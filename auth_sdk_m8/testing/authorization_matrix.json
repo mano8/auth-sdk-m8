@@ -65,7 +65,7 @@
     ],
     "trusted_test_signing_key": "AuthSdkM8-Fixture_TrustedTestKey-2026-DoNotUseInProd!"
   },
-  "checksum_sha256": "5f80c7db517d0c4bf6e19e5f8f4c49621f52f5f3635e21ef49571e3477c81cc2",
+  "checksum_sha256": "022439bc13da74fd46c76dbc1c1891df0cb50df77531f938781a13a22c8067b5",
   "minimum_role_matrix": [
     {
       "current_role": "superadmin",
@@ -256,7 +256,7 @@
     }
   ],
   "schema_version": "1",
-  "sdk_version": "2.1.1",
+  "sdk_version": "3.0.0",
   "session_revoked_events": {
     "v1": {
       "event_type": "session.revoked",
