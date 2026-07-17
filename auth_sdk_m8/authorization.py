@@ -18,13 +18,27 @@ shares one implementation.
 
 from __future__ import annotations
 
+from typing import Final
+
 from pydantic import ValidationError
 
-from auth_sdk_m8.core.exceptions import InconsistentPrivilegeClaimsError
-from auth_sdk_m8.schemas.base import RoleType
+from auth_sdk_m8.core.exceptions import (
+    ApiKeyCapabilityCeilingError,
+    InconsistentPrivilegeClaimsError,
+)
+from auth_sdk_m8.schemas.base import ApiKeyAccessMode, RoleType
 
 #: Bounded, secret-free reason code for the typed validation error below.
 INCONSISTENT_PRIVILEGE_CLAIMS_REASON = "inconsistent_privilege_claims"
+
+#: Bounded, secret-free reason code for the API-key capability ceiling error.
+API_KEY_CAPABILITY_CEILING_REASON = "api_key_capability_ceiling"
+
+#: The highest role an API-key path may ever require. API-key authorization is
+#: capped at ordinary user-domain read/write operations; user administration,
+#: role assignment, and every other security-sensitive platform operation are
+#: JWT-only, so no API-key dependency may require ``ADMIN`` or ``SUPERADMIN``.
+API_KEY_MAX_REQUIRED_ROLE: Final[RoleType] = RoleType.WRITER
 
 
 def has_minimum_role(current_role: RoleType, required_role: RoleType) -> bool:
@@ -145,3 +159,88 @@ def find_inconsistent_privilege_claims_error(
         if isinstance(cause, InconsistentPrivilegeClaimsError):
             return cause
     return None
+
+
+# ── API-key capability ───────────────────────────────────────────────────────
+
+
+def api_key_capability_requires_write(required_role: RoleType) -> bool:
+    """Return whether *required_role* is a write capability for an API key.
+
+    Requiring ``WRITER`` (the API-key ceiling) is the write capability;
+    anything below it is a read capability. This is the single definition of
+    that boundary, so the key's access-mode cap is applied to the same set of
+    operations everywhere.
+
+    Args:
+        required_role: The minimum role the operation requires.
+
+    Returns:
+        ``True`` when the operation needs write authority.
+    """
+    return has_minimum_role(required_role, RoleType.WRITER)
+
+
+def validate_api_key_required_role(required_role: RoleType) -> None:
+    """Raise if *required_role* exceeds the API-key capability ceiling.
+
+    An API key never carries administrative or superuser authority — not from
+    its owner's role, not from ``is_superuser``, and not by configuration — so
+    requiring more than :data:`API_KEY_MAX_REQUIRED_ROLE` on an API-key path is
+    a programming error rather than a denial. Raising here (instead of
+    returning ``False``) keeps that mistake from being read as a routine
+    authorization failure and silently shipped.
+
+    Args:
+        required_role: The minimum role the operation requires.
+
+    Raises:
+        ApiKeyCapabilityCeilingError: If *required_role* is above the ceiling.
+    """
+    if not has_minimum_role(API_KEY_MAX_REQUIRED_ROLE, required_role):
+        raise ApiKeyCapabilityCeilingError(API_KEY_CAPABILITY_CEILING_REASON)
+
+
+def has_api_key_capability(
+    role: RoleType,
+    is_superuser: bool,
+    access_mode: ApiKeyAccessMode,
+    required_role: RoleType,
+) -> bool:
+    """Return whether an API-key principal may perform a *required_role* action.
+
+    The single authorization decision for **both** API-key paths — the issuer's
+    local database read and a consumer's remote introspection result — so the
+    two implementations of the same rule cannot drift. Effective authority is
+    the intersection of independent narrowing dimensions, each able only to
+    narrow:
+
+    1. the ceiling — never administrative or superuser
+       (:func:`validate_api_key_required_role`);
+    2. the owner's canonical claims — an inconsistent pair grants nothing;
+    3. the owner's **current** role, via :func:`has_minimum_role`, so a
+       downgrade takes effect on the key's next request;
+    4. the key's immutable ``access_mode`` — a write capability additionally
+       demands ``READ_WRITE``.
+
+    Args:
+        role: The owner's current persisted role.
+        is_superuser: The owner's current persisted superuser flag.
+        access_mode: The key's immutable access mode.
+        required_role: The minimum role the operation requires, at most
+            :data:`API_KEY_MAX_REQUIRED_ROLE`.
+
+    Returns:
+        ``True`` only when every dimension permits the operation.
+
+    Raises:
+        ApiKeyCapabilityCeilingError: If *required_role* is above the ceiling.
+    """
+    validate_api_key_required_role(required_role)
+    if not privilege_claims_are_consistent(role, is_superuser):
+        return False
+    if not has_minimum_role(role, required_role):
+        return False
+    if api_key_capability_requires_write(required_role):
+        return access_mode == ApiKeyAccessMode.READ_WRITE
+    return True

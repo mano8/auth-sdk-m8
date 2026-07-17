@@ -35,6 +35,25 @@ def test_consumer_scope_values() -> None:
     assert ConsumerScope.INTROSPECTION == "introspection"
     assert str(ConsumerScope.USER_CREATE) == "user-create"
     assert ConsumerScope.EVENT_STREAM == "event-stream"
+    assert ConsumerScope.API_KEY_INTROSPECTION == "api-key-introspection"
+
+
+def test_api_key_introspection_is_distinct_from_introspection() -> None:
+    # Granting JTI-status introspection must never imply the ability to
+    # introspect user API keys.
+    cred = ConsumerCredential.create("svc-a", SECRET_A, ConsumerScope.INTROSPECTION)
+
+    assert cred.has_scope(ConsumerScope.INTROSPECTION) is True
+    assert cred.has_scope(ConsumerScope.API_KEY_INTROSPECTION) is False
+
+
+def test_api_key_introspection_scope_does_not_imply_introspection() -> None:
+    cred = ConsumerCredential.create(
+        "svc-a", SECRET_A, ConsumerScope.API_KEY_INTROSPECTION
+    )
+
+    assert cred.has_scope(ConsumerScope.API_KEY_INTROSPECTION) is True
+    assert cred.has_scope(ConsumerScope.INTROSPECTION) is False
 
 
 # ── ConsumerCredential.create ────────────────────────────────────────────────

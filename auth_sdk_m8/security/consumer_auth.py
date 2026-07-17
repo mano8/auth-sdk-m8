@@ -67,6 +67,10 @@ class ConsumerScope(StrEnum):
     """
 
     INTROSPECTION = "introspection"
+    #: Resolve a user API key to its owner's current authority. Deliberately
+    #: separate from ``INTROSPECTION`` so granting a consumer JTI-status access
+    #: never implicitly hands it the ability to introspect user API keys.
+    API_KEY_INTROSPECTION = "api-key-introspection"
     EVENT_STREAM = "event-stream"
     USER_CREATE = "user-create"
 

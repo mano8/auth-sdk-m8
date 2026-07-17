@@ -41,6 +41,25 @@ class RoleType(str, Enum):
         return has_minimum_role(current_role, role_limit)
 
 
+class ApiKeyAccessMode(str, Enum):
+    """Immutable operation-category cap chosen when an API key is issued.
+
+    An access mode is **not** a role: the key never stores a role of its own,
+    and the owner's current role remains the authority ceiling. The mode only
+    narrows what an already-authorized owner may do through this key.
+
+    - ``READ_ONLY`` permits eligible read operations only.
+    - ``READ_WRITE`` permits eligible reads, and writes only when the current
+      owner is itself authorized to write.
+
+    The mode is fixed at issuance — changing it requires issuing a replacement
+    key — so promoting an owner never widens an existing key.
+    """
+
+    READ_ONLY = "read_only"
+    READ_WRITE = "read_write"
+
+
 class Period(str, Enum):
     """Time-period options used for rate limits and recurring intervals."""
 
