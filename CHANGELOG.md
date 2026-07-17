@@ -40,6 +40,11 @@ The SDK **enforces `is_superuser <=> role == SUPERADMIN`** everywhere: token pay
 
 **Migration:** tokens issued before this release that have mismatched role/flag pairs are now invalid and must be re-issued by the issuer running `fa-auth-m8 >=2.0.0`.
 
+### Changed — dialect declaration (`SELECTED_DB`)
+
+- `CommonSettings.SELECTED_DB` gains `"Mariadb"`: `Literal["Mysql", "Mariadb", "Postgres"]`. MariaDB and MySQL share the `mysql+pymysql` driver family (`SQLALCHEMY_DATABASE_URI` builds the same URI for both), but they are distinct **declared and verified server dialects** — `"Mysql"` is valid only against a real MySQL server.
+- **Breaking configuration migration:** deployments that run MariaDB and currently declare `SELECTED_DB=Mysql` must change the setting to `SELECTED_DB=Mariadb`. This SDK release does not enforce the distinction itself (no runtime dialect verification lives in the SDK); the issuer-side fail-closed startup verification lands in `fa-auth-m8 2.0.0`. Update configuration ahead of upgrading the issuer.
+
 ### Removed — deprecated in 2.1.0 · **BREAKING** (same as 2.0.0)
 
 This bump folds into `2.x`-only removals from 2.0.0 and 2.1.0 now that `3.x` is the new release line:
