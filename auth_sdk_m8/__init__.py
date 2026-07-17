@@ -15,8 +15,10 @@ from auth_sdk_m8.authorization import (
 )
 from auth_sdk_m8.core.exceptions import (
     ApiKeyCapabilityCeilingError,
+    FixtureChecksumMismatchError,
     InconsistentPrivilegeClaimsError,
     UnsupportedApiKeySchemaVersionError,
+    UnsupportedFixtureMatrixSchemaVersionError,
     UnsupportedJtiStatusSchemaVersionError,
 )
 from auth_sdk_m8.schemas.api_key import (
@@ -40,6 +42,12 @@ from auth_sdk_m8.schemas.jti_status import (
     JtiStatusInactiveResponse,
     JtiStatusResponse,
     validate_jti_status_schema_version,
+)
+from auth_sdk_m8.testing import (
+    FIXTURE_MATRIX_CHECKSUM_MISMATCH_REASON,
+    FIXTURE_MATRIX_SCHEMA_VERSION,
+    UNSUPPORTED_FIXTURE_MATRIX_SCHEMA_VERSION_REASON,
+    load_authorization_fixture_matrix,
 )
 
 __version__ = "2.1.1"
@@ -81,4 +89,11 @@ __all__ = [
     "JtiStatusResponse",
     "UnsupportedJtiStatusSchemaVersionError",
     "validate_jti_status_schema_version",
+    # Canonical authorization fixture matrix (SDK fixture ownership, §5.5)
+    "FIXTURE_MATRIX_CHECKSUM_MISMATCH_REASON",
+    "FIXTURE_MATRIX_SCHEMA_VERSION",
+    "UNSUPPORTED_FIXTURE_MATRIX_SCHEMA_VERSION_REASON",
+    "FixtureChecksumMismatchError",
+    "UnsupportedFixtureMatrixSchemaVersionError",
+    "load_authorization_fixture_matrix",
 ]

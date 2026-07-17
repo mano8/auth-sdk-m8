@@ -102,6 +102,12 @@ dev = [
     "bandit>=1.9.4",
     "pip-audit>=2.7.3",
     "mypy>=2.1.0",
+    "hypothesis>=6.140.0",
+    # Build backend + frontend, used with --no-isolation by the packed
+    # wheel/sdist export test (tests/test_packaging.py) so it verifies the
+    # real build without a network round-trip to re-resolve hatchling.
+    "hatchling>=1.27.0",
+    "build>=1.2.2",
 ]
 
 [project.urls]

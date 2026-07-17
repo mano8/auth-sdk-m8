@@ -54,3 +54,28 @@ class UnsupportedJtiStatusSchemaVersionError(ValueError):
     ``unsupported_jti_status_schema_version``) as its message — never the
     payload — so it is always safe to log or surface in observability.
     """
+
+
+class UnsupportedFixtureMatrixSchemaVersionError(ValueError):
+    """Raised when the packaged authorization fixture matrix has an unknown version.
+
+    A consumer (``fastapi-m8``, ``fa-auth-m8``, ``security-tests-m8``) fails
+    closed on a fixture-matrix schema version it does not implement instead of
+    reading unfamiliar fields as canonical expectations.
+
+    Carries only a bounded reason code (e.g.
+    ``unsupported_fixture_matrix_schema_version``) as its message.
+    """
+
+
+class FixtureChecksumMismatchError(ValueError):
+    """Raised when the packaged fixture matrix content does not match its checksum.
+
+    The SDK is the single canonical owner of the shared authorization fixture
+    matrix (§5.5); a mismatch means the packaged file was hand-edited or only
+    partially regenerated, so it must never be trusted as canonical
+    expectations rather than silently validated against stale data.
+
+    Carries only a bounded reason code (e.g.
+    ``fixture_matrix_checksum_mismatch``) as its message.
+    """
