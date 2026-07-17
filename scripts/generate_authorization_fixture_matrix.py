@@ -132,8 +132,10 @@ def _canonical_jwt_fixtures() -> dict[str, Any]:
                 "jti": f"fixture-{role.value}-{is_superuser}",
                 "exp": _FIXTURE_TOKEN_EXP,
             }
-            token = jwt.encode(  # nosemgrep — fixture-only key, never a production secret
-                payload, TRUSTED_TEST_SIGNING_KEY, algorithm="HS256"
+            token = (
+                jwt.encode(  # nosemgrep — fixture-only key, never a production secret
+                    payload, TRUSTED_TEST_SIGNING_KEY, algorithm="HS256"
+                )
             )
             tokens.append(
                 {
