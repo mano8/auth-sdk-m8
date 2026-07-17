@@ -266,6 +266,23 @@ def test_common_settings_sqlalchemy_uri_postgres() -> None:
     assert "testdb" in uri
 
 
+def test_common_settings_sqlalchemy_uri_mariadb() -> None:
+    """Mariadb is a distinct declared dialect but shares the mysql+pymysql
+    driver family with Mysql — the connection URI is identical."""
+    kwargs = {**VALID_SETTINGS_KWARGS, "SELECTED_DB": "Mariadb"}
+    s = IsolatedSettings(**kwargs)
+    uri = s.SQLALCHEMY_DATABASE_URI
+    assert "mysql+pymysql" in uri
+    assert "testuser" in uri
+    assert "testdb" in uri
+
+
+def test_common_settings_selected_db_rejects_unsupported_dialect() -> None:
+    kwargs = {**VALID_SETTINGS_KWARGS, "SELECTED_DB": "Sqlite"}
+    with pytest.raises(Exception):
+        IsolatedSettings(**kwargs)
+
+
 def test_common_settings_validate_password_invalid() -> None:
     from pydantic import SecretStr as _SecretStr
 

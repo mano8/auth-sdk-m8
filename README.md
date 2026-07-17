@@ -72,9 +72,17 @@ pip install "auth-sdk-m8[security,fastapi,config,db,mysql]"
 
 ---
 
+## Authorization contract and canonicity (3.0.0)
+
+**3.0.0 introduces the canonical role/flag invariant.** The SDK now enforces `is_superuser <=> role == SUPERADMIN` across token validation, payload creation, and `UserModel` construction. Tokens with mismatched role/flag pairs are rejected. Migrating from 2.x requires reissuing tokens via `fa-auth-m8 >=2.0.0`.
+
+**`SELECTED_DB` gains `"Mariadb"`** (`Literal["Mysql", "Mariadb", "Postgres"]`). MariaDB and MySQL share the `mysql+pymysql` driver family — the built `SQLALCHEMY_DATABASE_URI` is identical for both — but they are distinct declared dialects: `"Mysql"` names a real MySQL server only. **Breaking:** deployments running MariaDB that currently declare `SELECTED_DB=Mysql` must change the setting to `SELECTED_DB=Mariadb` before upgrading the issuer to `fa-auth-m8 >=2.0.0`, which fails startup on a declared/actual dialect mismatch.
+
+---
+
 ## Secure-by-default (1.0.0)
 
-**1.0.0 is a breaking release.** The most secure design is now the default; operators opt out via
+**1.0.0 was a breaking release.** The most secure design is now the default; operators opt out via
 config. Three defaults changed:
 
 | Finding | Secure default (1.0.0) | Opt-out |

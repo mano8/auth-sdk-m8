@@ -27,6 +27,7 @@ class ValidationHooks(Protocol):
         Args:
             reason: Short machine-readable label:
                 ``"expired"``, ``"invalid"``, ``"wrong_type"``,
-                ``"invalid_payload"``, ``"revoked"``, ``"reused"``.
+                ``"invalid_payload"``, ``"inconsistent_privilege_claims"``,
+                ``"revoked"``, ``"reused"``.
             token_type: ``"access"`` or ``"refresh"``.
         """

@@ -1,0 +1,284 @@
+{
+  "canonical_jwt_fixtures": {
+    "algorithm": "HS256",
+    "tokens": [
+      {
+        "consistent": false,
+        "is_superuser": false,
+        "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTU1NTU1NS01NTU1LTQ1NTUtODU1NS01NTU1NTU1NTU1NTUiLCJ0eXBlIjoiYWNjZXNzIiwiZW1haWwiOiJmaXh0dXJlLXVzZXJAZXhhbXBsZS5jb20iLCJyb2xlIjoic3VwZXJhZG1pbiIsImlzX2FjdGl2ZSI6dHJ1ZSwiZW1haWxfdmVyaWZpZWQiOnRydWUsImlzX3N1cGVydXNlciI6ZmFsc2UsImp0aSI6ImZpeHR1cmUtc3VwZXJhZG1pbi1GYWxzZSIsImV4cCI6NDEwMjQ0NDgwMH0.-zwFYeo9iuiuWgv5ViEtEPWhobBuLQcI9oQPqZAN9fc",
+        "role": "superadmin"
+      },
+      {
+        "consistent": true,
+        "is_superuser": true,
+        "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTU1NTU1NS01NTU1LTQ1NTUtODU1NS01NTU1NTU1NTU1NTUiLCJ0eXBlIjoiYWNjZXNzIiwiZW1haWwiOiJmaXh0dXJlLXVzZXJAZXhhbXBsZS5jb20iLCJyb2xlIjoic3VwZXJhZG1pbiIsImlzX2FjdGl2ZSI6dHJ1ZSwiZW1haWxfdmVyaWZpZWQiOnRydWUsImlzX3N1cGVydXNlciI6dHJ1ZSwianRpIjoiZml4dHVyZS1zdXBlcmFkbWluLVRydWUiLCJleHAiOjQxMDI0NDQ4MDB9.Kdcl_YYYmr7ySIZreu7N9jn4QuZ4TC5wx8A5kXDszNQ",
+        "role": "superadmin"
+      },
+      {
+        "consistent": true,
+        "is_superuser": false,
+        "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTU1NTU1NS01NTU1LTQ1NTUtODU1NS01NTU1NTU1NTU1NTUiLCJ0eXBlIjoiYWNjZXNzIiwiZW1haWwiOiJmaXh0dXJlLXVzZXJAZXhhbXBsZS5jb20iLCJyb2xlIjoiYWRtaW4iLCJpc19hY3RpdmUiOnRydWUsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJpc19zdXBlcnVzZXIiOmZhbHNlLCJqdGkiOiJmaXh0dXJlLWFkbWluLUZhbHNlIiwiZXhwIjo0MTAyNDQ0ODAwfQ.JOTAx8IltL77rclQLI6EK-l1ouK0gU4B718Msv5MEJQ",
+        "role": "admin"
+      },
+      {
+        "consistent": false,
+        "is_superuser": true,
+        "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTU1NTU1NS01NTU1LTQ1NTUtODU1NS01NTU1NTU1NTU1NTUiLCJ0eXBlIjoiYWNjZXNzIiwiZW1haWwiOiJmaXh0dXJlLXVzZXJAZXhhbXBsZS5jb20iLCJyb2xlIjoiYWRtaW4iLCJpc19hY3RpdmUiOnRydWUsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJpc19zdXBlcnVzZXIiOnRydWUsImp0aSI6ImZpeHR1cmUtYWRtaW4tVHJ1ZSIsImV4cCI6NDEwMjQ0NDgwMH0.XNhgOwl8T5K8EZaoQ1iLxL1j4o7Hr-6mD8FXe-G5VTY",
+        "role": "admin"
+      },
+      {
+        "consistent": true,
+        "is_superuser": false,
+        "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTU1NTU1NS01NTU1LTQ1NTUtODU1NS01NTU1NTU1NTU1NTUiLCJ0eXBlIjoiYWNjZXNzIiwiZW1haWwiOiJmaXh0dXJlLXVzZXJAZXhhbXBsZS5jb20iLCJyb2xlIjoid3JpdGVyIiwiaXNfYWN0aXZlIjp0cnVlLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiaXNfc3VwZXJ1c2VyIjpmYWxzZSwianRpIjoiZml4dHVyZS13cml0ZXItRmFsc2UiLCJleHAiOjQxMDI0NDQ4MDB9.kKYTr_wp9jbFHgpFhPOphw_VfQHaIV_j5cGZvoH0NJI",
+        "role": "writer"
+      },
+      {
+        "consistent": false,
+        "is_superuser": true,
+        "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTU1NTU1NS01NTU1LTQ1NTUtODU1NS01NTU1NTU1NTU1NTUiLCJ0eXBlIjoiYWNjZXNzIiwiZW1haWwiOiJmaXh0dXJlLXVzZXJAZXhhbXBsZS5jb20iLCJyb2xlIjoid3JpdGVyIiwiaXNfYWN0aXZlIjp0cnVlLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiaXNfc3VwZXJ1c2VyIjp0cnVlLCJqdGkiOiJmaXh0dXJlLXdyaXRlci1UcnVlIiwiZXhwIjo0MTAyNDQ0ODAwfQ.3NS34yOzm7bttFyMkErLfA9UUpmsx8FF2ZY9oZIgrnA",
+        "role": "writer"
+      },
+      {
+        "consistent": true,
+        "is_superuser": false,
+        "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTU1NTU1NS01NTU1LTQ1NTUtODU1NS01NTU1NTU1NTU1NTUiLCJ0eXBlIjoiYWNjZXNzIiwiZW1haWwiOiJmaXh0dXJlLXVzZXJAZXhhbXBsZS5jb20iLCJyb2xlIjoicmVhZGVyIiwiaXNfYWN0aXZlIjp0cnVlLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiaXNfc3VwZXJ1c2VyIjpmYWxzZSwianRpIjoiZml4dHVyZS1yZWFkZXItRmFsc2UiLCJleHAiOjQxMDI0NDQ4MDB9._ZWbVPQsdH6_89VKyT0TBessYkMxmLJIyfo9tg_59Tg",
+        "role": "reader"
+      },
+      {
+        "consistent": false,
+        "is_superuser": true,
+        "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTU1NTU1NS01NTU1LTQ1NTUtODU1NS01NTU1NTU1NTU1NTUiLCJ0eXBlIjoiYWNjZXNzIiwiZW1haWwiOiJmaXh0dXJlLXVzZXJAZXhhbXBsZS5jb20iLCJyb2xlIjoicmVhZGVyIiwiaXNfYWN0aXZlIjp0cnVlLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiaXNfc3VwZXJ1c2VyIjp0cnVlLCJqdGkiOiJmaXh0dXJlLXJlYWRlci1UcnVlIiwiZXhwIjo0MTAyNDQ0ODAwfQ.3K7JyTtc-tsDMuOayNeE06Yp_1pTfJW0Q-8PSTA-SmY",
+        "role": "reader"
+      },
+      {
+        "consistent": true,
+        "is_superuser": false,
+        "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTU1NTU1NS01NTU1LTQ1NTUtODU1NS01NTU1NTU1NTU1NTUiLCJ0eXBlIjoiYWNjZXNzIiwiZW1haWwiOiJmaXh0dXJlLXVzZXJAZXhhbXBsZS5jb20iLCJyb2xlIjoidXNlciIsImlzX2FjdGl2ZSI6dHJ1ZSwiZW1haWxfdmVyaWZpZWQiOnRydWUsImlzX3N1cGVydXNlciI6ZmFsc2UsImp0aSI6ImZpeHR1cmUtdXNlci1GYWxzZSIsImV4cCI6NDEwMjQ0NDgwMH0.RVPTB7WVZx2tafsRdWZQ--G5-VuvCGoiqaeoUScRI8o",
+        "role": "user"
+      },
+      {
+        "consistent": false,
+        "is_superuser": true,
+        "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTU1NTU1NS01NTU1LTQ1NTUtODU1NS01NTU1NTU1NTU1NTUiLCJ0eXBlIjoiYWNjZXNzIiwiZW1haWwiOiJmaXh0dXJlLXVzZXJAZXhhbXBsZS5jb20iLCJyb2xlIjoidXNlciIsImlzX2FjdGl2ZSI6dHJ1ZSwiZW1haWxfdmVyaWZpZWQiOnRydWUsImlzX3N1cGVydXNlciI6dHJ1ZSwianRpIjoiZml4dHVyZS11c2VyLVRydWUiLCJleHAiOjQxMDI0NDQ4MDB9.zy42TR_BC26vlYWbkuLk8LyJbeOe_9tkXHG103njnmM",
+        "role": "user"
+      }
+    ],
+    "trusted_test_signing_key": "AuthSdkM8-Fixture_TrustedTestKey-2026-DoNotUseInProd!"
+  },
+  "checksum_sha256": "022439bc13da74fd46c76dbc1c1891df0cb50df77531f938781a13a22c8067b5",
+  "minimum_role_matrix": [
+    {
+      "current_role": "superadmin",
+      "required_role": "superadmin",
+      "satisfied": true
+    },
+    {
+      "current_role": "superadmin",
+      "required_role": "admin",
+      "satisfied": true
+    },
+    {
+      "current_role": "superadmin",
+      "required_role": "writer",
+      "satisfied": true
+    },
+    {
+      "current_role": "superadmin",
+      "required_role": "reader",
+      "satisfied": true
+    },
+    {
+      "current_role": "superadmin",
+      "required_role": "user",
+      "satisfied": true
+    },
+    {
+      "current_role": "admin",
+      "required_role": "superadmin",
+      "satisfied": false
+    },
+    {
+      "current_role": "admin",
+      "required_role": "admin",
+      "satisfied": true
+    },
+    {
+      "current_role": "admin",
+      "required_role": "writer",
+      "satisfied": true
+    },
+    {
+      "current_role": "admin",
+      "required_role": "reader",
+      "satisfied": true
+    },
+    {
+      "current_role": "admin",
+      "required_role": "user",
+      "satisfied": true
+    },
+    {
+      "current_role": "writer",
+      "required_role": "superadmin",
+      "satisfied": false
+    },
+    {
+      "current_role": "writer",
+      "required_role": "admin",
+      "satisfied": false
+    },
+    {
+      "current_role": "writer",
+      "required_role": "writer",
+      "satisfied": true
+    },
+    {
+      "current_role": "writer",
+      "required_role": "reader",
+      "satisfied": true
+    },
+    {
+      "current_role": "writer",
+      "required_role": "user",
+      "satisfied": true
+    },
+    {
+      "current_role": "reader",
+      "required_role": "superadmin",
+      "satisfied": false
+    },
+    {
+      "current_role": "reader",
+      "required_role": "admin",
+      "satisfied": false
+    },
+    {
+      "current_role": "reader",
+      "required_role": "writer",
+      "satisfied": false
+    },
+    {
+      "current_role": "reader",
+      "required_role": "reader",
+      "satisfied": true
+    },
+    {
+      "current_role": "reader",
+      "required_role": "user",
+      "satisfied": true
+    },
+    {
+      "current_role": "user",
+      "required_role": "superadmin",
+      "satisfied": false
+    },
+    {
+      "current_role": "user",
+      "required_role": "admin",
+      "satisfied": false
+    },
+    {
+      "current_role": "user",
+      "required_role": "writer",
+      "satisfied": false
+    },
+    {
+      "current_role": "user",
+      "required_role": "reader",
+      "satisfied": false
+    },
+    {
+      "current_role": "user",
+      "required_role": "user",
+      "satisfied": true
+    }
+  ],
+  "role_flag_matrix": [
+    {
+      "consistent": false,
+      "has_superuser_privileges": false,
+      "is_superuser": false,
+      "role": "superadmin"
+    },
+    {
+      "consistent": true,
+      "has_superuser_privileges": true,
+      "is_superuser": true,
+      "role": "superadmin"
+    },
+    {
+      "consistent": true,
+      "has_superuser_privileges": false,
+      "is_superuser": false,
+      "role": "admin"
+    },
+    {
+      "consistent": false,
+      "has_superuser_privileges": false,
+      "is_superuser": true,
+      "role": "admin"
+    },
+    {
+      "consistent": true,
+      "has_superuser_privileges": false,
+      "is_superuser": false,
+      "role": "writer"
+    },
+    {
+      "consistent": false,
+      "has_superuser_privileges": false,
+      "is_superuser": true,
+      "role": "writer"
+    },
+    {
+      "consistent": true,
+      "has_superuser_privileges": false,
+      "is_superuser": false,
+      "role": "reader"
+    },
+    {
+      "consistent": false,
+      "has_superuser_privileges": false,
+      "is_superuser": true,
+      "role": "reader"
+    },
+    {
+      "consistent": true,
+      "has_superuser_privileges": false,
+      "is_superuser": false,
+      "role": "user"
+    },
+    {
+      "consistent": false,
+      "has_superuser_privileges": false,
+      "is_superuser": true,
+      "role": "user"
+    }
+  ],
+  "schema_version": "1",
+  "sdk_version": "3.0.0",
+  "session_revoked_events": {
+    "v1": {
+      "event_type": "session.revoked",
+      "jti": "22222222-2222-4222-8222-222222222222",
+      "user_id": "11111111-1111-4111-8111-111111111111",
+      "version": "v1"
+    },
+    "v2_single_session": {
+      "auth_generation": 1,
+      "event_id": "33333333-3333-4333-8333-333333333333",
+      "event_type": "session.revoked",
+      "jti": "22222222-2222-4222-8222-222222222222",
+      "user_id": "11111111-1111-4111-8111-111111111111",
+      "version": "v2"
+    },
+    "v2_user_wide": {
+      "auth_generation": 2,
+      "event_id": "44444444-4444-4444-8444-444444444444",
+      "event_type": "session.revoked",
+      "jti": null,
+      "user_id": "11111111-1111-4111-8111-111111111111",
+      "version": "v2"
+    }
+  }
+}

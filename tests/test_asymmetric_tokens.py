@@ -25,6 +25,7 @@ from pydantic import SecretStr
 
 from auth_sdk_m8.core.exceptions import InvalidToken
 from auth_sdk_m8.schemas.auth import TokenAlgorithm, TokenSecret
+from auth_sdk_m8.schemas.base import RoleType
 from auth_sdk_m8.security.factory import build_access_validator
 from auth_sdk_m8.security.token_validator import TokenValidator
 from auth_sdk_m8.security.validation import TokenValidationConfig
@@ -131,10 +132,18 @@ def test_rs256_valid_token_validates() -> None:
 
 
 def test_rs256_user_fields_preserved() -> None:
-    token = _make_token(RSA_PRIVATE_PEM, "RS256", full_name="Alice", is_superuser=True)
+    # is_superuser=True is only valid on the canonical SUPERADMIN pair (§3.1).
+    token = _make_token(
+        RSA_PRIVATE_PEM,
+        "RS256",
+        full_name="Alice",
+        is_superuser=True,
+        role="superadmin",
+    )
     result = _validator(RSA_PUBLIC_PEM, "RS256").validate_access_token(token)
     assert result.full_name == "Alice"
     assert result.is_superuser is True
+    assert result.role is RoleType.SUPERADMIN
 
 
 def test_rs256_expired_token_raises() -> None:

@@ -1,9 +1,10 @@
 """JWT token schemas shared across m8 microservices."""
 
-from typing import Literal, Optional
+from typing import Literal, Optional, Self
 
 from pydantic import BaseModel, EmailStr, SecretStr, model_validator
 
+from auth_sdk_m8.authorization import validate_privilege_claims
 from auth_sdk_m8.schemas.base import RoleType
 from auth_sdk_m8.schemas.shared import ValidationConstants
 
@@ -67,7 +68,13 @@ class TokenSubData(BaseModel):
 
 
 class UserPayloadData(BaseModel):
-    """User fields embedded in the access token payload."""
+    """User fields embedded in the access token payload.
+
+    ``role`` and ``is_superuser`` must agree per the canonical truth table
+    (see :mod:`auth_sdk_m8.authorization`). Because ``TokenAccessData`` and
+    ``TokenUserData`` both inherit this model, token creation and token
+    consumption reject the same inconsistent pair.
+    """
 
     email: EmailStr
     full_name: Optional[str] = None
@@ -78,6 +85,17 @@ class UserPayloadData(BaseModel):
     role: RoleType = RoleType.USER
     # UUID as string; JWT payload must be JSON-serialisable
     tenant_id: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_privilege_claim_consistency(self) -> Self:
+        """Reject a ``role``/``is_superuser`` pair outside the truth table.
+
+        Raises:
+            InconsistentPrivilegeClaimsError: Wrapped by Pydantic into a
+                ``ValidationError`` carrying only the bounded reason code.
+        """
+        validate_privilege_claims(self.role, self.is_superuser)
+        return self
 
 
 class TokenMinimalData(TokenSubData):

@@ -91,6 +91,22 @@ def test_hooks_on_failure_called_for_invalid_payload() -> None:
     )
 
 
+def test_hooks_on_failure_called_for_inconsistent_privilege_claims() -> None:
+    hooks = _mock_hooks()
+    validator = _make_validator(hooks=hooks)
+    token = make_access_token(role="user", is_superuser=True)
+
+    with pytest.raises(InvalidToken):
+        validator.validate_access_token(token)
+
+    # A distinct bounded reason — not the generic invalid_payload label — so a
+    # claim mismatch stays observable without logging the claims themselves.
+    hooks.on_failure.assert_called_once_with(
+        reason="inconsistent_privilege_claims", token_type="access"
+    )
+    hooks.on_success.assert_not_called()
+
+
 def test_no_hooks_does_not_raise() -> None:
     validator = _make_validator(hooks=None)
 
