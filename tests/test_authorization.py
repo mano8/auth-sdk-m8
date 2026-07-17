@@ -1,9 +1,13 @@
 """Tests for auth_sdk_m8.authorization."""
 
+import uuid
+
 import pytest
+from pydantic import BaseModel, ValidationError, model_validator
 
 from auth_sdk_m8.authorization import (
     INCONSISTENT_PRIVILEGE_CLAIMS_REASON,
+    find_inconsistent_privilege_claims_error,
     has_minimum_role,
     has_superuser_privileges,
     privilege_claims_are_consistent,
@@ -11,6 +15,7 @@ from auth_sdk_m8.authorization import (
 )
 from auth_sdk_m8.core.exceptions import InconsistentPrivilegeClaimsError
 from auth_sdk_m8.schemas.base import RoleType
+from auth_sdk_m8.schemas.user import UserModel
 
 _ALL_ROLES = list(RoleType)
 
@@ -110,6 +115,45 @@ class TestValidatePrivilegeClaims:
         assert "True" not in message
 
 
+class TestFindInconsistentPrivilegeClaimsError:
+    def test_returns_typed_error_from_model_validation_failure(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            UserModel(id=uuid.uuid4(), email="a@b.com", is_superuser=True)
+
+        found = find_inconsistent_privilege_claims_error(exc_info.value)
+        assert isinstance(found, InconsistentPrivilegeClaimsError)
+        assert str(found) == INCONSISTENT_PRIVILEGE_CLAIMS_REASON
+
+    def test_returns_none_for_an_unrelated_validation_error(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            UserModel(id=uuid.uuid4(), email="not-an-email")
+
+        assert find_inconsistent_privilege_claims_error(exc_info.value) is None
+
+    def test_returns_none_when_error_has_no_context(self) -> None:
+        class _Plain(BaseModel):
+            count: int
+
+        with pytest.raises(ValidationError) as exc_info:
+            _Plain(count="not-a-number")  # type: ignore[arg-type]
+
+        assert find_inconsistent_privilege_claims_error(exc_info.value) is None
+
+    def test_returns_none_for_another_value_error(self) -> None:
+        # A ctx-carrying error of a different type must not be mistaken for one.
+        class _Other(BaseModel):
+            value: str
+
+            @model_validator(mode="after")
+            def _reject(self) -> "_Other":
+                raise ValueError("something_else")
+
+        with pytest.raises(ValidationError) as exc_info:
+            _Other(value="x")
+
+        assert find_inconsistent_privilege_claims_error(exc_info.value) is None
+
+
 class TestRoleTypeCompatibility:
     """RoleType.is_valid_role_auth() must keep working through has_minimum_role()."""
 
@@ -141,6 +185,14 @@ class TestPublicPackageSurface:
         )
         assert auth_sdk_m8.validate_privilege_claims is validate_privilege_claims
         assert (
+            auth_sdk_m8.find_inconsistent_privilege_claims_error
+            is find_inconsistent_privilege_claims_error
+        )
+        assert (
+            auth_sdk_m8.INCONSISTENT_PRIVILEGE_CLAIMS_REASON
+            == INCONSISTENT_PRIVILEGE_CLAIMS_REASON
+        )
+        assert (
             auth_sdk_m8.InconsistentPrivilegeClaimsError
             is InconsistentPrivilegeClaimsError
         )
@@ -153,6 +205,8 @@ class TestPublicPackageSurface:
             "has_superuser_privileges",
             "privilege_claims_are_consistent",
             "validate_privilege_claims",
+            "find_inconsistent_privilege_claims_error",
+            "INCONSISTENT_PRIVILEGE_CLAIMS_REASON",
             "InconsistentPrivilegeClaimsError",
         ):
             assert name in auth_sdk_m8.__all__

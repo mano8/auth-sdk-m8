@@ -1,6 +1,8 @@
 """auth-sdk-m8 shared authentication utilities for m8 microservices."""
 
 from auth_sdk_m8.authorization import (
+    INCONSISTENT_PRIVILEGE_CLAIMS_REASON,
+    find_inconsistent_privilege_claims_error,
     has_minimum_role,
     has_superuser_privileges,
     privilege_claims_are_consistent,
@@ -12,6 +14,8 @@ __version__ = "2.1.1"
 
 __all__ = [
     "__version__",
+    "INCONSISTENT_PRIVILEGE_CLAIMS_REASON",
+    "find_inconsistent_privilege_claims_error",
     "has_minimum_role",
     "has_superuser_privileges",
     "privilege_claims_are_consistent",

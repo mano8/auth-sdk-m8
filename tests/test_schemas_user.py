@@ -3,6 +3,10 @@
 import uuid
 from datetime import datetime, timezone
 
+import pytest
+from pydantic import ValidationError
+
+from auth_sdk_m8.authorization import find_inconsistent_privilege_claims_error
 from auth_sdk_m8.schemas.base import AuthProviderType, RoleType
 from auth_sdk_m8.schemas.redis_events import EventBase
 from auth_sdk_m8.schemas.user import SessionModel, UserModel
@@ -40,11 +44,12 @@ def test_user_model_with_all_fields() -> None:
         avatar="http://cdn/img.png",
         is_active=False,
         email_verified=True,
+        # is_superuser=True is only valid on the canonical SUPERADMIN pair (§3.1).
         is_superuser=True,
-        role=RoleType.ADMIN,
+        role=RoleType.SUPERADMIN,
     )
     assert user.is_superuser is True
-    assert user.role == RoleType.ADMIN
+    assert user.role == RoleType.SUPERADMIN
 
 
 def test_user_model_tenant_id_defaults_none() -> None:
@@ -59,6 +64,50 @@ def test_user_model_tenant_id_coerced_from_string() -> None:
     )
     assert isinstance(user.tenant_id, uuid.UUID)
     assert user.tenant_id == tenant
+
+
+# ── Canonical role/flag invariant (§3.1) ─────────────────────────────────────
+
+
+@pytest.mark.parametrize("role", list(RoleType))
+def test_user_model_accepts_canonical_pairs(role: RoleType) -> None:
+    is_superuser = role == RoleType.SUPERADMIN
+    user = UserModel(
+        id=uuid.uuid4(), email="a@b.com", role=role, is_superuser=is_superuser
+    )
+    assert user.role is role
+    assert user.is_superuser is is_superuser
+
+
+@pytest.mark.parametrize("role", list(RoleType))
+def test_user_model_rejects_inconsistent_pairs(role: RoleType) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        UserModel(
+            id=uuid.uuid4(),
+            email="a@b.com",
+            role=role,
+            is_superuser=role != RoleType.SUPERADMIN,
+        )
+
+    assert find_inconsistent_privilege_claims_error(exc_info.value) is not None
+
+
+def test_user_model_flag_alone_cannot_claim_superuser() -> None:
+    # A consumer building UserModel from token claims must never see this pair.
+    with pytest.raises(ValidationError):
+        UserModel(
+            id=uuid.uuid4(), email="a@b.com", role=RoleType.ADMIN, is_superuser=True
+        )
+
+
+def test_user_model_error_carries_only_the_bounded_reason() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        UserModel(
+            id=uuid.uuid4(), email="a@b.com", role=RoleType.USER, is_superuser=True
+        )
+
+    found = find_inconsistent_privilege_claims_error(exc_info.value)
+    assert str(found) == "inconsistent_privilege_claims"
 
 
 def test_session_model() -> None:

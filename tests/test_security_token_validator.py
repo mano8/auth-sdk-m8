@@ -6,8 +6,12 @@ import jwt
 import pytest
 from pydantic import SecretStr
 
-from auth_sdk_m8.core.exceptions import InvalidToken
+from auth_sdk_m8.core.exceptions import (
+    InconsistentPrivilegeClaimsError,
+    InvalidToken,
+)
 from auth_sdk_m8.schemas.auth import TokenSecret
+from auth_sdk_m8.schemas.base import RoleType
 from auth_sdk_m8.security import (
     KeyResolver,
     TokenValidationConfig,
@@ -531,3 +535,72 @@ def test_leeway_rejects_token_expired_beyond_window() -> None:
     token = make_access_token(exp=long_expired)
     with pytest.raises(InvalidToken, match="Access token expired"):
         validator.validate_access_token(token)
+
+
+# ── Canonical role/flag invariant (§3.1) ─────────────────────────────────────
+
+
+@pytest.mark.parametrize("role", [r.value for r in RoleType])
+def test_validly_signed_inconsistent_token_is_rejected(role: str) -> None:
+    """A correctly signed token whose claims contradict must not validate.
+
+    The signature is genuine — only the role/flag pair is inconsistent — so
+    this proves the invariant, not the signature check, does the rejecting.
+    """
+    token = make_access_token(role=role, is_superuser=role != RoleType.SUPERADMIN.value)
+
+    with pytest.raises(InvalidToken, match="Invalid access token"):
+        _validator_hs256().validate_access_token(token)
+
+
+@pytest.mark.parametrize("role", [r.value for r in RoleType])
+def test_validly_signed_canonical_token_still_validates(role: str) -> None:
+    """Canonical pairs keep their wire shape and are unaffected."""
+    is_superuser = role == RoleType.SUPERADMIN.value
+    token = make_access_token(role=role, is_superuser=is_superuser)
+
+    result = _validator_hs256().validate_access_token(token)
+
+    assert result.role is RoleType(role)
+    assert result.is_superuser is is_superuser
+
+
+def test_escalation_token_flag_without_superadmin_role_is_rejected() -> None:
+    # The privilege-escalation shape: signed token claiming the flag on a low role.
+    token = make_access_token(role="user", is_superuser=True)
+
+    with pytest.raises(InvalidToken):
+        _validator_hs256().validate_access_token(token)
+
+
+def test_inconsistent_claims_use_the_generic_invalid_token_message() -> None:
+    """The mismatch must not be distinguishable on the wire from any other
+    invalid token — same boundary, same message (§3.7).
+    """
+    mismatch = make_access_token(role="user", is_superuser=True)
+    malformed = make_access_token(email="not-an-email")
+
+    with pytest.raises(InvalidToken) as mismatch_info:
+        _validator_hs256().validate_access_token(mismatch)
+    with pytest.raises(InvalidToken) as malformed_info:
+        _validator_hs256().validate_access_token(malformed)
+
+    assert str(mismatch_info.value) == str(malformed_info.value)
+
+
+def test_inconsistent_claims_error_chain_leaks_no_claims() -> None:
+    """The raised error carries only the bounded reason.
+
+    A ValidationError embeds the raw input, so chaining it here would put the
+    claims in every traceback; the typed error must be the cause instead.
+    """
+    token = make_access_token(role="user", is_superuser=True, email="leak@example.com")
+
+    with pytest.raises(InvalidToken) as exc_info:
+        _validator_hs256().validate_access_token(token)
+
+    cause = exc_info.value.__cause__
+    assert isinstance(cause, InconsistentPrivilegeClaimsError)
+    assert str(cause) == "inconsistent_privilege_claims"
+    assert "leak@example.com" not in repr(cause)
+    assert "leak@example.com" not in str(exc_info.value)

@@ -3,6 +3,7 @@
 import pytest
 from pydantic import SecretStr, ValidationError
 
+from auth_sdk_m8.authorization import find_inconsistent_privilege_claims_error
 from auth_sdk_m8.schemas.auth import (
     ExternalTokensData,
     Token,
@@ -146,3 +147,62 @@ def test_token_secret_es256_is_valid_algorithm() -> None:
     pem = "-----BEGIN PUBLIC KEY-----\nMFkw\n-----END PUBLIC KEY-----"
     ts = TokenSecret(secret_key=SecretStr(pem), algorithm="ES256")
     assert ts.algorithm == "ES256"
+
+
+# ── Canonical role/flag invariant (§3.1) ─────────────────────────────────────
+
+# Every payload model inheriting UserPayloadData, with the extra fields each
+# one requires. TokenAccessData is the token-creation payload and TokenUserData
+# the decoded one, so creation and consumption are both covered here.
+_PAYLOAD_MODELS = [
+    (UserPayloadData, {}),
+    (TokenAccessData, {"sub": "u", "type": "access"}),
+    (TokenUserData, {"sub": "u", "type": "access", "jti": "j"}),
+    (TokenPayload, {"sub": "u"}),
+]
+_VALID_PAIRS = [(role, role == RoleType.SUPERADMIN) for role in RoleType]
+_INVALID_PAIRS = [(role, role != RoleType.SUPERADMIN) for role in RoleType]
+
+
+@pytest.mark.parametrize("model,extra", _PAYLOAD_MODELS)
+@pytest.mark.parametrize("role,is_superuser", _VALID_PAIRS)
+def test_payload_models_accept_canonical_pairs(
+    model: type, extra: dict, role: RoleType, is_superuser: bool
+) -> None:
+    d = model(email="a@b.com", role=role, is_superuser=is_superuser, **extra)
+    assert d.role is role
+    assert d.is_superuser is is_superuser
+
+
+@pytest.mark.parametrize("model,extra", _PAYLOAD_MODELS)
+@pytest.mark.parametrize("role,is_superuser", _INVALID_PAIRS)
+def test_payload_models_reject_inconsistent_pairs(
+    model: type, extra: dict, role: RoleType, is_superuser: bool
+) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        model(email="a@b.com", role=role, is_superuser=is_superuser, **extra)
+
+    assert find_inconsistent_privilege_claims_error(exc_info.value) is not None
+
+
+def test_payload_flag_alone_cannot_claim_superuser() -> None:
+    # The escalation shape the invariant exists to stop: flag set, role low.
+    with pytest.raises(ValidationError):
+        TokenAccessData(
+            sub="u",
+            type="access",
+            email="a@b.com",
+            role=RoleType.USER,
+            is_superuser=True,
+        )
+
+
+def test_payload_superadmin_without_flag_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        TokenAccessData(
+            sub="u",
+            type="access",
+            email="a@b.com",
+            role=RoleType.SUPERADMIN,
+            is_superuser=False,
+        )

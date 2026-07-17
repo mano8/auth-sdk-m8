@@ -18,6 +18,8 @@ shares one implementation.
 
 from __future__ import annotations
 
+from pydantic import ValidationError
+
 from auth_sdk_m8.core.exceptions import InconsistentPrivilegeClaimsError
 from auth_sdk_m8.schemas.base import RoleType
 
@@ -109,3 +111,37 @@ def validate_privilege_claims(role: RoleType, is_superuser: bool) -> None:
     """
     if not privilege_claims_are_consistent(role, is_superuser):
         raise InconsistentPrivilegeClaimsError(INCONSISTENT_PRIVILEGE_CLAIMS_REASON)
+
+
+def find_inconsistent_privilege_claims_error(
+    error: ValidationError,
+) -> InconsistentPrivilegeClaimsError | None:
+    """Return the privilege-claim mismatch inside *error*, if it caused it.
+
+    Models applying the invariant (``UserPayloadData`` and its token
+    subclasses, ``UserModel``) raise
+    :class:`InconsistentPrivilegeClaimsError` from a model validator, so
+    Pydantic reports it as a ``ValidationError`` like any other field problem.
+    This lets a caller tell "the claims contradict each other" apart from
+    "the payload is malformed" and map only the former to its own boundary
+    (e.g. ``TokenValidator`` -> ``InvalidToken`` with the bounded reason).
+
+    The returned error carries only the bounded reason code, so it is safe to
+    log or chain. The *error* argument is not — a ``ValidationError`` embeds
+    the raw input — so this reads it with input and URLs excluded and never
+    surfaces it.
+
+    Args:
+        error: The Pydantic error raised while building such a model.
+
+    Returns:
+        The typed mismatch error, or ``None`` when *error* was caused by
+        anything else.
+    """
+    for detail in error.errors(
+        include_url=False, include_context=True, include_input=False
+    ):
+        cause = (detail.get("ctx") or {}).get("error")
+        if isinstance(cause, InconsistentPrivilegeClaimsError):
+            return cause
+    return None

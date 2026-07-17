@@ -2,16 +2,22 @@
 
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Self
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
+from auth_sdk_m8.authorization import validate_privilege_claims
 from auth_sdk_m8.schemas.base import AuthProviderType, RoleType
 from auth_sdk_m8.utils.email import normalize_email
 
 
 class UserModel(BaseModel):
-    """Pydantic representation of an authenticated user."""
+    """Pydantic representation of an authenticated user.
+
+    ``role`` and ``is_superuser`` must agree per the canonical truth table
+    (see :mod:`auth_sdk_m8.authorization`), so an inconsistent pair can never
+    reach an authorization decision through this model.
+    """
 
     id: uuid.UUID
     email: EmailStr
@@ -29,6 +35,17 @@ class UserModel(BaseModel):
     is_superuser: bool = False
     role: RoleType = RoleType.USER
     tenant_id: Optional[uuid.UUID] = None  # coerced from the token's string claim
+
+    @model_validator(mode="after")
+    def validate_privilege_claim_consistency(self) -> Self:
+        """Reject a ``role``/``is_superuser`` pair outside the truth table.
+
+        Raises:
+            InconsistentPrivilegeClaimsError: Wrapped by Pydantic into a
+                ``ValidationError`` carrying only the bounded reason code.
+        """
+        validate_privilege_claims(self.role, self.is_superuser)
+        return self
 
 
 class SessionModel(BaseModel):

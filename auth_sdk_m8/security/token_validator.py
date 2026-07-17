@@ -6,6 +6,10 @@ import jwt
 from jwt import ExpiredSignatureError, PyJWTError
 from pydantic import ValidationError
 
+from auth_sdk_m8.authorization import (
+    INCONSISTENT_PRIVILEGE_CLAIMS_REASON,
+    find_inconsistent_privilege_claims_error,
+)
 from auth_sdk_m8.core.exceptions import InvalidToken
 from auth_sdk_m8.schemas.auth import TokenSecret, TokenUserData
 from auth_sdk_m8.security.hooks import ValidationHooks
@@ -61,7 +65,8 @@ class TokenValidator:
             Parsed and validated ``TokenUserData``.
 
         Raises:
-            InvalidToken: Token expired, invalid, wrong type, or malformed.
+            InvalidToken: Token expired, invalid, wrong type, malformed, or
+                carrying inconsistent privilege claims.
         """
         secrets = self._resolve_secrets(token)
         payload = self._decode_payload(token, secrets)
@@ -74,6 +79,16 @@ class TokenValidator:
         try:
             result = TokenUserData(**payload)
         except ValidationError as ex:
+            mismatch = find_inconsistent_privilege_claims_error(ex)
+            if mismatch is not None:
+                if self._hooks:
+                    self._hooks.on_failure(
+                        reason=INCONSISTENT_PRIVILEGE_CLAIMS_REASON,
+                        token_type="access",  # nosec B106
+                    )
+                # Chain the bounded reason, never the ValidationError — the
+                # latter embeds the raw claims in its message.
+                raise InvalidToken("Invalid access token") from mismatch
             if self._hooks:
                 self._hooks.on_failure(reason="invalid_payload", token_type="access")  # nosec B106
             raise InvalidToken("Invalid access token") from ex
