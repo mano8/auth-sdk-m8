@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
 import pytest
 from pydantic import ValidationError
@@ -10,7 +11,7 @@ from auth_sdk_m8.authorization import find_inconsistent_privilege_claims_error
 from auth_sdk_m8.schemas.base import AuthProviderType, RoleType
 from auth_sdk_m8.schemas.redis_events import EventBase
 from auth_sdk_m8.schemas.user import SessionModel, UserModel
-from auth_sdk_m8.schemas.user_events import UserDeletedEvent
+from auth_sdk_m8.schemas.user_events import SessionRevokedEvent, UserDeletedEvent
 
 
 def test_user_model() -> None:
@@ -164,3 +165,73 @@ def test_user_deleted_event_defaults() -> None:
 
 def test_user_deleted_event_inherits_event_base() -> None:
     assert issubclass(UserDeletedEvent, EventBase)
+
+
+def test_session_revoked_event_v1_shape_has_no_v2_fields() -> None:
+    # Today's shape: {user_id, jti}. Constructing it exactly as fa-auth-m8's
+    # current callers do must keep working — the v2 fields are additive.
+    event = SessionRevokedEvent(user_id="user-123", jti="jti-abc")
+
+    assert event.event_type == "session.revoked"
+    assert event.version == "v1"
+    assert event.user_id == "user-123"
+    assert event.jti == "jti-abc"
+    assert event.auth_generation is None
+    assert event.event_id is None
+
+
+def test_session_revoked_event_jti_none_means_all_sessions() -> None:
+    event = SessionRevokedEvent(user_id="user-123", jti=None)
+    assert event.jti is None
+
+
+def test_session_revoked_event_v2_shape() -> None:
+    event = SessionRevokedEvent(
+        user_id="user-123",
+        jti="jti-abc",
+        version="v2",
+        auth_generation=7,
+        event_id="user-123:7:publish:user-wide",
+    )
+
+    assert event.version == "v2"
+    assert event.auth_generation == 7
+    assert event.event_id == "user-123:7:publish:user-wide"
+
+
+def test_session_revoked_event_inherits_event_base() -> None:
+    assert issubclass(SessionRevokedEvent, EventBase)
+
+
+@pytest.mark.parametrize("generation", [0, -1])
+def test_session_revoked_event_rejects_a_non_positive_generation(
+    generation: int,
+) -> None:
+    with pytest.raises(ValidationError):
+        SessionRevokedEvent(user_id="user-123", auth_generation=generation)
+
+
+def test_session_revoked_event_rejects_an_empty_event_id() -> None:
+    with pytest.raises(ValidationError):
+        SessionRevokedEvent(user_id="user-123", event_id="")
+
+
+def test_session_revoked_event_old_consumer_ignores_v2_fields() -> None:
+    # A not-yet-upgraded consumer parsing model that only knows the v1 shape
+    # must be able to read a v2 payload safely, ignoring unknown fields.
+    class _LegacySessionRevokedEvent(EventBase):
+        event_type: str = "session.revoked"
+        user_id: str
+        jti: Optional[str] = None
+
+    v2_payload = SessionRevokedEvent(
+        user_id="user-123",
+        jti="jti-abc",
+        version="v2",
+        auth_generation=7,
+        event_id="user-123:7:publish:user-wide",
+    ).model_dump()
+
+    legacy = _LegacySessionRevokedEvent.model_validate(v2_payload)
+    assert legacy.user_id == "user-123"
+    assert legacy.jti == "jti-abc"
