@@ -1,0 +1,20 @@
+title = "auth-sdk-m8 gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Project-wide allowlist"
+paths = [
+  # Test fixtures may contain deterministic low-entropy test values
+  '''tests/''',
+  # Checksummed JWT/API-key fixture matrix, signed with the trusted test
+  # signing key documented inline in the fixture (DoNotUseInProd); consumed
+  # verbatim by fastapi-m8, fa-auth-m8, and security-tests-m8, so values
+  # must not be rotated here.
+  '''auth_sdk_m8/testing/''',
+]
+# Add SHAs of any prior accidental secret commits here after rotation:
+# commits = [
+#   "abc123def456",  # description of what was rotated and when
+# ]

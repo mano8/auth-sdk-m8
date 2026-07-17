@@ -36,7 +36,9 @@ FIXTURE_MATRIX_SCHEMA_VERSION = "1"
 #: Dedicated fixture-only signing key — never a production secret. Satisfies
 #: the SDK's own SECRET_KEY_REGEX so a consumer can build a TokenSecret /
 #: TokenValidator directly from it without a separate key of its own.
-TRUSTED_TEST_SIGNING_KEY = "AuthSdkM8-Fixture_TrustedTestKey-2026-DoNotUseInProd!"
+TRUSTED_TEST_SIGNING_KEY = (  # nosemgrep — fixture-only key, never a production secret
+    "AuthSdkM8-Fixture_TrustedTestKey-2026-DoNotUseInProd!"
+)
 
 #: Far-future, fixed expiry so the checked-in tokens never expire in CI.
 _FIXTURE_TOKEN_EXP = int(datetime(2100, 1, 1, tzinfo=timezone.utc).timestamp())
@@ -130,7 +132,9 @@ def _canonical_jwt_fixtures() -> dict[str, Any]:
                 "jti": f"fixture-{role.value}-{is_superuser}",
                 "exp": _FIXTURE_TOKEN_EXP,
             }
-            token = jwt.encode(payload, TRUSTED_TEST_SIGNING_KEY, algorithm="HS256")
+            token = jwt.encode(  # nosemgrep — fixture-only key, never a production secret
+                payload, TRUSTED_TEST_SIGNING_KEY, algorithm="HS256"
+            )
             tokens.append(
                 {
                     "role": role.value,
