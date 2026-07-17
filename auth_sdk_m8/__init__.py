@@ -17,6 +17,7 @@ from auth_sdk_m8.core.exceptions import (
     ApiKeyCapabilityCeilingError,
     InconsistentPrivilegeClaimsError,
     UnsupportedApiKeySchemaVersionError,
+    UnsupportedJtiStatusSchemaVersionError,
 )
 from auth_sdk_m8.schemas.api_key import (
     API_KEY_AUTHENTICATION_METHOD,
@@ -31,6 +32,15 @@ from auth_sdk_m8.schemas.api_key import (
     validate_api_key_introspection_schema_version,
 )
 from auth_sdk_m8.schemas.base import ApiKeyAccessMode
+from auth_sdk_m8.schemas.jti_status import (
+    JTI_STATUS_SCHEMA_VERSION,
+    SUPPORTED_JTI_STATUS_SCHEMA_VERSIONS,
+    UNSUPPORTED_JTI_STATUS_SCHEMA_VERSION_REASON,
+    JtiStatusActiveResponse,
+    JtiStatusInactiveResponse,
+    JtiStatusResponse,
+    validate_jti_status_schema_version,
+)
 
 __version__ = "2.1.1"
 
@@ -62,4 +72,13 @@ __all__ = [
     "has_api_key_capability",
     "validate_api_key_introspection_schema_version",
     "validate_api_key_required_role",
+    # JTI-status v2 introspection response contract
+    "JTI_STATUS_SCHEMA_VERSION",
+    "SUPPORTED_JTI_STATUS_SCHEMA_VERSIONS",
+    "UNSUPPORTED_JTI_STATUS_SCHEMA_VERSION_REASON",
+    "JtiStatusActiveResponse",
+    "JtiStatusInactiveResponse",
+    "JtiStatusResponse",
+    "UnsupportedJtiStatusSchemaVersionError",
+    "validate_jti_status_schema_version",
 ]

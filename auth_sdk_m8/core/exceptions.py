@@ -42,3 +42,15 @@ class InconsistentPrivilegeClaimsError(ValueError):
     as its message — never the raw role/flag values or token data — so it is
     always safe to log or surface in observability.
     """
+
+
+class UnsupportedJtiStatusSchemaVersionError(ValueError):
+    """Raised when a JTI-status introspection response declares an unknown version.
+
+    Consumers fail closed on a version they do not implement instead of
+    guessing at the payload's meaning.
+
+    Carries only a bounded reason code (e.g.
+    ``unsupported_jti_status_schema_version``) as its message — never the
+    payload — so it is always safe to log or surface in observability.
+    """
