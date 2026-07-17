@@ -22,6 +22,10 @@ exclude_paths:
   - ".pytest_cache/**"
   - "**/__pycache__/**"
   - "examples/**"
+  # scripts/generate_authorization_fixture_matrix.py signs deterministic
+  # checksummed test fixtures with a dedicated, clearly-labeled non-production
+  # key (DoNotUseInProd); dev tooling only, not shipped in the package.
+  - "scripts/**"
   # SECURITY.md is kept markdownlint-clean by hand; excluded here because
   # Codacy's prose/agent-file analyzer misclassifies a security policy doc
   # (flags incident-response steps as "absolute rules needing an escape hatch"
