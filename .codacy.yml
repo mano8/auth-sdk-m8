@@ -27,3 +27,5 @@ exclude_paths:
   # (flags incident-response steps as "absolute rules needing an escape hatch"
   # and suggests splitting it into SOUL.md/USER.md/TOOLS.md).
   - "SECURITY.md"
+  - "AGENTS.md"
+  - "CLAUDE.md"
