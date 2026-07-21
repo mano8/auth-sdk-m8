@@ -33,3 +33,4 @@ exclude_paths:
   - "SECURITY.md"
   - "AGENTS.md"
   - "CLAUDE.md"
+  - "REPOSITORY_CONTEXT.md"
