@@ -229,6 +229,175 @@ class TestCanonicalJwtFixtures:
                 validator.validate_access_token(entry["jwt"])
 
 
+class TestJtiStatusFixtures:
+    def test_v1_shapes_have_no_v2_fields(self, matrix: dict) -> None:
+        v1 = matrix["jti_status_fixtures"]["v1"]
+        for shape in (v1["active"], v1["inactive"]):
+            assert "schema_version" not in shape
+            assert "auth_generation" not in shape
+
+    def test_v2_active_validates_against_sdk_schema(self, matrix: dict) -> None:
+        from auth_sdk_m8.schemas.jti_status import JtiStatusActiveResponse
+
+        v2 = matrix["jti_status_fixtures"]["v2"]
+        JtiStatusActiveResponse.model_validate(v2["active"])
+
+    def test_v2_inactive_shapes_validate_against_sdk_schema(self, matrix: dict) -> None:
+        from auth_sdk_m8.schemas.jti_status import JtiStatusInactiveResponse
+
+        v2 = matrix["jti_status_fixtures"]["v2"]
+        JtiStatusInactiveResponse.model_validate(v2["inactive"])
+        JtiStatusInactiveResponse.model_validate(v2["subject_mismatch_inactive"])
+
+    def test_subject_mismatch_request_targets_a_different_user(
+        self, matrix: dict
+    ) -> None:
+        v2 = matrix["jti_status_fixtures"]["v2"]
+        assert (
+            v2["subject_mismatch_request"]["expected_user_id"]
+            != v2["request"]["expected_user_id"]
+        )
+
+    def test_unsupported_schema_version_response_is_rejected(
+        self, matrix: dict
+    ) -> None:
+        from pydantic import ValidationError
+
+        from auth_sdk_m8.core.exceptions import UnsupportedJtiStatusSchemaVersionError
+        from auth_sdk_m8.schemas.jti_status import JtiStatusActiveResponse
+
+        bad = matrix["jti_status_fixtures"]["unsupported_schema_version_response"]
+        with pytest.raises(ValidationError) as exc_info:
+            JtiStatusActiveResponse.model_validate(bad)
+        causes = [
+            (detail.get("ctx") or {}).get("error")
+            for detail in exc_info.value.errors(include_url=False, include_context=True)
+        ]
+        assert any(
+            isinstance(cause, UnsupportedJtiStatusSchemaVersionError)
+            for cause in causes
+        )
+
+
+class TestApiKeyIntrospectionFixtures:
+    def test_active_response_validates_against_sdk_schema(self, matrix: dict) -> None:
+        from auth_sdk_m8.schemas.api_key import ApiKeyIntrospectionActiveResponse
+
+        fixtures = matrix["api_key_introspection_fixtures"]
+        ApiKeyIntrospectionActiveResponse.model_validate(fixtures["active_response"])
+
+    def test_inactive_response_validates_against_sdk_schema(self, matrix: dict) -> None:
+        from auth_sdk_m8.schemas.api_key import ApiKeyIntrospectionInactiveResponse
+
+        fixtures = matrix["api_key_introspection_fixtures"]
+        ApiKeyIntrospectionInactiveResponse.model_validate(
+            fixtures["inactive_response"]
+        )
+
+    def test_active_response_shape_is_minimized(self, matrix: dict) -> None:
+        active = matrix["api_key_introspection_fixtures"]["active_response"]
+        for forbidden in ("is_active", "key_hash", "key_id", "email", "reason"):
+            assert forbidden not in active
+            assert forbidden not in active["principal"]
+
+    def test_unsupported_schema_version_response_is_rejected(
+        self, matrix: dict
+    ) -> None:
+        from pydantic import ValidationError
+
+        from auth_sdk_m8.core.exceptions import UnsupportedApiKeySchemaVersionError
+        from auth_sdk_m8.schemas.api_key import ApiKeyIntrospectionInactiveResponse
+
+        fixtures = matrix["api_key_introspection_fixtures"]
+        with pytest.raises(ValidationError) as exc_info:
+            ApiKeyIntrospectionInactiveResponse.model_validate(
+                fixtures["unsupported_schema_version_response"]
+            )
+        causes = [
+            (detail.get("ctx") or {}).get("error")
+            for detail in exc_info.value.errors(include_url=False, include_context=True)
+        ]
+        assert any(
+            isinstance(cause, UnsupportedApiKeySchemaVersionError) for cause in causes
+        )
+
+    def test_status_matrix_covers_both_surfaces(self, matrix: dict) -> None:
+        rows = matrix["api_key_introspection_fixtures"]["status_matrix"]
+        surfaces = {row["surface"] for row in rows}
+        assert surfaces == {"issuer", "consumer"}
+        statuses = {row["http_status"] for row in rows}
+        assert statuses == {200, 401, 403, 429, 503}
+
+
+class TestLocalRemotePrincipalEquivalence:
+    def test_every_pair_is_identical(self, matrix: dict) -> None:
+        for pair in matrix["local_remote_principal_equivalence"]:
+            assert pair["local"] == pair["remote"]
+
+    def test_pairs_validate_against_sdk_principal_schema(self, matrix: dict) -> None:
+        from auth_sdk_m8.schemas.api_key import ApiKeyPrincipal
+
+        for pair in matrix["local_remote_principal_equivalence"]:
+            ApiKeyPrincipal.model_validate(pair["local"])
+            ApiKeyPrincipal.model_validate(pair["remote"])
+
+    def test_covers_every_role_crossed_with_every_access_mode(
+        self, matrix: dict
+    ) -> None:
+        from auth_sdk_m8.schemas.base import ApiKeyAccessMode
+
+        seen = {
+            (pair["local"]["role"], pair["local"]["access_mode"])
+            for pair in matrix["local_remote_principal_equivalence"]
+        }
+        expected = {
+            (role, mode.value) for role in _ALL_ROLES for mode in ApiKeyAccessMode
+        }
+        # Every (role, access_mode) pair is present: each role has exactly one
+        # canonically consistent superuser-flag value, so none is excluded by
+        # the truth-table filter in the generator.
+        assert seen == expected
+
+
+class TestAudienceAndCapabilityPolicyMatrix:
+    def test_no_audience_never_reaches_remote_active(self, matrix: dict) -> None:
+        for row in matrix["audience_and_capability_policy_matrix"]:
+            if row["has_audience"] is False:
+                assert row["remote_active"] is False
+                assert row["remote_allowed"] is False
+
+    def test_remote_allowed_requires_audience_and_local_allowed(
+        self, matrix: dict
+    ) -> None:
+        for row in matrix["audience_and_capability_policy_matrix"]:
+            if row["has_audience"] is None:
+                continue
+            assert row["remote_allowed"] == (
+                row["issuer_local_allowed"] and row["has_audience"]
+            )
+
+    def test_admin_and_superuser_required_roles_are_ceiling_denied(
+        self, matrix: dict
+    ) -> None:
+        rows = [
+            row
+            for row in matrix["audience_and_capability_policy_matrix"]
+            if row["required_role"] in ("admin", "superadmin")
+        ]
+        assert len(rows) == 2
+        for row in rows:
+            assert row["capability_ceiling_error"] is True
+            assert row["issuer_local_allowed"] is False
+            assert row["remote_allowed"] is False
+
+    def test_read_only_access_mode_never_allows_writer_capability(
+        self, matrix: dict
+    ) -> None:
+        for row in matrix["audience_and_capability_policy_matrix"]:
+            if row["access_mode"] == "read_only" and row["required_role"] == "writer":
+                assert row["issuer_local_allowed"] is False
+
+
 class TestPublicPackageSurface:
     def test_loader_and_constants_re_exported_from_package_root(self) -> None:
         assert (

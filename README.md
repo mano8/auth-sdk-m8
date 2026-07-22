@@ -72,6 +72,31 @@ pip install "auth-sdk-m8[security,fastapi,config,db,mysql]"
 
 ---
 
+## Canonical fixture matrix (3.1.0, FIXTURE-01, §5.5)
+
+`auth_sdk_m8.testing.load_authorization_fixture_matrix()` returns the single
+versioned, checksummed JSON fixture matrix this SDK release publishes as
+package data (`auth_sdk_m8/testing/authorization_matrix.json`). `fastapi-m8`
+and `fa-auth-m8` consume it as an installed dependency; `security-tests-m8`
+vendors the same JSON (checked in with its own version/checksum metadata) so
+the harness stays SDK-free. Every consumer verifies `schema_version` and
+`checksum_sha256` and fails closed on drift or a hand-edit rather than
+silently trusting stale expectations.
+
+Schema version `2` (additive over `1`) covers: the role/flag and
+minimum-role decision matrices; canonical JWT fixtures; session-revoked
+events (v1/v2); JTI-status introspection fixtures (v1/v2, including a
+subject-mismatch case and an unsupported-schema-version probe);
+API-key introspection request/response shapes plus the issuer- and
+consumer-side HTTP status matrix; local-vs-remote `ApiKeyPrincipal`
+equivalence pairs; and the audience/access-mode/capability-ceiling policy
+decision table. Regenerate with
+`python scripts/generate_authorization_fixture_matrix.py` and commit the
+result — `tests/test_fixture_matrix.py` fails if the checked-in file drifts
+from what the generator currently produces.
+
+---
+
 ## Authorization contract and canonicity (3.0.0)
 
 **3.0.0 introduces the canonical role/flag invariant.** The SDK now enforces `is_superuser <=> role == SUPERADMIN` across token validation, payload creation, and `UserModel` construction. Tokens with mismatched role/flag pairs are rejected. Migrating from 2.x requires reissuing tokens via `fa-auth-m8 >=2.0.0`.
