@@ -5,6 +5,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [3.1.0] - 2026-07-23 · Expanded canonical fixture matrix (Phase 5, FIXTURE-01, §5.5)
+
+### Added
+
+- `auth_sdk_m8/testing/authorization_matrix.json` schema version bumped to
+  `"2"` (additive over `"1"`), adding four new sections consumed by
+  `fastapi-m8`, `fa-auth-m8`, and `security-tests-m8`:
+  - `jti_status_fixtures` — v1 and v2 request/response shapes, including a
+    subject-mismatch case and an unsupported-schema-version probe.
+  - `api_key_introspection_fixtures` — request/active/inactive response
+    shapes plus the issuer- and consumer-side HTTP status matrix
+    (`401`/`403`/`429`+`Retry-After`/`503`).
+  - `local_remote_principal_equivalence` — paired local/remote
+    `ApiKeyPrincipal` fixtures for every role × access-mode combination.
+  - `audience_and_capability_policy_matrix` — the audience/access-mode/
+    capability-ceiling decision table, including the always-ceiling-denied
+    `admin`/`superadmin` required-role rows.
+- `scripts/generate_authorization_fixture_matrix.py` regenerates all of the
+  above deterministically; `tests/test_fixture_matrix.py` gained matching
+  coverage and still proves the checked-in JSON matches generator output.
+
+No existing field of the `"1"` matrix changed shape or meaning.
+
+---
+
 ## [3.0.0] - 2026-07-17 · Canonical role/flag authorization model, API-key introspection, generation-backed revocation · **BREAKING**
 
 ### Added — Authorization contract and fixtures (Phase 1)

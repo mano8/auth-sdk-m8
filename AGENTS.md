@@ -1,27 +1,5 @@
-﻿# auth-sdk-m8
+# Codex instructions
 
-## Layer
-Platform (shared authentication SDK)
-
----
-
-## Purpose
-Shared auth primitives used by:
-- fa-auth-m8
-- fastapi services
-- microservices templates
-
----
-
-## Rules
-- Must remain framework-agnostic where possible
-- No business logic from consuming services
-- No database ownership
-- Only reusable auth/security primitives
-
----
-
-## Authority
-All rules come from /.workspace/policy.index.json (type: python)
-
-
+Read [REPOSITORY_CONTEXT.md](REPOSITORY_CONTEXT.md) for the repository-local
+context. A verified nearest workspace may provide optional launcher-selected
+enhancement; it is never required for standalone work.

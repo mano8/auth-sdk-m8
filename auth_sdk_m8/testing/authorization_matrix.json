@@ -1,4 +1,721 @@
 {
+  "api_key_introspection_fixtures": {
+    "active_response": {
+      "active": true,
+      "audience_id": "fixture-consumer-m8",
+      "key_expires_at": null,
+      "principal": {
+        "access_mode": "read_write",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": false,
+        "role": "writer",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      },
+      "schema_version": "1"
+    },
+    "inactive_response": {
+      "active": false,
+      "schema_version": "1"
+    },
+    "request": {
+      "api_key": "fixture-raw-api-key-do-not-use-in-prod",
+      "schema_version": "1"
+    },
+    "status_matrix": [
+      {
+        "http_status": 401,
+        "scenario": "invalid_internal_consumer_credential",
+        "surface": "issuer"
+      },
+      {
+        "http_status": 403,
+        "scenario": "credential_missing_introspection_scope",
+        "surface": "issuer"
+      },
+      {
+        "body_active": false,
+        "http_status": 200,
+        "scenario": "unknown_revoked_expired_key",
+        "surface": "issuer"
+      },
+      {
+        "body_active": false,
+        "http_status": 200,
+        "scenario": "missing_inactive_inconsistent_owner",
+        "surface": "issuer"
+      },
+      {
+        "body_active": false,
+        "http_status": 200,
+        "scenario": "audience_not_bound_to_key",
+        "surface": "issuer"
+      },
+      {
+        "http_status": 429,
+        "retry_after_header": true,
+        "scenario": "key_quota_exhausted",
+        "surface": "issuer"
+      },
+      {
+        "http_status": 503,
+        "scenario": "issuer_database_unavailable",
+        "surface": "issuer"
+      },
+      {
+        "http_status": 401,
+        "scenario": "consumer_maps_inactive_to_generic_401",
+        "surface": "consumer"
+      },
+      {
+        "http_status": 429,
+        "retry_after_header": true,
+        "scenario": "consumer_maps_issuer_429_relaying_retry_after",
+        "surface": "consumer"
+      },
+      {
+        "http_status": 503,
+        "scenario": "introspection_outage_or_timeout",
+        "surface": "consumer"
+      },
+      {
+        "http_status": 503,
+        "scenario": "unsupported_schema_version_returned",
+        "surface": "consumer"
+      },
+      {
+        "http_status": 503,
+        "scenario": "audience_id_mismatch_vs_configured_identity",
+        "surface": "consumer"
+      }
+    ],
+    "unsupported_schema_version_response": {
+      "active": false,
+      "schema_version": "999"
+    }
+  },
+  "audience_and_capability_policy_matrix": [
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "user",
+      "role": "superadmin"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "user",
+      "role": "superadmin"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "reader",
+      "role": "superadmin"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "reader",
+      "role": "superadmin"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": false,
+      "remote_active": true,
+      "remote_allowed": false,
+      "required_role": "writer",
+      "role": "superadmin"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": false,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "writer",
+      "role": "superadmin"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "user",
+      "role": "superadmin"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "user",
+      "role": "superadmin"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "reader",
+      "role": "superadmin"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "reader",
+      "role": "superadmin"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "writer",
+      "role": "superadmin"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "writer",
+      "role": "superadmin"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "user",
+      "role": "admin"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "user",
+      "role": "admin"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "reader",
+      "role": "admin"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "reader",
+      "role": "admin"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": false,
+      "remote_active": true,
+      "remote_allowed": false,
+      "required_role": "writer",
+      "role": "admin"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": false,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "writer",
+      "role": "admin"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "user",
+      "role": "admin"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "user",
+      "role": "admin"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "reader",
+      "role": "admin"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "reader",
+      "role": "admin"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "writer",
+      "role": "admin"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "writer",
+      "role": "admin"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "user",
+      "role": "writer"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "user",
+      "role": "writer"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "reader",
+      "role": "writer"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "reader",
+      "role": "writer"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": false,
+      "remote_active": true,
+      "remote_allowed": false,
+      "required_role": "writer",
+      "role": "writer"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": false,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "writer",
+      "role": "writer"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "user",
+      "role": "writer"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "user",
+      "role": "writer"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "reader",
+      "role": "writer"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "reader",
+      "role": "writer"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "writer",
+      "role": "writer"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "writer",
+      "role": "writer"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "user",
+      "role": "reader"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "user",
+      "role": "reader"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "reader",
+      "role": "reader"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "reader",
+      "role": "reader"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": false,
+      "remote_active": true,
+      "remote_allowed": false,
+      "required_role": "writer",
+      "role": "reader"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": false,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "writer",
+      "role": "reader"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "user",
+      "role": "reader"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "user",
+      "role": "reader"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "reader",
+      "role": "reader"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "reader",
+      "role": "reader"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": false,
+      "remote_active": true,
+      "remote_allowed": false,
+      "required_role": "writer",
+      "role": "reader"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": false,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "writer",
+      "role": "reader"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "user",
+      "role": "user"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "user",
+      "role": "user"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": false,
+      "remote_active": true,
+      "remote_allowed": false,
+      "required_role": "reader",
+      "role": "user"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": false,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "reader",
+      "role": "user"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": false,
+      "remote_active": true,
+      "remote_allowed": false,
+      "required_role": "writer",
+      "role": "user"
+    },
+    {
+      "access_mode": "read_only",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": false,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "writer",
+      "role": "user"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": true,
+      "remote_active": true,
+      "remote_allowed": true,
+      "required_role": "user",
+      "role": "user"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": true,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "user",
+      "role": "user"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": false,
+      "remote_active": true,
+      "remote_allowed": false,
+      "required_role": "reader",
+      "role": "user"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": false,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "reader",
+      "role": "user"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": true,
+      "issuer_local_allowed": false,
+      "remote_active": true,
+      "remote_allowed": false,
+      "required_role": "writer",
+      "role": "user"
+    },
+    {
+      "access_mode": "read_write",
+      "capability_ceiling_error": false,
+      "has_audience": false,
+      "issuer_local_allowed": false,
+      "remote_active": false,
+      "remote_allowed": false,
+      "required_role": "writer",
+      "role": "user"
+    },
+    {
+      "access_mode": null,
+      "capability_ceiling_error": true,
+      "has_audience": null,
+      "issuer_local_allowed": false,
+      "remote_active": null,
+      "remote_allowed": false,
+      "required_role": "admin",
+      "role": null
+    },
+    {
+      "access_mode": null,
+      "capability_ceiling_error": true,
+      "has_audience": null,
+      "issuer_local_allowed": false,
+      "remote_active": null,
+      "remote_allowed": false,
+      "required_role": "superadmin",
+      "role": null
+    }
+  ],
   "canonical_jwt_fixtures": {
     "algorithm": "HS256",
     "tokens": [
@@ -65,7 +782,234 @@
     ],
     "trusted_test_signing_key": "AuthSdkM8-Fixture_TrustedTestKey-2026-DoNotUseInProd!"
   },
-  "checksum_sha256": "022439bc13da74fd46c76dbc1c1891df0cb50df77531f938781a13a22c8067b5",
+  "checksum_sha256": "90305e48a5c786c714b615a6206e960cad2ff453cfed2edb8ba030d1a91619e7",
+  "jti_status_fixtures": {
+    "unsupported_schema_version_response": {
+      "active": true,
+      "auth_generation": 1,
+      "schema_version": "999",
+      "user_id": "66666666-6666-4666-8666-666666666666"
+    },
+    "v1": {
+      "active": {
+        "active": true
+      },
+      "inactive": {
+        "active": false
+      },
+      "request": {
+        "jti": "88888888-8888-4888-8888-888888888888"
+      }
+    },
+    "v2": {
+      "active": {
+        "active": true,
+        "auth_generation": 3,
+        "schema_version": "2",
+        "user_id": "66666666-6666-4666-8666-666666666666"
+      },
+      "inactive": {
+        "active": false,
+        "schema_version": "2"
+      },
+      "request": {
+        "expected_user_id": "66666666-6666-4666-8666-666666666666",
+        "jti": "88888888-8888-4888-8888-888888888888",
+        "schema_version": "2"
+      },
+      "subject_mismatch_inactive": {
+        "active": false,
+        "schema_version": "2"
+      },
+      "subject_mismatch_request": {
+        "expected_user_id": "77777777-7777-4777-8777-777777777777",
+        "jti": "88888888-8888-4888-8888-888888888888",
+        "schema_version": "2"
+      }
+    }
+  },
+  "local_remote_principal_equivalence": [
+    {
+      "local": {
+        "access_mode": "read_only",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": true,
+        "role": "superadmin",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      },
+      "remote": {
+        "access_mode": "read_only",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": true,
+        "role": "superadmin",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      }
+    },
+    {
+      "local": {
+        "access_mode": "read_write",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": true,
+        "role": "superadmin",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      },
+      "remote": {
+        "access_mode": "read_write",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": true,
+        "role": "superadmin",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      }
+    },
+    {
+      "local": {
+        "access_mode": "read_only",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": false,
+        "role": "admin",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      },
+      "remote": {
+        "access_mode": "read_only",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": false,
+        "role": "admin",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      }
+    },
+    {
+      "local": {
+        "access_mode": "read_write",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": false,
+        "role": "admin",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      },
+      "remote": {
+        "access_mode": "read_write",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": false,
+        "role": "admin",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      }
+    },
+    {
+      "local": {
+        "access_mode": "read_only",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": false,
+        "role": "writer",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      },
+      "remote": {
+        "access_mode": "read_only",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": false,
+        "role": "writer",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      }
+    },
+    {
+      "local": {
+        "access_mode": "read_write",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": false,
+        "role": "writer",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      },
+      "remote": {
+        "access_mode": "read_write",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": false,
+        "role": "writer",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      }
+    },
+    {
+      "local": {
+        "access_mode": "read_only",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": false,
+        "role": "reader",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      },
+      "remote": {
+        "access_mode": "read_only",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": false,
+        "role": "reader",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      }
+    },
+    {
+      "local": {
+        "access_mode": "read_write",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": false,
+        "role": "reader",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      },
+      "remote": {
+        "access_mode": "read_write",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": false,
+        "role": "reader",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      }
+    },
+    {
+      "local": {
+        "access_mode": "read_only",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": false,
+        "role": "user",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      },
+      "remote": {
+        "access_mode": "read_only",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": false,
+        "role": "user",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      }
+    },
+    {
+      "local": {
+        "access_mode": "read_write",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": false,
+        "role": "user",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      },
+      "remote": {
+        "access_mode": "read_write",
+        "auth_generation": 4,
+        "authentication_method": "api_key",
+        "is_superuser": false,
+        "role": "user",
+        "user_id": "99999999-9999-4999-8999-999999999999"
+      }
+    }
+  ],
   "minimum_role_matrix": [
     {
       "current_role": "superadmin",
@@ -255,8 +1199,8 @@
       "role": "user"
     }
   ],
-  "schema_version": "1",
-  "sdk_version": "3.0.0",
+  "schema_version": "2",
+  "sdk_version": "3.1.0",
   "session_revoked_events": {
     "v1": {
       "event_type": "session.revoked",

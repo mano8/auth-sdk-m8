@@ -25,7 +25,7 @@ from auth_sdk_m8.core.exceptions import (
 )
 
 #: Schema version of the fixture matrix this SDK release publishes.
-FIXTURE_MATRIX_SCHEMA_VERSION: Final[str] = "1"
+FIXTURE_MATRIX_SCHEMA_VERSION: Final[str] = "2"
 
 _DATA_PACKAGE: Final[str] = "auth_sdk_m8.testing"
 _DATA_FILENAME: Final[str] = "authorization_matrix.json"
@@ -84,8 +84,11 @@ def load_authorization_fixture_matrix() -> dict[str, Any]:
 
     Returns:
         The parsed fixture matrix: ``role_flag_matrix``, ``minimum_role_matrix``,
-        ``session_revoked_events`` (v1/v2), and ``canonical_jwt_fixtures``
-        (signed with the bundled trusted test key).
+        ``session_revoked_events`` (v1/v2), ``canonical_jwt_fixtures``
+        (signed with the bundled trusted test key), ``jti_status_fixtures``
+        (v1/v2), ``api_key_introspection_fixtures`` (request/response shapes +
+        status matrix), ``local_remote_principal_equivalence``, and
+        ``audience_and_capability_policy_matrix``.
 
     Raises:
         UnsupportedFixtureMatrixSchemaVersionError: If the packaged file
