@@ -24,6 +24,8 @@ bandit==1.9.4
     # via auth-sdk-m8 (pyproject.toml)
 boolean-py==5.0
     # via license-expression
+build==1.5.0
+    # via auth-sdk-m8 (pyproject.toml)
 cachecontrol[filecache]==0.14.4
     # via
     #   cachecontrol
@@ -59,9 +61,13 @@ greenlet==3.5.3
     # via sqlalchemy
 h11==0.16.0
     # via httpcore
+hatchling==1.31.0
+    # via auth-sdk-m8 (pyproject.toml)
 httpcore==1.0.9
     # via httpx
 httpx==0.28.1
+    # via auth-sdk-m8 (pyproject.toml)
+hypothesis==6.165.0
     # via auth-sdk-m8 (pyproject.toml)
 idna==3.18
     # via
@@ -92,11 +98,15 @@ packageurl-python==0.17.6
     # via cyclonedx-python-lib
 packaging==26.2
     # via
+    #   build
+    #   hatchling
     #   pip-audit
     #   pip-requirements-parser
     #   pytest
 pathspec==1.1.1
-    # via mypy
+    # via
+    #   hatchling
+    #   mypy
 pip-api==0.0.34
     # via pip-audit
 pip-audit==2.10.1
@@ -107,6 +117,7 @@ platformdirs==4.10.0
     # via pip-audit
 pluggy==1.6.0
     # via
+    #   hatchling
     #   pytest
     #   pytest-cov
 prometheus-client==0.25.0
@@ -137,6 +148,8 @@ pymysql==1.2.0
     # via auth-sdk-m8 (pyproject.toml)
 pyparsing==3.3.2
     # via pip-requirements-parser
+pyproject-hooks==1.2.0
+    # via build
 pytest==9.1.0
     # via
     #   auth-sdk-m8 (pyproject.toml)
@@ -167,6 +180,7 @@ sniffio==1.3.1
 sortedcontainers==2.4.0
     # via
     #   cyclonedx-python-lib
+    #   hypothesis
     #   trio
 sqlalchemy==2.0.51
     # via
@@ -186,6 +200,8 @@ tomli-w==1.2.0
     # via pip-audit
 trio==0.33.0
     # via anyio
+trove-classifiers==2026.6.1.19
+    # via hatchling
 typing-extensions==4.16.0
     # via
     #   anyio
