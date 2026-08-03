@@ -166,12 +166,14 @@ from pydantic_settings import SettingsConfigDict
 from auth_sdk_m8.core.config import CommonSettings
 from auth_sdk_m8.utils.paths import find_dotenv
 
+
 class Settings(CommonSettings):
     ENV_FILE_DIR = Path(__file__).resolve().parent
     model_config = SettingsConfigDict(
         env_file=find_dotenv(ENV_FILE_DIR),
         env_file_encoding="utf-8",
     )
+
 
 settings = Settings()
 ```
@@ -312,14 +314,22 @@ TokenDep = Annotated[str, Depends(oauth2)]
 
 _validator = build_access_validator(settings)  # module-level singleton
 
+
 async def get_current_user(token: TokenDep) -> UserModel:
     try:
         payload = _validator.validate_access_token(token)
     except InvalidToken as exc:
-        raise HTTPException(status_code=403, detail="Could not validate credentials.") from exc
+        raise HTTPException(
+            status_code=403, detail="Could not validate credentials."
+        ) from exc
     # Revocation: call auth service HTTP endpoint (not Redis directly)
     # See RemoteRevocationClient in fa-auth-m8 examples/fastapi_service/core/revocation.py
-    return UserModel(**{**payload.model_dump(exclude={"sub", "jti", "exp", "type"}), "id": payload.sub})
+    return UserModel(
+        **{
+            **payload.model_dump(exclude={"sub", "jti", "exp", "type"}),
+            "id": payload.sub,
+        }
+    )
 ```
 
 > **Redis isolation:** consumer services must not connect to auth Redis.
@@ -338,10 +348,12 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     check_config_health(settings, _logger)  # raises ConfigurationError on fatal issues
     yield
+
 
 app = FastAPI(lifespan=lifespan)
 ```
@@ -520,8 +532,10 @@ Consumer microservices that use HTTP introspection should mix `ConsumerAuthMixin
 from auth_sdk_m8.core import ConsumerAuthMixin
 from auth_sdk_m8.core.config import CommonSettings
 
-class MyServiceSettings(ConsumerAuthMixin, CommonSettings):
-    ...  # your service-specific fields
+
+class MyServiceSettings(
+    ConsumerAuthMixin, CommonSettings
+): ...  # your service-specific fields
 ```
 
 Required fields added by the mixin:
@@ -894,7 +908,8 @@ Implement `RefreshTokenStore` against any backend:
 
 ```python
 class RedisRefreshStore:
-    def __init__(self, redis): self._r = redis
+    def __init__(self, redis):
+        self._r = redis
 
     async def is_valid(self, jti: str) -> bool:
         return bool(await self._r.exists(f"rt:{jti}"))
@@ -919,12 +934,14 @@ Attach logging, metrics, or tracing to token validation events via `ValidationHo
 import logging
 from auth_sdk_m8.security import ValidationHooks, build_access_validator
 
+
 class LogHooks:
     def on_success(self, *, jti: str, sub: str, token_type: str) -> None:
         logging.info("token_ok type=%s sub=%s", token_type, sub)
 
     def on_failure(self, *, reason: str, token_type: str) -> None:
         logging.warning("token_fail type=%s reason=%s", token_type, reason)
+
 
 validator = build_access_validator(settings, hooks=LogHooks())
 ```
@@ -944,8 +961,9 @@ from auth_sdk_m8.observability.middleware import MetricsMiddleware
 from auth_sdk_m8.observability.settings import ObservabilitySettingsMixin
 from fastapi import FastAPI, Response
 
-class Settings(ObservabilitySettingsMixin, CommonSettings):
-    ...
+
+class Settings(ObservabilitySettingsMixin, CommonSettings): ...
+
 
 _metrics.setup(
     enabled=settings.METRICS_ENABLED,
@@ -998,7 +1016,9 @@ from auth_sdk_m8.events import AuthEventStreamClient, AuthStreamEvent, derive_st
 from auth_sdk_m8.security import static_internal_auth
 
 client = AuthEventStreamClient(
-    stream_url=derive_stream_url(settings.INTROSPECTION_URL),  # e.g. http://fa-auth:8000/private/v1/events/stream
+    stream_url=derive_stream_url(
+        settings.INTROSPECTION_URL
+    ),  # e.g. http://fa-auth:8000/private/v1/events/stream
     auth_provider=static_internal_auth(  # per-consumer X-Internal-Client + X-Internal-Token
         settings.PRIVATE_API_SECRET.get_secret_value(),
         client_id=settings.INTERNAL_CLIENT_ID,
@@ -1008,15 +1028,18 @@ client = AuthEventStreamClient(
     on_gap=flush_local_caches,
 )
 
+
 async def handle_auth_event(event: AuthStreamEvent) -> None:
     if event.event_type == "session-revoked":
         await cache.evict(event.payload.get("jti"))
     elif event.event_type == "user-deleted":
         await cache.evict_user(event.payload.get("user_id"))
 
+
 async def flush_local_caches() -> None:
     """Called when a resume gap is unresumable — flush all cached state."""
     await cache.flush_all()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
