@@ -26,6 +26,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   committed per its own documented convention (same shape as the `3.1.1` and
   `3.1.2` "update checksum" commits below).
 
+### Changed
+
+- **Breaking:** floor raised to Python 3.12 (`requires-python`, classifiers,
+  and the CI test matrix all dropped 3.11).
+
 ### Documentation
 
 - Backfilled the `3.1.1` and `3.1.2` changelog entries below, reconstructed
