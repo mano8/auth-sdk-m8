@@ -782,7 +782,7 @@
     ],
     "trusted_test_signing_key": "AuthSdkM8-Fixture_TrustedTestKey-2026-DoNotUseInProd!"
   },
-  "checksum_sha256": "43952122e092a70ee248ab21adcc4f2e285d366677214f35e5e981ea0c11ef6d",
+  "checksum_sha256": "f707ef108d5156f2cfa8da208969375a23690569a3b2ef7d8866700aa46fd0c1",
   "jti_status_fixtures": {
     "unsupported_schema_version_response": {
       "active": true,
@@ -1200,7 +1200,7 @@
     }
   ],
   "schema_version": "2",
-  "sdk_version": "3.1.2",
+  "sdk_version": "3.1.3",
   "session_revoked_events": {
     "v1": {
       "event_type": "session.revoked",

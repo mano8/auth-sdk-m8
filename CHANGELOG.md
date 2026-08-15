@@ -3,6 +3,69 @@
 All notable changes to `auth-sdk-m8` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: [SemVer](https://semver.org/).
 
+> `3.1.1` and `3.1.2` (below) are reconstructed from Git history under
+> `A32-changelog-version-parity` — both were tagged and released with no
+> changelog entry; nothing here was invented past what the commits record.
+
+---
+
+## [3.1.3] - 2026-08-15
+
+### Added
+
+- `tests/test_changelog_version_parity.py` — asserts the current
+  `auth_sdk_m8.__version__` has a matching `## [x.y.z]` heading in
+  `CHANGELOG.md`, and that no two headings claim the same version, so a
+  release can no longer ship undocumented (`A32-changelog-version-parity`).
+
+### Fixed
+
+- `auth_sdk_m8/testing/authorization_matrix.json` regenerated — the fixture
+  embeds `sdk_version` and a content checksum, both of which drift with every
+  version bump; `scripts/generate_authorization_fixture_matrix.py` re-run and
+  committed per its own documented convention (same shape as the `3.1.1` and
+  `3.1.2` "update checksum" commits below).
+
+### Documentation
+
+- Backfilled the `3.1.1` and `3.1.2` changelog entries below, reconstructed
+  from Git history.
+
+---
+
+## [3.1.2] - 2026-08-03
+
+### Fixed
+
+- `auth_sdk_m8/testing/authorization_matrix.json` checksum updated to match
+  its content (the fixture's own drift lock, tripped by the `3.1.1` checksum
+  update below).
+
+### Changed
+
+- Dependency constraints refreshed in `constraints.txt` and
+  `constraints-all.txt`.
+
+---
+
+## [3.1.1] - 2026-08-03
+
+### Fixed
+
+- `auth_sdk_m8/testing/authorization_matrix.json` checksum updated to match
+  its content.
+
+### Changed
+
+- Dependabot bumps: `filelock` to `3.32.0`, `typing-extensions` to `4.16.0`,
+  `librt` to `0.13.0`, `fastapi` to `0.140.13`, `stevedore` to `5.9.0`.
+- CI action bumps: `pypa/gh-action-pypi-publish` to `1.14.2`,
+  `actions/checkout` to `7.0.1`, `actions/setup-python` to `7.0.0`.
+
+### Documentation
+
+- README formatting cleanup.
+
 ---
 
 ## [3.1.0] - 2026-07-23 · Expanded canonical fixture matrix (Phase 5, FIXTURE-01, §5.5)
