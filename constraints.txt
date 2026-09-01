@@ -63,7 +63,7 @@ python-dotenv==1.2.2
     # via pydantic-settings
 redis==8.1.0
     # via auth-sdk-m8 (pyproject.toml)
-sqlalchemy==2.0.51
+sqlalchemy==2.0.52
     # via
     #   auth-sdk-m8 (pyproject.toml)
     #   sqlmodel
