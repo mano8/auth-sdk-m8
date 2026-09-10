@@ -182,7 +182,7 @@ sortedcontainers==2.4.0
     #   cyclonedx-python-lib
     #   hypothesis
     #   trio
-sqlalchemy==2.0.51
+sqlalchemy==2.0.52
     # via
     #   auth-sdk-m8 (pyproject.toml)
     #   sqlmodel
