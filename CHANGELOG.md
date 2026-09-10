@@ -9,6 +9,56 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [3.2.0] - 2026-09-10
+
+Consumer half of `J3` (`fa-auth-jwks-kid-key-binding-plan-2026-09-08`, `W2`).
+Closes the recovery gap `fa-auth-m8 2.1.0`'s dual-key JWKS overlap window
+(`W1.3`) opened on the issuer side but that this SDK could not yet consume.
+
+### Added
+
+- `JwksKeyResolver.refresh(kid)` — forces one throttled refresh for a `kid`
+  that is already cached, returning the current key or `None` when the
+  refresh was throttled away or the `kid` is gone from the refreshed set.
+- `RefreshableKeyResolver` — a `Protocol` marking resolvers that support
+  `refresh()`. A plain `KeyResolver` is untouched; the escalation is opt-in.
+- `TokenValidator` re-resolves once on `InvalidSignatureError` when the
+  configured resolver satisfies `RefreshableKeyResolver`, and retries only
+  when the refreshed key material actually differs from what just failed.
+
+### Fixed
+
+- **Signature-failure escalation (`J3`, consumer half).** `JwksKeyResolver`
+  previously refreshed early only on an *unknown* `kid`; when the key behind
+  a known `kid` changed — a re-issued key under a reused `ACCESS_KEY_ID`, or a
+  label that never named its key — the cache kept answering the lookup while
+  every live signature failed, for up to `JWKS_CACHE_TTL_SECONDS` (longer
+  under the stale-cache fallback). Recovery now costs one throttled refresh
+  interval (`_MIN_REFRESH_INTERVAL`, 10 s) instead of one TTL (default 300 s).
+  The trigger is attacker-supplied — anyone can present a real `kid` with a
+  forged signature — so the escalation shares the existing fetch throttle and
+  lock: a flood of invalid signatures still costs at most one fetch per
+  interval, the same ceiling that already bounded unknown-`kid` floods.
+
+### Verified
+
+- Multi-key JWKS parsing was already correct — `_refresh` caches every `kid`
+  in the response, not just the first — and now carries a dedicated
+  regression test: a two-key JWKS populates two cache entries, and tokens
+  signed under either `kid` verify independently. This is the property the
+  issuer's `W1.3` dual-key overlap window depends on.
+
+### Documentation
+
+- `README.md` — the JWKS consumer section now documents multi-key caching and
+  the signature-failure escalation alongside the existing unknown-`kid`
+  behavior.
+- `SECURITY.md` — the leaked-access-key incident response no longer tells
+  operators to wait out `JWKS_CACHE_TTL_SECONDS` or restart every consumer;
+  it describes the dual-key overlap window and the escalation path instead.
+
+---
+
 ## [3.1.3] - 2026-08-15
 
 ### Added

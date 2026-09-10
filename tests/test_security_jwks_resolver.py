@@ -279,6 +279,58 @@ def test_resolve_refetches_after_ttl_expiry():
     assert mock_open.call_count == 2
 
 
+# ── multi-key JWKS parsing (W1.3 dual-key overlap, consumer half) ────────────
+
+
+def test_multi_key_jwks_populates_one_cache_entry_per_kid():
+    """A JWKS with several keys must cache all of them, not just the first.
+
+    This is the consumer half of W1.3's dual-key overlap window: the issuer
+    can publish a current and an `_OLD` key under distinct `kid`s, and a
+    resolver that only kept the first entry would silently drop coverage for
+    whichever key `_jwk_to_pem` did not see first.
+    """
+    resolver = JwksKeyResolver("http://auth/jwks.json")
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = _make_jwks_response(
+        ["kid-current", "kid-old"], _RSA_PUBLIC_PEM
+    )
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+
+    with patch("urllib.request.urlopen", return_value=mock_resp):
+        resolver._guarded_refresh()
+
+    assert set(resolver._cache.keys()) == {"kid-current", "kid-old"}
+
+
+def test_multi_key_jwks_verifies_tokens_under_either_kid():
+    """Both keys in a two-key JWKS must independently verify a token."""
+    resolver = JwksKeyResolver("http://auth/jwks.json", cache_ttl=3600)
+    validator = _rotation_validator(resolver)
+
+    keys = [
+        _make_jwk("kid-current", _RSA_PUBLIC_PEM),
+        _make_jwk("kid-old", _ROTATED_PUBLIC_PEM),
+    ]
+    body = json.dumps({"keys": keys}).encode()
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = body
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+
+    with patch("urllib.request.urlopen", return_value=mock_resp):
+        current = validator.validate_access_token(
+            _rs256_access_token(_RSA_PRIVATE_PEM, kid="kid-current")
+        )
+        old = validator.validate_access_token(
+            _rs256_access_token(_ROTATED_PRIVATE_PEM, kid="kid-old")
+        )
+
+    assert current.sub == "user-123"
+    assert old.sub == "user-123"
+
+
 # ── non-sig keys are ignored ──────────────────────────────────────────────────
 
 
