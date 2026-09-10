@@ -20,7 +20,7 @@ from auth_sdk_m8.security.internal_auth import (
     static_internal_auth,
 )
 from auth_sdk_m8.security.jwks_resolver import JwksKeyResolver
-from auth_sdk_m8.security.key_resolver import KeyResolver
+from auth_sdk_m8.security.key_resolver import KeyResolver, RefreshableKeyResolver
 from auth_sdk_m8.security.refresh_token_policy import RefreshTokenPolicy
 from auth_sdk_m8.security.refresh_token_store import RefreshTokenStore
 from auth_sdk_m8.security.session_store import SessionStore
@@ -42,6 +42,7 @@ __all__ = [
     "InternalAuthProvider",
     "JwksKeyResolver",
     "KeyResolver",
+    "RefreshableKeyResolver",
     "RefreshTokenPolicy",
     "RefreshTokenStore",
     "SessionStore",

@@ -211,9 +211,13 @@ which network layer provides mTLS.
 3. **Session wipe** — invalidate all active sessions: in Redis, delete `rt:*`, `oauth_session:*`,
    `auth_code:*`, and `jwt:blacklist:*`; or wipe the refresh-token and session tables in the DB.
    All users must re-authenticate.
-4. **RS256 consumers** — after the issuer is redeployed, wait for `JWKS_CACHE_TTL_SECONDS`
-   (default 300 s) to expire on every consumer, or restart them to force JWKS re-fetch. Tokens
-   signed with the old key are then rejected.
+4. **RS256/ES256 consumers** — no restart and no wait for `JWKS_CACHE_TTL_SECONDS` is required.
+   If the issuer opens a dual-key overlap window (`ACCESS_PUBLIC_KEY_OLD_FILE` /
+   `ACCESS_KEY_ID_OLD` — see the issuer's own `SECURITY.md`), the resolver caches both published
+   keys and old tokens keep verifying until the window closes. Absent an overlap window, the next
+   signature verification against the leaked key fails under its still-cached `kid`; that failure
+   triggers one throttled refresh-and-retry (bounded by the resolver's `_MIN_REFRESH_INTERVAL`),
+   so consumers pick up the new key within one refresh interval rather than one full TTL.
 5. **Validation** — issue a new access token and confirm it is accepted; attempt to validate a
    token signed with the old key — it must be rejected with `InvalidToken`.
 

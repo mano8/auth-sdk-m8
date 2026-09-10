@@ -258,7 +258,13 @@ payload = validator.validate_access_token(bearer_token)
 ```
 
 On an unknown `kid` the resolver refreshes once before raising, so key rotation on the issuer
-side is transparent to consumers with no restart required.
+side is transparent to consumers with no restart required. A multi-key JWKS response (the
+issuer's dual-key overlap window — see its `SECURITY.md`) is cached in full: every `kid` in the
+response gets its own cache entry, so a token signed under either the current or the `_OLD` key
+verifies. If the key material behind an already-cached `kid` changes — a re-issued key under a
+reused `ACCESS_KEY_ID` — a verification failure triggers one throttled refresh-and-retry instead
+of waiting out `JWKS_CACHE_TTL_SECONDS`; a flood of forged signatures still costs at most one
+fetch per refresh interval.
 
 ---
 
