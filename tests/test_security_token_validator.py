@@ -14,6 +14,7 @@ from auth_sdk_m8.schemas.auth import TokenSecret
 from auth_sdk_m8.schemas.base import RoleType
 from auth_sdk_m8.security import (
     KeyResolver,
+    RefreshableKeyResolver,
     TokenValidationConfig,
     TokenValidator,
 )
@@ -604,3 +605,146 @@ def test_inconsistent_claims_error_chain_leaks_no_claims() -> None:
     assert str(cause) == "inconsistent_privilege_claims"
     assert "leak@example.com" not in repr(cause)
     assert "leak@example.com" not in str(exc_info.value)
+
+
+# ── signature-failure escalation (J3) ────────────────────────────────────────
+
+
+class _RefreshingResolver(_MapResolver):
+    """A resolver that can hand back replacement material for a known ``kid``."""
+
+    def __init__(
+        self,
+        mapping: dict[str | None, TokenSecret],
+        replacement: TokenSecret | None,
+    ) -> None:
+        super().__init__(mapping)
+        self.replacement = replacement
+        self.refreshes: list[str | None] = []
+
+    def refresh(self, kid: str | None) -> TokenSecret | None:
+        self.refreshes.append(kid)
+        return self.replacement
+
+
+def _access_claims(**extra: object) -> dict:
+    return {
+        "sub": "user-123",
+        "type": "access",
+        "email": "test@example.com",
+        "role": "user",
+        "jti": "test-jti-0000",
+        "exp": int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()),
+        "is_active": True,
+        "email_verified": False,
+        "is_superuser": False,
+        **extra,
+    }
+
+
+def test_signature_failure_retries_once_with_refreshed_key() -> None:
+    stale = TokenSecret(secret_key=SecretStr(WRONG_KEY), algorithm="HS256")
+    current = TokenSecret(secret_key=SecretStr(ROTATED_KEY), algorithm="HS256")
+    resolver = _RefreshingResolver({"kid-1": stale}, replacement=current)
+    validator = TokenValidator(
+        secrets=None,
+        config=TokenValidationConfig(),
+        key_resolver=resolver,
+    )
+    token = _encode_access(
+        _access_claims(), secret=ROTATED_KEY, headers={"kid": "kid-1"}
+    )
+
+    payload = validator.validate_access_token(token)
+
+    assert payload.sub == "user-123"
+    assert resolver.refreshes == ["kid-1"]
+
+
+def test_signature_failure_is_not_retried_when_the_key_is_unchanged() -> None:
+    """No refresh material means no second decode — just the original failure."""
+    stale = TokenSecret(secret_key=SecretStr(WRONG_KEY), algorithm="HS256")
+    resolver = _RefreshingResolver({"kid-1": stale}, replacement=stale)
+    validator = TokenValidator(
+        secrets=None,
+        config=TokenValidationConfig(),
+        key_resolver=resolver,
+    )
+    token = _encode_access(
+        _access_claims(), secret=ROTATED_KEY, headers={"kid": "kid-1"}
+    )
+
+    with pytest.raises(InvalidToken, match="Invalid access token"):
+        validator.validate_access_token(token)
+
+    assert resolver.refreshes == ["kid-1"]
+
+
+def test_refreshed_key_with_a_disallowed_algorithm_is_ignored() -> None:
+    stale = TokenSecret(secret_key=SecretStr(WRONG_KEY), algorithm="HS256")
+    current = TokenSecret(secret_key=SecretStr(ROTATED_KEY), algorithm="RS256")
+    resolver = _RefreshingResolver({"kid-1": stale}, replacement=current)
+    validator = TokenValidator(
+        secrets=None,
+        config=TokenValidationConfig(allowed_algorithms=["HS256"]),
+        key_resolver=resolver,
+    )
+    token = _encode_access(
+        _access_claims(), secret=ROTATED_KEY, headers={"kid": "kid-1"}
+    )
+
+    with pytest.raises(InvalidToken):
+        validator.validate_access_token(token)
+
+
+def test_refresh_failure_falls_through_to_the_original_rejection() -> None:
+    class _FailingResolver(_RefreshingResolver):
+        def refresh(self, kid: str | None) -> TokenSecret | None:
+            self.refreshes.append(kid)
+            raise LookupError(kid)
+
+    stale = TokenSecret(secret_key=SecretStr(WRONG_KEY), algorithm="HS256")
+    resolver = _FailingResolver({"kid-1": stale}, replacement=None)
+    validator = TokenValidator(
+        secrets=None,
+        config=TokenValidationConfig(),
+        key_resolver=resolver,
+    )
+    token = _encode_access(
+        _access_claims(), secret=ROTATED_KEY, headers={"kid": "kid-1"}
+    )
+
+    with pytest.raises(InvalidToken):
+        validator.validate_access_token(token)
+
+    assert resolver.refreshes == ["kid-1"]
+
+
+def test_resolver_without_refresh_is_left_alone() -> None:
+    """A plain KeyResolver must keep working — the escalation is opt-in."""
+    stale = TokenSecret(secret_key=SecretStr(WRONG_KEY), algorithm="HS256")
+    resolver = _MapResolver({"kid-1": stale})
+    validator = TokenValidator(
+        secrets=None,
+        config=TokenValidationConfig(),
+        key_resolver=resolver,
+    )
+    token = _encode_access(
+        _access_claims(), secret=ROTATED_KEY, headers={"kid": "kid-1"}
+    )
+
+    with pytest.raises(InvalidToken):
+        validator.validate_access_token(token)
+
+    assert not isinstance(resolver, RefreshableKeyResolver)
+
+
+def test_static_key_validator_never_escalates() -> None:
+    """No resolver, nothing to refresh — a bad signature is simply invalid."""
+    validator = TokenValidator(
+        secrets=TokenSecret(secret_key=SecretStr(VALID_KEY), algorithm="HS256"),
+        config=TokenValidationConfig(),
+    )
+
+    with pytest.raises(InvalidToken):
+        validator.validate_access_token(make_access_token(secret=WRONG_KEY))

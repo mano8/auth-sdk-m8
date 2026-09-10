@@ -43,6 +43,10 @@ class JwksKeyResolver:
     * **Stale-cache fallback** — if a fetch fails but cached keys exist, the
       stale cache is served and a warning is logged.  Requests only fail when
       there is no cache at all.
+    * **Signature-failure escalation** — ``refresh`` re-fetches for a ``kid``
+      that is already cached, covering the case where the key changed but the
+      ``kid`` did not.  It shares the throttle above, so this path cannot be
+      driven into a fetch storm by forged signatures.
 
     Args:
         jwks_uri: Full URL of the JWKS endpoint
@@ -88,6 +92,37 @@ class JwksKeyResolver:
             self._guarded_refresh()
 
         return self._get_or_raise(kid)
+
+    def refresh(self, kid: Optional[str]) -> Optional[TokenSecret]:
+        """Force one throttled refresh and return the current key for *kid*.
+
+        ``resolve`` refreshes early only when the ``kid`` is *unknown*.  When
+        the key material behind a **known** ``kid`` is replaced — a re-issued
+        key under a reused ``ACCESS_KEY_ID``, or an unbound label that never
+        named its key — the cached entry stays lookup-valid while every
+        signature made with the new key fails, for up to ``cache_ttl`` seconds
+        (longer under the stale-cache fallback).  ``TokenValidator`` calls this
+        after such a failure so recovery takes one ``_MIN_REFRESH_INTERVAL``
+        instead of one TTL.
+
+        The trigger is attacker-supplied — anyone can present a token with a
+        real ``kid`` and a forged signature — so the fetch goes through exactly
+        the same throttle and lock as every other refresh.  A flood of invalid
+        signatures therefore costs at most one fetch per interval, the same
+        ceiling that already applies to a flood of unknown ``kid``s.
+
+        Args:
+            kid: The ``kid`` whose key material is suspect.
+
+        Returns:
+            The key now cached for *kid*, or ``None`` when the refresh was
+            throttled away or *kid* is absent from the refreshed key set.
+        """
+        before = self._last_refresh_attempt
+        self._guarded_refresh()
+        if self._last_refresh_attempt == before:
+            return None  # Throttled — no new material to offer.
+        return self._cache.get(kid)
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
