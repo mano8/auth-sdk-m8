@@ -34,7 +34,7 @@ httpcore==1.0.9
     # via httpx
 httpx==0.28.1
     # via auth-sdk-m8 (pyproject.toml)
-idna==3.18
+idna==3.20
     # via
     #   anyio
     #   email-validator
