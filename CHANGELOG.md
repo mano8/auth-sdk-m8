@@ -9,6 +9,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ---
 
+## [3.2.1] - 2026-10-19
+
+Maintenance release: pinned dependency and CI updates only. No API or
+behaviour change.
+
+### Changed
+
+- Runtime constraints (`constraints.txt`): `cryptography` 50.0.0 → 50.0.1,
+  `idna` 3.18 → 3.20.
+- Dev and CI constraints (`constraints-all.txt`): `cryptography` 49.0.0 →
+  50.0.1, `idna` 3.18 → 3.20, `mypy` 2.1.0 → 2.3.1, `librt` 0.13.0 → 0.15.0,
+  `redis` 8.0.1 → 8.1.0.
+- CI: `codecov/codecov-action` 7.0.0 → 7.1.1.
+
+### Fixed
+
+- `auth_sdk_m8/testing/authorization_matrix.json` regenerated for the new
+  `sdk_version` and content checksum.
+
+---
+
 ## [3.2.0] - 2026-09-10
 
 Consumer half of `J3` (`fa-auth-jwks-kid-key-binding-plan-2026-09-08`, `W2`).
