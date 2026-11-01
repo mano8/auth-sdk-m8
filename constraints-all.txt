@@ -146,7 +146,7 @@ pyjwt==2.13.0
     # via auth-sdk-m8 (pyproject.toml)
 pymysql==1.2.0
     # via auth-sdk-m8 (pyproject.toml)
-pyparsing==3.3.2
+pyparsing==3.3.3
     # via pip-requirements-parser
 pyproject-hooks==1.2.0
     # via build
