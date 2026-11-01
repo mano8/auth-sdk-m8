@@ -142,7 +142,7 @@ pygments==2.20.0
     # via
     #   pytest
     #   rich
-pyjwt==2.13.0
+pyjwt==2.15.1
     # via auth-sdk-m8 (pyproject.toml)
 pymysql==1.2.0
     # via auth-sdk-m8 (pyproject.toml)
