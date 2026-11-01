@@ -159,7 +159,7 @@ pytest-anyio==0.0.0
     # via auth-sdk-m8 (pyproject.toml)
 pytest-cov==7.1.0
     # via auth-sdk-m8 (pyproject.toml)
-python-dotenv==1.2.2
+python-dotenv==1.2.4
     # via pydantic-settings
 pyyaml==6.0.3
     # via bandit
