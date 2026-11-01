@@ -59,7 +59,7 @@ pyjwt==2.13.0
     # via auth-sdk-m8 (pyproject.toml)
 pymysql==1.2.0
     # via auth-sdk-m8 (pyproject.toml)
-python-dotenv==1.2.2
+python-dotenv==1.2.4
     # via pydantic-settings
 redis==8.1.0
     # via auth-sdk-m8 (pyproject.toml)
