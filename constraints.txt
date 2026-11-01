@@ -41,7 +41,7 @@ idna==3.20
     #   httpx
 prometheus-client==0.26.0
     # via auth-sdk-m8 (pyproject.toml)
-psycopg2-binary==2.9.12
+psycopg2-binary==2.9.13
     # via auth-sdk-m8 (pyproject.toml)
 pycparser==3.0
     # via cffi
